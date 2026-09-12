@@ -66,6 +66,7 @@ SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 IMAGES_DIR = os.path.join(BASE_DIR, "streaming_images")
 DATABASE_FILE = os.path.join(BASE_DIR, "nexus.db")
 NEXUS_BROWSER_FILE = os.path.join(BASE_DIR, "nexus_browser.py")
+NEXUS_BROWSER_EXE = os.path.join(BASE_DIR, "nexus_browser.exe")
 
 
 def nexus_profile_dir():
@@ -562,6 +563,8 @@ def open_store_search(name):
 # Edge WebView2) em vez do navegador externo. Roda como processo separado
 # para nao travar o loop do tkinter.
 def browser_available():
+    if os.path.exists(NEXUS_BROWSER_EXE):
+        return True  # release .exe: navegador ja compilado
     return bool(WEBVIEW_AVAILABLE) and os.path.exists(NEXUS_BROWSER_FILE)
 
 
@@ -587,6 +590,15 @@ def open_in_nexus_browser(url, title="Nexus", pad_label=""):
         scheme = ""
     if scheme not in ("http", "https"):
         return None  # WebView2 nao aceita outros esquemas -> navegador externo
+    if os.path.exists(NEXUS_BROWSER_EXE):
+        try:
+            return subprocess.Popen(
+                [NEXUS_BROWSER_EXE, url, title, pad_label or ""],
+                creationflags=subprocess.CREATE_NO_WINDOW)
+        except Exception:
+            return None
+    if getattr(sys, "frozen", False):
+        return None  # .exe sem o navegador junto: cai p/ navegador externo
     exe = python_for_browser()
     if exe is None:
         return None

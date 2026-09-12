@@ -20,6 +20,12 @@ desktop.ini
 # em %LOCALAPPDATA%\Nexus - nunca commitar credenciais
 browser_profile/
 
+# Build do executavel (PyInstaller)
+dist/
+build/
+*.spec
+Nexus-v*.zip
+
 # Editores / SO
 .vscode/
 .idea/
