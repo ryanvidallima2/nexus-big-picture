@@ -2572,6 +2572,7 @@ class NexusTextDialog:
                               relief="flat", bd=0, highlightbackground=Config.BORDER,
                               highlightthickness=1)
         self.entry.pack(fill="x", padx=36, ipady=8)
+        app.bind_keyboard_popup(self.entry)
         if initial:
             self.entry.insert(0, initial)
             self.entry.select_range(0, "end")
@@ -2640,6 +2641,15 @@ class NexusTextDialog:
 
 
 # ===================== NEXUS VIRTUAL KEYBOARD =====================
+def sniff_numeric_entry(entry):
+    """Conteudo com cara de numero (porta, ano, telefone...) -> numérico."""
+    try:
+        txt = (entry.get() or "").strip()
+    except Exception:
+        return False
+    return bool(txt) and re.match(r"^[\d\s\.\,\+\-\(\)/:]+$", txt) is not None
+
+
 class NexusKeyboard:
     """Teclado virtual p/ controle: analogico/setas movem o cursor,
     confirmar tecla. Tecla de verdade onde o foco estiver (Nexus e browser).
@@ -2653,12 +2663,20 @@ class NexusKeyboard:
         ["@", "-", "_", "/", ":"],
     ]
 
-    def __init__(self, app, entry=None):
+    ROWS_NUM = [
+        ["1", "2", "3"],
+        ["4", "5", "6"],
+        ["7", "8", "9"],
+        [".", "0", "\u232B"],
+    ]
+
+    def __init__(self, app, entry=None, numeric=False):
         self.app = app
         self.entry = entry
         self.closed = False
         self.born = time.time()
         self.shift = False
+        self.numeric = bool(numeric)
         self.cur = [0, 0]
         self.cells = []
         try:
@@ -2688,22 +2706,17 @@ class NexusKeyboard:
         tk.Label(win, text=t("kb_hint", lang), font=("Segoe UI", 11),
                  fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR).pack(pady=(0, 6))
 
-        grid = tk.Frame(win, bg=Config.BG_SIDEBAR)
-        grid.pack()
-        for r, keys in enumerate(self.ROWS):
-            row_cells = []
-            for c, key in enumerate(keys):
-                b = tk.Button(grid, font=("Segoe UI", 14, "bold"),
-                              relief="flat", bd=0, cursor="hand2",
-                              width=4, height=1,
-                              command=lambda rr=r, cc=c: self._click(rr, cc))
-                b.grid(row=r, column=c, padx=3, pady=3)
-                b.bind("<Enter>", lambda e, rr=r, cc=c: self.set_cursor(rr, cc))
-                row_cells.append((key, b))
-            self.cells.append(row_cells)
+        self.grid_frame = tk.Frame(win, bg=Config.BG_SIDEBAR)
+        self.grid_frame.pack()
+        self._build_keys()
 
         bottom = tk.Frame(win, bg=Config.BG_SIDEBAR)
         bottom.pack(pady=(8, 10))
+        self.mode_btn = tk.Button(bottom, text="123", font=("Segoe UI", 13, "bold"),
+                                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                  relief="flat", bd=0, cursor="hand2",
+                                  padx=24, pady=6, command=self.toggle_mode)
+        self.mode_btn.pack(side="left", padx=8)
         tk.Button(bottom, text=t("kb_space", lang), font=("Segoe UI", 13, "bold"),
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
                   bd=0, cursor="hand2", padx=60, pady=6,
@@ -2714,9 +2727,50 @@ class NexusKeyboard:
                   command=self.close).pack(side="left", padx=8)
 
         self._paint()
+        self._paint_mode_btn()
         win.bind("<Escape>", lambda e: self.close())
         win.protocol("WM_DELETE_WINDOW", self.close)
         app.kb_window = self
+
+    def _rows(self):
+        return self.ROWS_NUM if self.numeric else self.ROWS
+
+    def _build_keys(self):
+        try:
+            for w in self.grid_frame.winfo_children():
+                w.destroy()
+        except Exception:
+            pass
+        self.cells = []
+        rows = self._rows()
+        for r, keys in enumerate(rows):
+            row_cells = []
+            for c, key in enumerate(keys):
+                wide = 8 if self.numeric else 4
+                b = tk.Button(self.grid_frame, font=("Segoe UI", 16 if self.numeric else 14, "bold"),
+                              relief="flat", bd=0, cursor="hand2",
+                              width=wide, height=1,
+                              command=lambda rr=r, cc=c: self._click(rr, cc))
+                b.grid(row=r, column=c, padx=4, pady=4)
+                b.bind("<Enter>", lambda e, rr=r, cc=c: self.set_cursor(rr, cc))
+                row_cells.append((key, b))
+            self.cells.append(row_cells)
+        self.cur = [0, 0]
+        self._paint()
+
+    def toggle_mode(self):
+        if self.closed:
+            return
+        self.numeric = not self.numeric
+        self.shift = False
+        self._build_keys()
+        self._paint_mode_btn()
+
+    def _paint_mode_btn(self):
+        try:
+            self.mode_btn.configure(text="ABC" if self.numeric else "123")
+        except Exception:
+            pass
 
     def _disp(self, key):
         if len(key) == 1 and key.isalpha():
@@ -5024,7 +5078,7 @@ class BigPictureApp:
         self.close_sidebar()
         self.open_keyboard()
 
-    def open_keyboard(self, entry=None):
+    def open_keyboard(self, entry=None, mode="auto"):
         try:
             kb = self.kb_window
             if kb is not None and not kb.closed:
@@ -5035,7 +5089,30 @@ class BigPictureApp:
                 return
         except Exception:
             pass
-        NexusKeyboard(self, entry)
+        numeric = False
+        if mode == "numeric":
+            numeric = True
+        elif mode != "text":
+            numeric = sniff_numeric_entry(entry)
+        NexusKeyboard(self, entry, numeric=numeric)
+
+    def bind_keyboard_popup(self, entry, mode="auto"):
+        """Clique no campo abre o teclado sozinho (letras ou numerico)."""
+        try:
+            entry.kb_mode = mode
+            entry.bind("<Button-1>",
+                       lambda e, ent=entry: self._entry_clicked(ent), add="+")
+        except Exception:
+            pass
+
+    def _entry_clicked(self, entry):
+        try:
+            if self.kb_window is not None and not self.kb_window.closed:
+                return
+            mode = getattr(entry, "kb_mode", "auto") or "auto"
+            self.open_keyboard(entry, mode=mode)
+        except Exception:
+            pass
 
     def confirm_clear_browser_profile(self):
         self.close_sidebar()
@@ -5101,6 +5178,7 @@ class BigPictureApp:
                           bg=Config.ACCENT, fg="white", relief="flat", cursor="hand2",
                           command=lambda ent=e: self.browse_image(ent), padx=8).pack(side="left", padx=5)
                 self.add_entries[label] = e
+                self.bind_keyboard_popup(e, mode="text")
             else:
                 e = tk.Entry(form, font=("Segoe UI", 14), width=30,
                              bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
@@ -5109,6 +5187,7 @@ class BigPictureApp:
                 e.grid(row=i, column=1, pady=10)
                 e.insert(0, default)
                 self.add_entries[label] = e
+                self.bind_keyboard_popup(e)
                 tk.Button(form, text="\u2328", font=("Segoe UI", 12),
                           bg=Config.BG_CARD, fg=Config.TEXT_SECONDARY,
                           relief="flat", bd=0, cursor="hand2", padx=8,
