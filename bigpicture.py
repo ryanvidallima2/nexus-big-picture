@@ -775,6 +775,25 @@ def force_borderless_fullscreen(hwnd, monitor_hwnd=None):
         return False
 
 
+def bring_to_front(hwnd):
+    try:
+        if _WIN32_OK and hwnd:
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def foreground_hwnd():
+    try:
+        if _WIN32_OK:
+            return _GetForegroundWindow()
+    except Exception:
+        pass
+    return None
+
+
 # ===================== FOCUS MANAGER =====================
 class FocusManager:
     def __init__(self):
@@ -808,6 +827,9 @@ VK_RETURN = 0x0D
 VK_ESCAPE = 0x1B
 VK_SPACE = 0x20
 VK_F = 0x46
+VK_SHIFT = 0x10
+VK_CONTROL = 0x11
+VK_BACK = 0x08
 VK_VOL_DOWN = 0xAE
 VK_VOL_UP = 0xAF
 
@@ -844,6 +866,50 @@ def tap_key(vk):
         inp.type = INPUT_KEYBOARD
         inp.ii.ki = _KEYBDINPUT(vk, 0, flags, 0, None)
         _SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+
+
+def key_down(vk):
+    inp = _INPUT()
+    inp.type = INPUT_KEYBOARD
+    inp.ii.ki = _KEYBDINPUT(vk, 0, 0, 0, None)
+    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+
+
+def key_up(vk):
+    inp = _INPUT()
+    inp.type = INPUT_KEYBOARD
+    inp.ii.ki = _KEYBDINPUT(vk, 0, KEYEVENTF_KEYUP, 0, None)
+    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+
+
+def type_text(root, text):
+    """Tecla texto de verdade na janela em foco (teclado virtual global).
+    Letras/numeros vao por VK; simbolos via Ctrl+V (a prova de layout ABNT)."""
+    for ch in text:
+        try:
+            if "a" <= ch <= "z" or "A" <= ch <= "Z":
+                upper = ch.isupper()
+                if upper:
+                    key_down(VK_SHIFT)
+                tap_key(ord(ch.upper()))
+                if upper:
+                    key_up(VK_SHIFT)
+            elif "0" <= ch <= "9":
+                tap_key(ord(ch))
+            elif ch == " ":
+                tap_key(VK_SPACE)
+            elif ch == "\n":
+                tap_key(VK_RETURN)
+            else:
+                root.clipboard_clear()
+                root.clipboard_append(ch)
+                root.update_idletasks()
+                key_down(VK_CONTROL)
+                tap_key(0x56)  # V
+                key_up(VK_CONTROL)
+                time.sleep(0.02)
+        except Exception:
+            pass
 
 
 def mouse_move(dx, dy):
@@ -1349,6 +1415,8 @@ class GamepadManager:
             top.move()
         elif isinstance(top, NexusMenuWindow):
             top.on_hat(ndir)
+        elif isinstance(top, NexusKeyboard):
+            top.on_hat(ndir)
         elif isinstance(top, NexusTextDialog):
             pass
         else:
@@ -1434,6 +1502,8 @@ class GamepadManager:
                         top.move()
                     elif isinstance(top, NexusMenuWindow):
                         top.on_hat(hat)
+                    elif isinstance(top, NexusKeyboard):
+                        top.on_hat(hat)
                     elif isinstance(top, NexusTextDialog):
                         pass
                     else:
@@ -1479,6 +1549,11 @@ class GamepadManager:
                 elif isinstance(top, (NexusMenuWindow, NexusTextDialog)):
                     if is_confirm:
                         top.confirm()
+                    elif is_cancel:
+                        top.close()
+                elif isinstance(top, NexusKeyboard):
+                    if is_confirm:
+                        top.press_focused()
                     elif is_cancel:
                         top.close()
                 elif self.app.pad_capture is not None:
@@ -1593,7 +1668,13 @@ class GamepadManager:
                     continue
                 self.prev_buttons[btn_id] = True
                 logical = self.logical_for_raw(btn_id)
-                if self.app.pad_capture is not None:
+                top = top_modal(self.app)
+                if isinstance(top, NexusKeyboard):
+                    if logical == "south":
+                        top.press_focused()
+                    elif logical == "east":
+                        top.close()
+                elif self.app.pad_capture is not None:
                     if logical == "east":
                         self.app.cancel_pad_capture()
                     else:
@@ -1728,6 +1809,11 @@ TRANSLATIONS = {
         "cache_clear_yes": "Apagar tudo",
         "cache_cleared": "Logins, cookies e cache apagados.",
         "cache_in_use": "Feche o navegador do Nexus antes de limpar.",
+        "sidebar_keyboard": "Teclado virtual",
+        "kb_title": "Teclado",
+        "kb_hint": "Analogico/setas movem \u2022 confirmar tecla \u2022 B fecha",
+        "kb_space": "espaco",
+        "kb_ok": "OK",
         "settings_title": "Configuracoes",
         "theme_title": "Cor de Destaque",
         "theme_close": "Fechar",
@@ -1849,6 +1935,11 @@ TRANSLATIONS = {
         "cache_clear_yes": "Delete everything",
         "cache_cleared": "Logins, cookies and cache cleared.",
         "cache_in_use": "Close the Nexus browser before clearing.",
+        "sidebar_keyboard": "Virtual keyboard",
+        "kb_title": "Keyboard",
+        "kb_hint": "Stick/arrows move \u2022 confirm types \u2022 B closes",
+        "kb_space": "space",
+        "kb_ok": "OK",
         "settings_title": "Settings",
         "theme_title": "Accent Color",
         "theme_close": "Close",
@@ -2491,6 +2582,10 @@ class NexusTextDialog:
                   bg=Config.ACCENT, fg="white", relief="flat", bd=0,
                   cursor="hand2", padx=36, pady=6,
                   command=self.confirm).pack(side="left", padx=8)
+        tk.Button(row, text="\u2328", font=("Segoe UI", 13),
+                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat", bd=0,
+                  cursor="hand2", padx=14, pady=6,
+                  command=lambda: self.app.open_keyboard(self.entry)).pack(side="left", padx=8)
         tk.Button(row, text=t("sidebar_close", lang), font=("Segoe UI", 13),
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat", bd=0,
                   cursor="hand2", padx=24, pady=6,
@@ -2544,8 +2639,226 @@ class NexusTextDialog:
             pass
 
 
+# ===================== NEXUS VIRTUAL KEYBOARD =====================
+class NexusKeyboard:
+    """Teclado virtual p/ controle: analogico/setas movem o cursor,
+    confirmar tecla. Tecla de verdade onde o foco estiver (Nexus e browser).
+    Sem grab: o foco pode ficar no campo de login do site."""
+
+    ROWS = [
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+        ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+        ["A", "S", "D", "F", "G", "H", "J", "K", "L", "\u232B"],
+        ["\u21E7", "Z", "X", "C", "V", "B", "N", "M", ",", "."],
+        ["@", "-", "_", "/", ":"],
+    ]
+
+    def __init__(self, app, entry=None):
+        self.app = app
+        self.entry = entry
+        self.closed = False
+        self.born = time.time()
+        self.shift = False
+        self.cur = [0, 0]
+        self.cells = []
+        try:
+            self.target_hwnd = foreground_hwnd()
+        except Exception:
+            self.target_hwnd = None
+        lang = app.lang
+
+        win = tk.Toplevel(app.root)
+        self.win = win
+        win.title(t("kb_title", lang))
+        win.configure(bg=Config.BG_SIDEBAR)
+        win.resizable(False, False)
+        win.update_idletasks()
+        try:
+            w = 620
+            x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
+            y = app.root.winfo_y() + app.root.winfo_height() - 480
+        except Exception:
+            x, y = 200, 150
+        win.geometry(f"{w}x430+{max(0, x)}+{max(0, y)}")
+        _apply_dark_title(win, "kbd")
+
+        tk.Label(win, text=f"\u2328 {t('kb_title', lang)}",
+                 font=("Segoe UI", 16, "bold"), fg=Config.ACCENT,
+                 bg=Config.BG_SIDEBAR).pack(pady=(12, 6))
+        tk.Label(win, text=t("kb_hint", lang), font=("Segoe UI", 11),
+                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR).pack(pady=(0, 6))
+
+        grid = tk.Frame(win, bg=Config.BG_SIDEBAR)
+        grid.pack()
+        for r, keys in enumerate(self.ROWS):
+            row_cells = []
+            for c, key in enumerate(keys):
+                b = tk.Button(grid, font=("Segoe UI", 14, "bold"),
+                              relief="flat", bd=0, cursor="hand2",
+                              width=4, height=1,
+                              command=lambda rr=r, cc=c: self._click(rr, cc))
+                b.grid(row=r, column=c, padx=3, pady=3)
+                b.bind("<Enter>", lambda e, rr=r, cc=c: self.set_cursor(rr, cc))
+                row_cells.append((key, b))
+            self.cells.append(row_cells)
+
+        bottom = tk.Frame(win, bg=Config.BG_SIDEBAR)
+        bottom.pack(pady=(8, 10))
+        tk.Button(bottom, text=t("kb_space", lang), font=("Segoe UI", 13, "bold"),
+                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
+                  bd=0, cursor="hand2", padx=60, pady=6,
+                  command=lambda: self.press_key(" ")).pack(side="left", padx=8)
+        tk.Button(bottom, text=t("kb_ok", lang), font=("Segoe UI", 13, "bold"),
+                  bg=Config.ACCENT, fg="white", relief="flat",
+                  bd=0, cursor="hand2", padx=40, pady=6,
+                  command=self.close).pack(side="left", padx=8)
+
+        self._paint()
+        win.bind("<Escape>", lambda e: self.close())
+        win.protocol("WM_DELETE_WINDOW", self.close)
+        app.kb_window = self
+
+    def _disp(self, key):
+        if len(key) == 1 and key.isalpha():
+            return key.upper() if self.shift else key.lower()
+        if key == "\u21E7":
+            return "\u21E7●" if self.shift else "\u21E7"
+        return key
+
+    def _paint(self):
+        for r, row in enumerate(self.cells):
+            for c, (key, b) in enumerate(row):
+                focused = (self.cur == [r, c])
+                b.configure(text=self._disp(key))
+                if focused:
+                    b.configure(bg=Config.ACCENT, fg="white",
+                                highlightbackground=Config.ACCENT_GLOW,
+                                highlightthickness=2)
+                else:
+                    b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                highlightbackground=Config.BORDER,
+                                highlightthickness=1)
+
+    def set_cursor(self, r, c):
+        if self.closed:
+            return
+        r = max(0, min(r, len(self.cells) - 1))
+        c = max(0, min(c, len(self.cells[r]) - 1))
+        self.cur = [r, c]
+        self._paint()
+
+    def on_hat(self, hat):
+        if self.closed:
+            return
+        r, c = self.cur
+        if hat == (0, 1):
+            r -= 1
+        elif hat == (0, -1):
+            r += 1
+        elif hat == (-1, 0):
+            c -= 1
+        elif hat == (1, 0):
+            c += 1
+        else:
+            return
+        r %= len(self.cells)
+        c %= len(self.cells[r])
+        self.set_cursor(r, c)
+
+    def _click(self, r, c):
+        self.set_cursor(r, c)
+        self.press_focused()
+
+    def press_focused(self):
+        if self.closed:
+            return
+        try:
+            key = self.cells[self.cur[0]][self.cur[1]][0]
+        except Exception:
+            return
+        self.press_key(key)
+
+    def press_key(self, key):
+        if self.closed:
+            return
+        if key == "\u21E7":
+            self.shift = not self.shift
+            self._paint()
+            return
+        if key == "\u232B":
+            self._erase()
+            return
+        ch = key.upper() if (len(key) == 1 and key.isalpha() and self.shift) else key
+        if len(key) == 1 and key.isalpha() and not self.shift:
+            ch = key.lower()
+        try:
+            ent = self.entry
+            if ent is not None and ent.winfo_exists():
+                ent.insert(tk.INSERT, ch)
+                return
+        except Exception:
+            pass
+        self._type_global(ch)
+
+    def _erase(self):
+        try:
+            ent = self.entry
+            if ent is not None and ent.winfo_exists():
+                pos = ent.index(tk.INSERT)
+                if pos > 0:
+                    ent.delete(pos - 1)
+                return
+        except Exception:
+            pass
+        self._type_global_key(VK_BACK)
+
+    def _own_hwnd(self):
+        try:
+            return int(self.win.winfo_id())
+        except Exception:
+            return None
+
+    def _type_global(self, text):
+        try:
+            hw = foreground_hwnd()
+            if not hw or hw == self._own_hwnd():
+                hw = self.target_hwnd
+            if hw:
+                bring_to_front(hw)
+                time.sleep(0.05)
+            type_text(self.app.root, text)
+        except Exception:
+            pass
+
+    def _type_global_key(self, vk):
+        try:
+            hw = foreground_hwnd()
+            if not hw or hw == self._own_hwnd():
+                hw = self.target_hwnd
+            if hw:
+                bring_to_front(hw)
+                time.sleep(0.05)
+            tap_key(vk)
+        except Exception:
+            pass
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            if self.app.kb_window is self:
+                self.app.kb_window = None
+        except Exception:
+            pass
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
+
+
 def top_modal(app):
-    """A janela modal mais nova ainda aberta (dialogo, menu ou texto)."""
+    """A janela modal mais nova ainda aberta (dialogo, menu, texto, teclado)."""
     cands = []
     try:
         d = app.open_dialog
@@ -2554,6 +2867,9 @@ def top_modal(app):
         m = app.active_menu
         if m is not None and not m.closed:
             cands.append(m)
+        k = getattr(app, "kb_window", None)
+        if k is not None and not k.closed:
+            cands.append(k)
     except Exception:
         pass
     if not cands:
@@ -3193,6 +3509,7 @@ class BigPictureApp:
         self.focus_mgr = FocusManager()
         self.nav_level = "tabs"
         self.sections = []
+        self.card_index = {}
         self.all_cards = []
         self.card_widgets = []
         self.carousel_cards = []
@@ -3200,6 +3517,7 @@ class BigPictureApp:
         self.active_menu = None
         self.pad_capture = None
         self.pad_window = None
+        self.kb_window = None
         self.lang = self.settings.get("language", "pt-br")
 
         self.build_ui()
@@ -3381,13 +3699,14 @@ class BigPictureApp:
             (t("tab_videos", self.lang), "videos"),
             (t("tab_all", self.lang), "all"),
         ]
-        for text, tid in tabs:
+        for idx, (text, tid) in enumerate(tabs):
             btn = tk.Button(self.nav_frame, text=text, font=("Segoe UI", 13),
                             bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
                             activebackground=Config.ACCENT, activeforeground="white",
                             relief="flat", cursor="hand2", bd=0,
                             command=lambda t=tid: self.switch_tab(t))
             btn.pack(side="left", padx=4)
+            btn.bind("<Enter>", lambda e, i=idx: self.sync_focus_to_tab(i))
             self.nav_buttons[tid] = btn
 
         right = tk.Frame(bar, bg=Config.BG_SIDEBAR)
@@ -3536,6 +3855,7 @@ class BigPictureApp:
             (t("settings_resolution", self.lang), self.open_resolution, "\U0001F5A9"),
             (t("settings_gamepad", self.lang), self.show_gamepad_info, "\U0001F3AE"),
             (t("settings_language", self.lang), self.open_language_picker, "\U0001F310"),
+            (t("sidebar_keyboard", self.lang), self.open_keyboard_sidebar, "\u2328"),
             (t("settings_clear_cache", self.lang), self.confirm_clear_browser_profile, "\U0001F9F9"),
         ]
 
@@ -3985,6 +4305,7 @@ class BigPictureApp:
         self.all_cards = []
         self.card_widgets = []
         self.sections = []
+        self.card_index = {}
         if tab == "home":
             # Legado: aba Home foi removida, mostra Todos
             tab = "all"
@@ -4095,6 +4416,7 @@ class BigPictureApp:
             card.grid(row=0, column=i, padx=7, pady=5, sticky="nsew")
             inner_frame.columnconfigure(i, weight=0)
             sec["widgets"].append(card)
+            self.card_index[card] = (len(self.sections), i)
 
         self.sections.append(sec)
 
@@ -4134,6 +4456,7 @@ class BigPictureApp:
             card = self.create_card(grid_frame, name)
             card.grid(row=i // 5, column=i % 5, padx=7, pady=5, sticky="nsew")
             sec_widgets.append(card)
+            self.card_index[card] = (len(self.sections), i)
 
         for c in range(5):
             grid_frame.columnconfigure(c, weight=1)
@@ -4208,6 +4531,7 @@ class BigPictureApp:
 
         def on_enter(e, c=card):
             c.configure(bg=Config.BG_CARD_HOVER, highlightbackground=Config.ACCENT, highlightthickness=2)
+            self.sync_focus_to_card(c)
 
         def on_leave(e, c=card):
             c.configure(bg=Config.BG_CARD, highlightbackground=Config.BORDER, highlightthickness=1)
@@ -4243,6 +4567,37 @@ class BigPictureApp:
         cat_lbl.bind("<Leave>", on_leave)
 
         return card
+
+    def sync_focus_to_tab(self, idx):
+        """Mouse sobre a aba vira o foco oficial (confirmar segue a seta)."""
+        try:
+            self.nav_level = "tabs"
+            self.focus_tab = idx
+            self.update_all_focus()
+        except Exception:
+            pass
+
+    def sync_focus_to_card(self, card):
+        """Mouse/seta sobre o card vira o foco oficial: o confirmar do
+        controle abre ONDE a seta esta, nao a selecao antiga."""
+        try:
+            pos = self.card_index.get(card)
+            if not pos:
+                return
+            row, col = pos
+            if row >= len(self.sections):
+                return
+            sec = self.sections[row]
+            if sec.get("canvas") is not None:
+                col = col - sec.get("scroll_offset", 0)
+            if col < 0:
+                return
+            self.nav_level = "items"
+            self.focus_mgr.focused_row = row
+            self.focus_mgr.focused_col = col
+            self.update_all_focus()
+        except Exception:
+            pass
 
     def on_card_click(self, name):
         self.ask_open_target(name)
@@ -4665,6 +5020,23 @@ class BigPictureApp:
             return
         GamepadConfigWindow(self)
 
+    def open_keyboard_sidebar(self):
+        self.close_sidebar()
+        self.open_keyboard()
+
+    def open_keyboard(self, entry=None):
+        try:
+            kb = self.kb_window
+            if kb is not None and not kb.closed:
+                try:
+                    kb.win.lift()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        NexusKeyboard(self, entry)
+
     def confirm_clear_browser_profile(self):
         self.close_sidebar()
         if browser_running():
@@ -4737,6 +5109,11 @@ class BigPictureApp:
                 e.grid(row=i, column=1, pady=10)
                 e.insert(0, default)
                 self.add_entries[label] = e
+                tk.Button(form, text="\u2328", font=("Segoe UI", 12),
+                          bg=Config.BG_CARD, fg=Config.TEXT_SECONDARY,
+                          relief="flat", bd=0, cursor="hand2", padx=8,
+                          command=lambda ent=e: self.open_keyboard(ent)).grid(
+                    row=i, column=2, padx=(8, 0))
 
         tk.Button(form, text=f"{t('add_submit', self.lang)} \u2192", font=("Segoe UI", 15, "bold"),
                   bg=Config.ACCENT, fg="white", activebackground=Config.ACCENT_GLOW,
