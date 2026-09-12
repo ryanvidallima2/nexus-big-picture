@@ -132,7 +132,7 @@ def _show_pad_toast(window, pad_label):
     """Injeta o aviso do controle identificado (aguarda a pagina carregar)."""
     if not pad_label:
         return
-    text = ("\\U0001F3AE " + pad_label + "  \u2022  F11: tela cheia")
+    text = ("\\U0001F3AE " + pad_label + "  \u2022  setas: quadros  \u2022  A abre  \u2022  F11: tela cheia")
     text = text.replace("\\", "\\\\").replace("'", "\\'")
     js = _TOAST_JS % ("'" + text + "'")
     for _ in range(12):
@@ -145,16 +145,85 @@ def _show_pad_toast(window, pad_label):
 
 
 def _ensure_chrome(window):
-    """Mantem barra/modal/F11 vivos mesmo quando o site troca de pagina."""
+    """Mantem barra/modal/F11 e o modo console vivos (sites trocam de pagina)."""
     for _ in range(300):  # ~10 min de vigilancia
         time.sleep(2.0)
         try:
             window.evaluate_js(_CHROME_JS)
         except Exception:
+            pass
+        try:
+            window.evaluate_js(_NAV_JS)
+        except Exception:
             try:
                 time.sleep(2.0)
             except Exception:
                 pass
+
+
+# Modo console: analógico/D-pad seleciona os quadros (filmes, series)
+# como num videogame. Anel roxo, navegacao espacial, A abre, B volta.
+_NAV_JS = """try{
+if(!window.__nexusNav){
+window.__nexusNav={idx:-1,prev:null};
+window.__nexusNavCollect=function(){
+var sel='a[href],button,input,select,textarea,video,[role="button"],[tabindex]:not([tabindex="-1"])';
+var out=[],els=document.querySelectorAll(sel);
+for(var i=0;i<els.length;i++){var el=els[i];try{var r=el.getBoundingClientRect();
+if(r.width>40&&r.height>20&&r.bottom>0&&r.top<window.innerHeight&&r.right>0&&r.left<window.innerWidth&&!el.disabled)out.push(el);}catch(e){}}
+return out;};
+window.__nexusNavFocus=function(el){
+var N=window.__nexusNav;
+if(N.prev){try{N.prev.style.outline=N.prev._nxO||'';N.prev.style.outlineOffset=N.prev._nxOO||'';N.prev.style.transform=N.prev._nxT||'';}catch(e){}N.prev=null;}
+if(!el){N.idx=-1;return 'cleared';}
+try{el._nxO=el.style.outline;el._nxOO=el.style.outlineOffset;el._nxT=el.style.transform;
+el.style.outline='3px solid #7c4dff';el.style.outlineOffset='2px';el.style.transform='scale(1.04)';
+if(el.scrollIntoView)el.scrollIntoView({block:'nearest',inline:'nearest'});
+try{el.focus({preventScroll:true});}catch(e){try{el.focus();}catch(e2){}}
+N.prev=el;}catch(e){}
+return 'ok';};
+window.__nexusNavMove=function(dir){
+var items=window.__nexusNavCollect();var N=window.__nexusNav;
+if(!items.length){return 'empty';}
+var cx=window.innerWidth/2,cy=window.innerHeight/2,cur=null;
+if(N.prev&&document.contains(N.prev)){try{var r=N.prev.getBoundingClientRect();cx=r.left+r.width/2;cy=r.top+r.height/2;cur=N.prev;}catch(e){}}
+var best=null,bestScore=1e12;
+for(var i=0;i<items.length;i++){var el=items[i];if(el===cur)continue;
+try{var q=el.getBoundingClientRect();var ex=q.left+q.width/2-cx,ey=q.top+q.height/2-cy;
+var ok=dir==='left'?ex<-4:dir==='right'?ex>4:dir==='up'?ey<-4:ey>4;
+if(!ok)continue;
+var score=(dir==='left'||dir==='right')?Math.abs(ex)+Math.abs(ey)*2.5:Math.abs(ey)+Math.abs(ex)*2.5;
+if(score<bestScore){bestScore=score;best=el;}}catch(e){}}
+if(!best){best=items[0];}
+N.idx=items.indexOf(best);
+return window.__nexusNavFocus(best)+' '+(N.idx+1)+'/'+items.length;};
+window.__nexusNavClick=function(){
+var N=window.__nexusNav;var el=(N.prev&&document.contains(N.prev))?N.prev:null;
+if(!el){var items=window.__nexusNavCollect();if(!items.length)return 'empty';el=items[0];}
+try{el.click();return 'clicked';}catch(e){return 'fail';}};
+window.__nexusNavCount=function(){return window.__nexusNavCollect().length;};
+document.addEventListener('keydown',function(ev){
+if(!ev)return;
+var q=document.getElementById('nexus-quit');
+if(q&&q.style.display==='flex')return;
+var ae=null;try{ae=document.activeElement;}catch(e){}
+var typing=ae&&((ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT')||ae.isContentEditable);
+if(ev.key==='ArrowUp'||ev.key==='ArrowDown'||ev.key==='ArrowLeft'||ev.key==='ArrowRight'){
+if(typing)return;
+try{ev.preventDefault();}catch(e){}
+var d=ev.key==='ArrowUp'?'up':ev.key==='ArrowDown'?'down':ev.key==='ArrowLeft'?'left':'right';
+window.__nexusNavMove(d);}
+else if(ev.key==='Enter'){
+var N=window.__nexusNav;
+if(!typing&&N.prev&&document.contains(N.prev)){try{ev.preventDefault();}catch(e){}window.__nexusNavClick();}}
+else if(ev.key==='Escape'){
+if(typing)return;
+if(document.fullscreenElement)return;
+try{history.back();}catch(e){}}
+},true);
+}
+'nav-ready';
+}catch(e){'nav-fail';}"""
 
 
 def main():

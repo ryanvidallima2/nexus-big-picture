@@ -785,6 +785,16 @@ def bring_to_front(hwnd):
     return False
 
 
+def _set_cursor_pos(x, y):
+    try:
+        if _WIN32_OK:
+            ctypes.windll.user32.SetCursorPos(int(x), int(y))
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def foreground_hwnd():
     try:
         if _WIN32_OK:
@@ -1431,12 +1441,16 @@ class GamepadManager:
                     pw.sens_or_move(ndir)
             elif ndir == (0, 1):
                 self.app._nav("up")
+                self.app.warp_to_focus()
             elif ndir == (0, -1):
                 self.app._nav("down")
+                self.app.warp_to_focus()
             elif ndir == (-1, 0):
                 self.app._nav("left")
+                self.app.warp_to_focus()
             elif ndir == (1, 0):
                 self.app._nav("right")
+                self.app.warp_to_focus()
 
     def _poll_menu_sticks(self):
         """Analogicos nos menus: esquerdo navega (com repeticao),
@@ -1518,12 +1532,16 @@ class GamepadManager:
                                 pw.sens_or_move(hat)
                         elif hat == (0, 1):
                             self.app._nav("up")
+                            self.app.warp_to_focus()
                         elif hat == (0, -1):
                             self.app._nav("down")
+                            self.app.warp_to_focus()
                         elif hat == (-1, 0):
                             self.app._nav("left")
+                            self.app.warp_to_focus()
                         elif hat == (1, 0):
                             self.app._nav("right")
+                            self.app.warp_to_focus()
             else:
                 self.hat_debounce.clear()
 
@@ -1682,7 +1700,10 @@ class GamepadManager:
                 else:
                     action = self.app.remote_action_for(logical)
                     if action == "click_left":
-                        mouse_click(right=False)
+                        if self.app.browser_nav_active():
+                            tap_key(VK_RETURN)  # modo console: A abre o quadro
+                        else:
+                            mouse_click(right=False)
                     elif action == "click_right":
                         mouse_click(right=True)
                     elif action == "enter":
@@ -3572,6 +3593,7 @@ class BigPictureApp:
         self.pad_capture = None
         self.pad_window = None
         self.kb_window = None
+        self.browser_remote = None
         self.lang = self.settings.get("language", "pt-br")
 
         self.build_ui()
@@ -3973,10 +3995,10 @@ class BigPictureApp:
         self.root.bind("<Escape>", lambda e: self.go_back())
         self.root.bind("<F11>", lambda e: self.toggle_fullscreen())
         self.root.bind("<F5>", lambda e: self.refresh_ui())
-        self.root.bind("<Left>", lambda e: self._nav("left"))
-        self.root.bind("<Right>", lambda e: self._nav("right"))
-        self.root.bind("<Up>", lambda e: self._nav("up"))
-        self.root.bind("<Down>", lambda e: self._nav("down"))
+        self.root.bind("<Left>", lambda e: self._nav_keys("left"))
+        self.root.bind("<Right>", lambda e: self._nav_keys("right"))
+        self.root.bind("<Up>", lambda e: self._nav_keys("up"))
+        self.root.bind("<Down>", lambda e: self._nav_keys("down"))
         self.root.bind("<Return>", lambda e: self.select_current())
         self.root.bind("<space>", lambda e: self.select_current())
         self.root.bind("<Control-q>", lambda e: self.toggle_sidebar())
@@ -3987,6 +4009,10 @@ class BigPictureApp:
         self.root.bind("<FocusIn>", lambda e: self._on_focus_in())
 
     # ===================== NAVIGATION =====================
+    def _nav_keys(self, direction):
+        self._nav(direction)
+        self.warp_to_focus()
+
     def _at_top(self, canvas):
         try:
             return canvas.yview()[0] <= 0.0
@@ -4224,6 +4250,7 @@ class BigPictureApp:
             sec["scroll_offset"] = 0
             self._update_carousel_scroll(sec)
         self.update_all_focus()
+        self.warp_to_focus()
 
     def _update_carousel_scroll(self, sec):
         canvas = sec["canvas"]
@@ -4334,11 +4361,13 @@ class BigPictureApp:
         tabs = TABS
         idx = tabs.index(self.current_tab) if self.current_tab in tabs else 0
         self.switch_tab(tabs[(idx - 1) % len(tabs)])
+        self.warp_to_focus()
 
     def tab_next(self):
         tabs = TABS
         idx = tabs.index(self.current_tab) if self.current_tab in tabs else 0
         self.switch_tab(tabs[(idx + 1) % len(tabs)])
+        self.warp_to_focus()
 
     def update_tab_highlight(self):
         tabs = TABS
@@ -4631,6 +4660,49 @@ class BigPictureApp:
         except Exception:
             pass
 
+    def warp_to_focus(self):
+        """Cursor do mouse vai para o item focado: cursor e foco viram
+        UMA selecao so. So quando o Nexus esta em primeiro plano e sem
+        modal/remoto (nunca puxa o cursor do usuario a toa)."""
+        try:
+            gp = self.gamepad
+            if not gp or not gp.running or gp.joystick is None:
+                return
+            if gp.remote_active:
+                return
+            if top_modal(self) is not None:
+                return
+            if self.nexus_hwnd() != foreground_hwnd():
+                return
+            w = None
+            if self.nav_level == "tabs":
+                tids = list(self.nav_buttons.keys())
+                if 0 <= self.focus_tab < len(tids):
+                    w = self.nav_buttons[tids[self.focus_tab]]
+            elif self.nav_level == "items" and self.sections:
+                row = min(self.focus_mgr.focused_row, len(self.sections) - 1)
+                sec = self.sections[row]
+                if sec.get("canvas") is None:
+                    j = self.focus_mgr.focused_col
+                else:
+                    j = sec.get("scroll_offset", 0) + self.focus_mgr.focused_col
+                widgets = sec.get("widgets", [])
+                if 0 <= j < len(widgets):
+                    w = widgets[j]
+            if w is None:
+                return
+            try:
+                if not w.winfo_exists():
+                    return
+                w.update_idletasks()
+                x = w.winfo_rootx() + w.winfo_width() // 2
+                y = w.winfo_rooty() + w.winfo_height() // 2
+            except Exception:
+                return
+            _set_cursor_pos(x, y)
+        except Exception:
+            pass
+
     def sync_focus_to_card(self, card):
         """Mouse/seta sobre o card vira o foco oficial: o confirmar do
         controle abre ONDE a seta esta, nao a selecao antiga."""
@@ -4815,6 +4887,10 @@ class BigPictureApp:
             except Exception:
                 pass
         try:
+            self.browser_remote = None
+        except Exception:
+            pass
+        try:
             gp = self.gamepad
             if gp:
                 gp.remote_active = False
@@ -4875,6 +4951,7 @@ class BigPictureApp:
             alive = False
         if alive:
             self.enter_remote_mode(service, watch=[])
+            self.browser_remote = service
             self.monitor_browser_process(proc, service)
         else:
             try:
@@ -4905,6 +4982,16 @@ class BigPictureApp:
             except Exception:
                 pass
 
+    def browser_nav_active(self):
+        """Remoto comandando o navegador embutido (modo console nos quadros)."""
+        try:
+            gp = self.gamepad
+            return bool(gp and gp.remote_active
+                        and getattr(self, "browser_remote", None)
+                        and any(p.poll() is None for p in BROWSER_PROCS))
+        except Exception:
+            return False
+
     def monitor_browser_process(self, proc, service):
         """Sai do remoto quando o navegador embutido fechar. Se ele morrer
         rapido (<5s, ex. WebView2 indisponivel), cai para o navegador externo."""
@@ -4926,6 +5013,11 @@ class BigPictureApp:
         try:
             if proc in BROWSER_PROCS:
                 BROWSER_PROCS.remove(proc)
+        except Exception:
+            pass
+        try:
+            if getattr(self, "browser_remote", None) == service:
+                self.browser_remote = None
         except Exception:
             pass
         try:
