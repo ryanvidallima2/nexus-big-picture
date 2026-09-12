@@ -1,0 +1,26 @@
+# Nexus - Big Picture: o que NAO vai para o GitHub
+# (dados locais, especificos desta maquina)
+
+# Banco local e configuracoes pessoais (cores, favoritos, historico, GUID do controle)
+nexus.db
+settings.json
+
+# Logs e erros locais
+nexus_error.log
+*.log
+
+# Cache Python
+__pycache__/
+*.py[cod]
+
+# Config de pasta do Windows (contem caminho absoluto desta maquina)
+desktop.ini
+
+# Perfil do navegador embutido (logins, cookies, senhas!) fica fora do projeto,
+# em %LOCALAPPDATA%\Nexus - nunca commitar credenciais
+browser_profile/
+
+# Editores / SO
+.vscode/
+.idea/
+Thumbs.db

@@ -1,0 +1,86 @@
+# Nexus - Big Picture v5.0
+
+Interface de streaming inspirada no Steam Big Picture Mode.
+
+## Recursos
+
+- **Design Big Picture**: Cards grandes com cores do servico, hover effects, fundo escuro imersivo
+- **32 Streamings**: Netflix, YouTube, Spotify, Disney+, Amazon Prime, HBO Max, Twitch, Crunchyroll, e mais
+- **Deep Links**: Abre filmes/series diretamente no app ou navegador
+- **Banco SQLite**: Historico de assistidos e estatisticas
+- **Sidebar**: Painel lateral estilo Steam com historico, favoritos, configuracoes
+- **Navegacao por teclado**: Setas para navegar, Enter para selecionar, Esc para voltar
+- **Gamepad**: Suporte universal (Xbox, PlayStation, Switch, genericos) via pygame + SDL - deteccao automatica do tipo com nomes de botoes de cada familia (A vs. X vs. B...), D-pad por hat ou botoes conforme o controle
+- **Seletor de controle**: Configuracoes > Controles lista todos os conectados (cabo, Bluetooth, 2.4GHz, virtuais) com tipo e conexao/bateria; troca com 1 clique, hot-plug e memoria por aparelho
+- **Otimizacao por conexao**: zona morta ajustavel (ideal p/ drift no Bluetooth), calibracao automatica, polling 60Hz; dongle 2.4GHz aparece como Cabo (latencia minima)
+- **Abas**: Home, Favoritos, Filmes, Musica, Videos, Todos
+- **Busca**: Pesquisa por nome em tempo real
+- **Logos**: Sistema automatico de busca por `{nome}_logo.{ext}` na pasta `streaming_images`
+- **Trocar logo**: Clique direito > Trocar Logo
+- **Adicionar streaming**: Formulario completo com nome, URL, categoria e logo
+- **Favoritos**: Adicionar/remover com clique direito
+- **Navegador embutido**: botao Site abre o servico em tela cheia sem bordas numa janela do proprio Nexus (WebView2), com transicao e mesmo icone na barra de tarefas - parece um app so. Barra discreta com minimizar/fechar, F11 p/ tela cheia e confirmacao de saida
+- **Logins salvos**: perfil persistente mantem logins, cookies e senhas entre sessoes; limpeza em Configuracoes > Limpar logins e cache
+- **Apps em tela cheia**: botao App forca o aplicativo a fullscreen sem bordas (modo big picture)
+- **Instalacao automatica**: botao App baixa e instala sozinho via winget/Store quando o app nao esta instalado
+- **Resolucoes**: Tela cheia, 1920x1080, 1400x900, 1280x720, Janela
+- **Temas**: 8 cores de destaque disponiveis
+
+## Como Rodar
+
+1. Duplo clique em **`start.bat`**
+2. Ou no Prompt: `python bigpicture.py`
+
+## Atalhos de Teclado
+
+| Tecla | Funcao |
+|-------|--------|
+| Setas | Navegar entre cards |
+| Enter / Espaco | Abrir streaming selecionado |
+| Esc | Voltar / Fechar sidebar |
+| F11 | Tela cheia |
+| F5 | Atualizar |
+| Ctrl+Q | Abrir sidebar |
+
+## Controles do Gamepad
+
+| Botao | Funcao |
+|-------|--------|
+| A / X | Selecionar |
+| B / Circulo | Voltar |
+| D-Pad | Navegar |
+| LB / RB | Trocar aba |
+| Start | Abrir sidebar |
+
+## Streamings Incluidos (32)
+
+Netflix, YouTube, Spotify, Disney+, Amazon Prime, HBO Max, Twitch, Crunchyroll,
+Dailymotion, Bandcamp, SoundCloud, Pluto TV, Apple TV, Peacock, Paramount+,
+Discovery+, Globoplay, Vix, Curiosity Stream, MUBI, Shudder, BritBox, Tubi,
+Plex, Kodi, Jellyfin, Mixer, Vimeo, Rumble, Tidal, Deezer, Mixcloud
+
+## Requisitos
+
+- Windows 10 ou superior
+- Python 3.12
+- Pillow (`pip install Pillow`)
+- pygame (`pip install pygame`) - opcional, para gamepad
+- pywebview (`pip install pywebview`) - navegador embutido (usa o WebView2 do Windows)
+- winget (ja vem no Windows 10/11) - instalacao automatica de apps
+- Internet
+
+## Estrutura de Pastas
+
+```
+Default Project/
+├── bigpicture.py          # Codigo principal
+├── nexus_browser.py       # Janela do navegador embutido (Site)
+├── start.bat              # Launcher
+├── settings.json          # Configuracoes salvas
+├── nexus.db               # Banco SQLite (criado automaticamente)
+├── streaming_images/      # Logos dos streamings
+│   ├── Netflix_logo.jpg
+│   ├── YouTube_logo.png
+│   └── ... (32 arquivos)
+└── README.md              # Este arquivo
+```
