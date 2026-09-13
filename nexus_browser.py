@@ -145,20 +145,19 @@ def _show_pad_toast(window, pad_label):
 
 
 def _ensure_chrome(window):
-    """Mantem barra/modal/F11 e o modo console vivos (sites trocam de pagina)."""
-    for _ in range(300):  # ~10 min de vigilancia
+    """Mantem barra/modal/F11 e o modo console vivos (sites trocam de pagina).
+    Roda a sessao inteira; para apos falhas seguidas (janela fechada)."""
+    fails = 0
+    while True:
         time.sleep(2.0)
         try:
             window.evaluate_js(_CHROME_JS)
-        except Exception:
-            pass
-        try:
             window.evaluate_js(_NAV_JS)
+            fails = 0
         except Exception:
-            try:
-                time.sleep(2.0)
-            except Exception:
-                pass
+            fails += 1
+            if fails >= 30:
+                return
 
 
 # Modo console: analógico/D-pad seleciona os quadros (filmes, series)
