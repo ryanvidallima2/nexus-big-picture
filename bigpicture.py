@@ -855,6 +855,8 @@ VK_BACK = 0x08
 VK_TAB = 0x09
 VK_PRIOR = 0x21
 VK_NEXT = 0x22
+VK_F7 = 0x76
+VK_F8 = 0x77
 VK_MEDIA_NEXT = 0xB0
 VK_MEDIA_PREV = 0xB1
 VK_MEDIA_STOP = 0xB2
@@ -1651,7 +1653,7 @@ class GamepadManager:
                         if action == "select":
                             self.app.select_current()
                         elif action == "back":
-                            self.app.go_back()
+                            self.app.controller_back()
                         elif action == "cards":
                             self.app.go_to_cards()
                         elif action == "sidebar":
@@ -4621,6 +4623,21 @@ class BigPictureApp:
             self.nav_level = "tabs"
             self.update_all_focus()
 
+    def controller_back(self):
+        """Bola no menu principal (nada aberto, ja nas abas) = sair ou nao.
+        Em qualquer outro lugar, voltar normal."""
+        try:
+            if (not self.sidebar_visible
+                    and not getattr(self, "qa_visible", False)
+                    and self.nav_level == "tabs"
+                    and top_modal(self) is None
+                    and not _modal_alive(self.pad_window)):
+                self.confirm_quit()
+                return
+        except Exception:
+            pass
+        self.go_back()
+
     def go_to_cards(self):
         # Botao X do controle: foca direto no primeiro card da aba atual
         if self.sidebar_visible:
@@ -5156,11 +5173,11 @@ class BigPictureApp:
             return True
 
     def remote_tab(self, prev):
-        """LB/RB: no navegador embutido (janela unica) pula a pagina;
-        em apps/navegadores externos troca de aba de verdade."""
+        """LB/RB: no navegador embutido percorre as abas de categoria (F7/F8);
+        em apps/navegadores externos troca de aba de verdade (Ctrl+Tab)."""
         try:
             if self.browser_nav_active():
-                tap_key(VK_PRIOR if prev else VK_NEXT)
+                tap_key(VK_F7 if prev else VK_F8)
             else:
                 ctrl_tab(prev=prev)
         except Exception:

@@ -25,7 +25,8 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **Leitura rapida**: logos com cache de caminho e miniaturas otimizadas; abertura de sites ~2x mais rapida
 - **Teclado virtual**: ⌨ na sidebar e nos campos de texto - analogico/setas movem, confirmar tecla; tecla de verdade onde o foco estiver (vale nos logins do navegador). Abre sozinho ao clicar no campo; detecta numerico (123) vs letras, com alternador manual
 - **Foco unificado**: cursor do mouse e selecao sao uma coisa so - navegar com controle/teclado leva o cursor junto; apontar com o mouse leva o foco junto
-- **Modo console nos sites**: no navegador embutido, setas/analogico selecionam os quadros (filmes, series) com anel roxo como num videogame, rolando o catalogo sozinho; A abre, B volta. LB/RB pulam a pagina; em navegadores externos trocam de aba de verdade
+- **Modo console nos sites**: no navegador embutido, setas/analogico selecionam os quadros (filmes, series) com anel roxo como num videogame, rolando o catalogo sozinho; A abre, B volta. R1/L1 percorrem as abas de categoria; modal flutuante (ex. preview Netflix) ganha prioridade automatica
+- **Bola no menu principal**: pergunta sair ou nao sair do aplicativo
 - **Midia no controle**: botao Back/View = play/pause universal (Spotify, Netflix, YouTube); proxima/anterior remapeaveis em Controles
 - **Shoulders e gatilhos**: LB/RB trocam abas dentro dos apps (Ctrl+Tab); LT/RT controlam o volume (com repeticao ao segurar)
 - **L1/R1/L2/R2 no PS**: abas em L1/R1 e volume em L2/R2 como acoes mapeaveis (eixo analogico comanda junto, sem duplo)
