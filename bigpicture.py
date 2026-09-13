@@ -252,6 +252,8 @@ DEFAULT_SETTINGS = {
     "embedded_browser": True,
     "pad_device_guid": "",
     "pad_deadzone": 22,
+    "pad_profiles": {},
+    "pad_profile_active": 1,
 }
 
 
@@ -1092,12 +1094,15 @@ DEFAULT_NEXUS_MAP = {"select": 0, "back": 1, "cards": 2,
 DEFAULT_REMOTE_MAP = {"click_left": 0, "back": 1, "click_right": 2,
                        "fullscreen": 3, "app_tab_prev": 4, "app_tab_next": 5,
                        "space": 8, "enter": 9, "play_pause": 6}
+NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_next"]
 REMOTE_ACTION_ORDER = ["click_left", "click_right", "enter", "back",
                        "space", "fullscreen", "vol_down", "vol_up",
                        "play_pause", "next_track", "prev_track",
                        "app_tab_prev", "app_tab_next"]
 DEFAULT_PAD_SENSITIVITY = 12
 DEFAULT_PAD_SCROLL = 8
+DEFAULT_PAD_DEADZONE = 22
+PAD_PROFILE_SLOTS = (1, 2, 3)
 
 
 def invert_map(m):
@@ -2038,6 +2043,14 @@ TRANSLATIONS = {
         "pad_rescan": "Atualizar lista",
         "pad_deadzone": "Zona morta do analogico:",
         "pad_test_idle": "Pressione botoes p/ testar o controle aqui",
+        "pad_profile": "Perfil de botoes:",
+        "pad_profile_default": "Padrao",
+        "pad_profile_empty": "Perfil {n}",
+        "pad_save": "Salvar",
+        "pad_rename": "Renomear",
+        "pad_rename_title": "Nome do perfil",
+        "pad_rename_prompt": "Nome:",
+        "pad_profile_saved": "Perfil salvo!",
         "pad_conn_wired": "\U0001F50C Cabo (latencia minima)",
         "pad_batt_empty": "\U0001FAAB Bateria esgotando (sem fio)",
         "pad_batt_low": "\U0001FAAB Bateria baixa (sem fio)",
@@ -2170,6 +2183,14 @@ TRANSLATIONS = {
         "pad_rescan": "Refresh list",
         "pad_deadzone": "Stick deadzone:",
         "pad_test_idle": "Press buttons to test the controller here",
+        "pad_profile": "Button profile:",
+        "pad_profile_default": "Default",
+        "pad_profile_empty": "Profile {n}",
+        "pad_save": "Save",
+        "pad_rename": "Rename",
+        "pad_rename_title": "Profile name",
+        "pad_rename_prompt": "Name:",
+        "pad_profile_saved": "Profile saved!",
         "pad_conn_wired": "\U0001F50C Wired (lowest latency)",
         "pad_batt_empty": "\U0001FAAB Battery critical (wireless)",
         "pad_batt_low": "\U0001FAAB Battery low (wireless)",
@@ -3264,6 +3285,102 @@ class GamepadConfigWindow:
         self.refresh_device_bar()
         self.refresh()
 
+    def _profile_section(self):
+        """3 slots de mapeamento: 1 = padrao, 2/3 salvos pelo usuario."""
+        lang = self.app.lang
+        tk.Label(self.rows_frame, text=t("pad_profile", lang), font=("Segoe UI", 16, "bold"),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_PRIMARY, anchor="w").pack(
+                     fill="x", pady=(14, 2))
+        tk.Frame(self.rows_frame, bg=Config.ACCENT, height=2, width=120).pack(anchor="w")
+        try:
+            active = int(self.app.settings.get("pad_profile_active", 1))
+        except Exception:
+            active = 1
+        for slot in PAD_PROFILE_SLOTS:
+            row = tk.Frame(self.rows_frame, bg=Config.BG_PRIMARY)
+            row.pack(fill="x", pady=2)
+            name = self.app.pad_profile_name(slot)
+            is_active = (slot == active)
+            b = tk.Button(row, text=("\u2713 " if is_active else "") + name,
+                          font=("Segoe UI", 13, "bold"),
+                          fg="white" if is_active else Config.TEXT_PRIMARY,
+                          bg=Config.ACCENT if is_active else Config.BG_CARD,
+                          activebackground=Config.ACCENT, activeforeground="white",
+                          relief="flat", bd=0, cursor="hand2", anchor="w", padx=18,
+                          highlightthickness=1, highlightbackground=Config.BORDER,
+                          command=lambda s=slot: self._pick_profile(s))
+            b.pack(side="left", fill="x", expand=True)
+            self.focus_items.append(("profile", b, slot))
+            if slot in (2, 3):
+                sv = tk.Button(row, text=t("pad_save", lang), font=("Segoe UI", 12),
+                               fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
+                               activebackground=Config.ACCENT, activeforeground="white",
+                               relief="flat", bd=0, cursor="hand2", padx=14,
+                               highlightthickness=1, highlightbackground=Config.BORDER,
+                               command=lambda s=slot: self._save_profile(s))
+                sv.pack(side="left", padx=(8, 0))
+                self.focus_items.append(("psave", sv, slot))
+                rn = tk.Button(row, text="\u270E", font=("Segoe UI", 12),
+                               fg=Config.TEXT_SECONDARY, bg=Config.BG_CARD,
+                               activebackground=Config.ACCENT, activeforeground="white",
+                               relief="flat", bd=0, cursor="hand2", padx=12,
+                               highlightthickness=1, highlightbackground=Config.BORDER,
+                               command=lambda s=slot: self._rename_profile(s))
+                rn.pack(side="left", padx=(8, 0))
+                self.focus_items.append(("prename", rn, slot))
+
+    def _pick_profile(self, slot):
+        try:
+            self.app.load_pad_profile(slot)
+        except Exception:
+            pass
+
+    def _save_profile(self, slot):
+        try:
+            if self.app.save_pad_profile(slot):
+                self.flash_saved()
+                self.refresh()
+        except Exception:
+            pass
+
+    def _rename_profile(self, slot):
+        try:
+            lang = self.app.lang
+            current = self.app.pad_profile_name(slot)
+            NexusTextDialog(self.app, t("pad_rename_title", lang),
+                            t("pad_rename_prompt", lang), current,
+                            lambda name: self._finish_rename(slot, name))
+        except Exception:
+            pass
+
+    def _finish_rename(self, slot, name):
+        try:
+            if name and name.strip():
+                self.app.rename_pad_profile(slot, name)
+            if not self.closed:
+                self.refresh()
+        except Exception:
+            pass
+
+    def flash_saved(self):
+        if self.closed:
+            return
+        try:
+            self.capture_lbl.configure(text=t("pad_profile_saved", self.app.lang))
+            token = self.capture_token + 1
+            self.capture_token = token
+            self.win.after(2000, lambda: self._clear_flash(token))
+        except Exception:
+            pass
+
+    def _clear_flash(self, token):
+        try:
+            if not self.closed and token == self.capture_token:
+                if self.app.pad_capture is None:
+                    self.capture_lbl.configure(text="")
+        except Exception:
+            pass
+
     def _section(self, title_key, section, order, base_map, settings_key, extra=None):
         lang = self.app.lang
         tk.Label(self.rows_frame, text=t(title_key, lang), font=("Segoe UI", 16, "bold"),
@@ -3337,9 +3454,9 @@ class GamepadConfigWindow:
             dead_lbl.pack(side="left")
             self.focus_items.append(("dead", dead_lbl))
             try:
-                dz_val = int(self.app.settings.get("pad_deadzone", 22))
+                dz_val = int(self.settings.get("pad_deadzone", DEFAULT_PAD_DEADZONE))
             except Exception:
-                dz_val = 22
+                dz_val = DEFAULT_PAD_DEADZONE
             self.dead_var = tk.IntVar(value=min(40, max(5, dz_val)))
             sc3 = tk.Scale(dzrow, from_=5, to=40, orient="horizontal", length=220,
                            showvalue=True, bg=Config.BG_PRIMARY, fg=Config.TEXT_PRIMARY,
@@ -3377,6 +3494,7 @@ class GamepadConfigWindow:
         for w in self.rows_frame.winfo_children():
             w.destroy()
         self.focus_items = []
+        self._profile_section()
         self._section("pad_nexus_sec", "nexus", NEXUS_ACTION_ORDER,
                       DEFAULT_NEXUS_MAP, "pad_nexus")
         tk.Label(self.rows_frame, text=t("pad_fixed_dpad", self.app.lang),
@@ -3440,6 +3558,10 @@ class GamepadConfigWindow:
             try:
                 if kind in ("sens", "scroll", "dead"):
                     widget.configure(fg=Config.ACCENT_GLOW if focused else Config.TEXT_PRIMARY)
+                elif kind in ("profile", "psave", "prename"):
+                    widget.configure(highlightthickness=2 if focused else 1,
+                                     highlightbackground=Config.ACCENT_GLOW if focused
+                                     else Config.BORDER)
                 elif focused:
                     widget.configure(bg=Config.ACCENT, fg="white")
                 elif kind == "reset":
@@ -3458,6 +3580,12 @@ class GamepadConfigWindow:
                 self.app.start_pad_capture(item[2], item[3])
             elif item[0] == "reset":
                 self._reset(item[2])
+            elif item[0] == "profile":
+                self._pick_profile(item[2])
+            elif item[0] == "psave":
+                self._save_profile(item[2])
+            elif item[0] == "prename":
+                self._rename_profile(item[2])
         except Exception:
             pass
 
@@ -5009,7 +5137,7 @@ class BigPictureApp:
         """Zona morta dos analogicos (0.05-0.40). Maior = melhor p/ BT com drift."""
         try:
             return min(0.40, max(0.05, float(self.settings.get(
-                "pad_deadzone", 22)) / 100.0))
+                "pad_deadzone", DEFAULT_PAD_DEADZONE)) / 100.0))
         except Exception:
             return 0.22
 
@@ -5043,6 +5171,93 @@ class BigPictureApp:
             if ok and _modal_alive(self.pad_window):
                 self.pad_window.refresh()
             return ok
+        except Exception:
+            return False
+
+    # ---------- perfis de mapeamento (3 slots) ----------
+    def pad_profile_name(self, slot):
+        if slot == 1:
+            try:
+                return t("pad_profile_default", self.lang)
+            except Exception:
+                return "Padr\u00E3o"
+        try:
+            prof = (self.settings.get("pad_profiles", {}) or {}).get(str(slot), {})
+            name = (prof.get("name", "") or "").strip()
+            if name:
+                return name[:18]
+        except Exception:
+            pass
+        try:
+            return t("pad_profile_empty", self.lang).replace("{n}", str(slot))
+        except Exception:
+            return "Perfil %d" % slot
+
+    def pad_profile_snapshot(self):
+        try:
+            return {
+                "nexus": dict(self.settings.get("pad_nexus", {}) or {}),
+                "remote": dict(self.settings.get("pad_remote", {}) or {}),
+                "sensitivity": self.settings.get("pad_sensitivity", DEFAULT_PAD_SENSITIVITY),
+                "scroll": self.settings.get("pad_scroll", DEFAULT_PAD_SCROLL),
+                "deadzone": self.settings.get("pad_deadzone", DEFAULT_PAD_DEADZONE),
+            }
+        except Exception:
+            return {"nexus": {}, "remote": {}}
+
+    def save_pad_profile(self, slot):
+        """Salva o mapeamento atual no slot 2 ou 3 (o 1 e sempre o padrao)."""
+        if slot not in (2, 3):
+            return False
+        try:
+            if self.pad_capture is not None:
+                self.cancel_pad_capture()
+            profiles = dict(self.settings.get("pad_profiles", {}) or {})
+            old = profiles.get(str(slot), {})
+            snap = self.pad_profile_snapshot()
+            snap["name"] = (old.get("name", "") or "").strip() or None
+            profiles[str(slot)] = snap
+            self.settings["pad_profiles"] = profiles
+            self.settings["pad_profile_active"] = slot
+            save_settings(self.settings)
+            return True
+        except Exception:
+            return False
+
+    def rename_pad_profile(self, slot, name):
+        if slot not in (2, 3):
+            return False
+        try:
+            profiles = dict(self.settings.get("pad_profiles", {}) or {})
+            prof = dict(profiles.get(str(slot), {}))
+            prof["name"] = (name or "").strip()[:18]
+            profiles[str(slot)] = prof
+            self.settings["pad_profiles"] = profiles
+            save_settings(self.settings)
+            return True
+        except Exception:
+            return False
+
+    def load_pad_profile(self, slot):
+        """Slot 1 = padrao de fabrica; 2/3 = salvos (vazio = padrao)."""
+        try:
+            if self.pad_capture is not None:
+                self.cancel_pad_capture()
+            if slot == 1:
+                snap = {}
+            else:
+                snap = ((self.settings.get("pad_profiles", {}) or {}).get(str(slot), {})
+                        or {})
+            self.settings["pad_nexus"] = dict(snap.get("nexus", {}) or {})
+            self.settings["pad_remote"] = dict(snap.get("remote", {}) or {})
+            self.settings["pad_sensitivity"] = snap.get("sensitivity", DEFAULT_PAD_SENSITIVITY)
+            self.settings["pad_scroll"] = snap.get("scroll", DEFAULT_PAD_SCROLL)
+            self.settings["pad_deadzone"] = snap.get("deadzone", DEFAULT_PAD_DEADZONE)
+            self.settings["pad_profile_active"] = slot
+            save_settings(self.settings)
+            if _modal_alive(self.pad_window):
+                self.pad_window.refresh()
+            return True
         except Exception:
             return False
 
