@@ -21,7 +21,7 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **Favoritos**: Adicionar/remover com clique direito
 - **Navegador embutido**: botao Site abre o servico em tela cheia sem bordas numa janela do proprio Nexus (WebView2), com transicao e mesmo icone na barra de tarefas - parece um app so. Barra discreta com minimizar/fechar, F11 p/ tela cheia e confirmacao de saida
 - **Logins salvos**: perfil persistente mantem logins, cookies e senhas entre sessoes; limpeza em Configuracoes > Limpar logins e cache
-- **Apps em tela cheia**: botao App forca o aplicativo a fullscreen sem bordas (modo big picture)
+- **Apps em tela cheia**: botao App forca o aplicativo a fullscreen sem bordas (modo big picture); ao fechar, o Nexus volta em ~0,5s (vigia direta da janela)
 - **Teclado virtual**: ⌨ na sidebar e nos campos de texto - analogico/setas movem, confirmar tecla; tecla de verdade onde o foco estiver (vale nos logins do navegador). Abre sozinho ao clicar no campo; detecta numerico (123) vs letras, com alternador manual
 - **Foco unificado**: cursor do mouse e selecao sao uma coisa so - navegar com controle/teclado leva o cursor junto; apontar com o mouse leva o foco junto
 - **Modo console nos sites**: no navegador embutido, setas/analogico selecionam os quadros (filmes, series) com anel roxo como num videogame; A abre, B volta

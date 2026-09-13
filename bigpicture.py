@@ -688,6 +688,9 @@ try:
     _SetWindowPos.restype = ctypes.c_bool
     _GetForegroundWindow = _user32.GetForegroundWindow
     _GetForegroundWindow.restype = ctypes.c_void_p
+    _IsWindow = _user32.IsWindow
+    _IsWindow.argtypes = [ctypes.c_void_p]
+    _IsWindow.restype = ctypes.c_bool
     _MonitorFromWindow = _user32.MonitorFromWindow
     _MonitorFromWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
     _MonitorFromWindow.restype = ctypes.c_void_p
@@ -771,6 +774,13 @@ def force_borderless_fullscreen(hwnd, monitor_hwnd=None):
         x, y, w, h = _monitor_rect(monitor_hwnd)
         return bool(_SetWindowPos(hwnd, None, x, y, w, h,
                                   SWP_FRAMECHANGED | SWP_SHOWWINDOW))
+    except Exception:
+        return False
+
+
+def _hwnd_alive(hwnd):
+    try:
+        return bool(_WIN32_OK and hwnd and _IsWindow(hwnd))
     except Exception:
         return False
 
@@ -1118,6 +1128,7 @@ class GamepadManager:
         self.remote_watch_missed = 0
         self.remote_watch_count = 0
         self.remote_watch_list = []
+        self.remote_hwnd = None
         self.remote_enter_time = 0.0
         self.remote_off = [0.0, 0.0, 0.0, 0.0]
         self.remote_cal = []
@@ -1764,13 +1775,31 @@ class GamepadManager:
         mouse_move(sens * nx, sens * ny)
 
     def _remote_watch_tick(self):
+        # Caminho rapido: janela do app rastreada (IsWindow e barato).
+        # Fecha -> volta ao Nexus em ~0,5s em vez de ~6s do tasklist.
+        hwnd = getattr(self, "remote_hwnd", None)
+        if hwnd:
+            self.remote_watch_count += 1
+            if self.remote_watch_count < 15:  # ~250ms
+                return
+            self.remote_watch_count = 0
+            if _hwnd_alive(hwnd):
+                self.remote_watch_seen = True
+                self.remote_watch_missed = 0
+                return
+            self.remote_watch_missed += 1
+            if self.remote_watch_seen and self.remote_watch_missed >= 2:
+                self.app.exit_remote_mode()
+            elif self.remote_watch_missed >= 8:
+                self.remote_hwnd = None  # janela sumiu: volta ao tasklist
+            return
         exes = getattr(self, "remote_watch_list", None)
         if exes is None:
             exes = REMOTE_WATCH.get(self.remote_service or "", [])
         if not exes:
             return
         self.remote_watch_count += 1
-        if self.remote_watch_count < 120:  # ~2s
+        if self.remote_watch_count < 45:  # ~0,75s
             return
         self.remote_watch_count = 0
         alive = any(self._process_alive(exe) for exe in exes)
@@ -1779,7 +1808,7 @@ class GamepadManager:
             self.remote_watch_missed = 0
         elif self.remote_watch_seen:
             self.remote_watch_missed += 1
-            if self.remote_watch_missed >= 3:
+            if self.remote_watch_missed >= 2:
                 self.app.exit_remote_mode()
 
     @staticmethod
@@ -4864,6 +4893,7 @@ class BigPictureApp:
             gp.remote_watch_seen = False
             gp.remote_watch_missed = 0
             gp.remote_watch_count = 0
+            gp.remote_hwnd = None
             gp.remote_enter_time = time.time()
             gp.remote_off = [0.0, 0.0, 0.0, 0.0]
             gp.remote_cal = []
@@ -4903,6 +4933,7 @@ class BigPictureApp:
         try:
             self.root.deiconify()
             self.root.lift()
+            self.root.update_idletasks()
         except Exception:
             pass
 
@@ -4973,6 +5004,12 @@ class BigPictureApp:
             for hwnd, _pid, _title in _top_level_windows():
                 if hwnd not in before_set:
                     if force_borderless_fullscreen(hwnd, self.nexus_hwnd()):
+                        try:
+                            gp.remote_hwnd = hwnd  # vigia rapida: volta em ~0,5s
+                            gp.remote_watch_seen = True
+                            gp.remote_watch_missed = 0
+                        except Exception:
+                            pass
                         return
         except Exception:
             pass
