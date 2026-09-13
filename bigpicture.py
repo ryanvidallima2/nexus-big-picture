@@ -853,6 +853,8 @@ VK_SHIFT = 0x10
 VK_CONTROL = 0x11
 VK_BACK = 0x08
 VK_TAB = 0x09
+VK_PRIOR = 0x21
+VK_NEXT = 0x22
 VK_MEDIA_NEXT = 0xB0
 VK_MEDIA_PREV = 0xB1
 VK_MEDIA_STOP = 0xB2
@@ -1787,9 +1789,9 @@ class GamepadManager:
                     elif action == "prev_track":
                         tap_key(VK_MEDIA_PREV)
                     elif action == "app_tab_prev":
-                        ctrl_tab(prev=True)
+                        self.app.remote_tab(prev=True)
                     elif action == "app_tab_next":
-                        ctrl_tab(prev=False)
+                        self.app.remote_tab(prev=False)
             self._remote_watch_tick()
         except Exception:
             pass
@@ -5152,6 +5154,17 @@ class BigPictureApp:
                     and normalize_pad_value(merged.get("vol_up")) == "r2")
         except Exception:
             return True
+
+    def remote_tab(self, prev):
+        """LB/RB: no navegador embutido (janela unica) pula a pagina;
+        em apps/navegadores externos troca de aba de verdade."""
+        try:
+            if self.browser_nav_active():
+                tap_key(VK_PRIOR if prev else VK_NEXT)
+            else:
+                ctrl_tab(prev=prev)
+        except Exception:
+            pass
 
     def pad_sensitivity(self):
         try:

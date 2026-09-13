@@ -169,14 +169,13 @@ window.__nexusNav={idx:-1,prev:null};
 window.__nexusNavCollect=function(){
 var sel='a[href],button,input,select,textarea,video,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="option"],[tabindex]:not([tabindex="-1"]),[jsaction],[onclick]';
 var out=[],els=document.querySelectorAll(sel);
-for(var i=0;i<els.length;i++){var el=els[i];try{var r=el.getBoundingClientRect();
-if(r.width>40&&r.height>20&&r.bottom>0&&r.top<window.innerHeight&&r.right>0&&r.left<window.innerWidth&&!el.disabled)out.push(el);}catch(e){}}
+for(var i=0;i<els.length&&out.length<500;i++){var el=els[i];try{var r=el.getBoundingClientRect();
+if(r.width>40&&r.height>20&&!el.disabled)out.push(el);}catch(e){}}
 if(out.length<5){
 try{var divs=document.querySelectorAll('div');var n=0;
 for(var j=0;j<divs.length&&n<2000;j++){var d=divs[j];n++;
 try{var q=d.getBoundingClientRect();
 if(q.width<80||q.height<40)continue;
-if(q.bottom<=0||q.top>=window.innerHeight||q.right<=0||q.left>=window.innerWidth)continue;
 var cur='';try{cur=window.getComputedStyle(d).cursor;}catch(e2){}
 if(cur==='pointer'){out.push(d);}}catch(e3){}}}catch(e4){}}
 return out;};
@@ -202,8 +201,11 @@ var ok=dir==='left'?ex<-4:dir==='right'?ex>4:dir==='up'?ey<-4:ey>4;
 if(!ok)continue;
 var score=(dir==='left'||dir==='right')?Math.abs(ex)+Math.abs(ey)*2.5:Math.abs(ey)+Math.abs(ex)*2.5;
 if(score<bestScore){bestScore=score;best=el;}}catch(e){}}
-if(!best){best=items[0];}
-N.idx=items.indexOf(best);
+if(!best){var ncx=window.innerWidth/2,ncy=window.innerHeight/2;best=items[0];bestScore=1e12;
+for(var k=0;k<items.length;k++){try{var rk=items[k].getBoundingClientRect();
+var dd=Math.abs(rk.left+rk.width/2-ncx)+Math.abs(rk.top+rk.height/2-ncy);
+if(dd<bestScore){bestScore=dd;best=items[k];}}catch(e2){}}
+N.idx=items.indexOf(best);}
 return window.__nexusNavFocus(best)+' '+(N.idx+1)+'/'+items.length;};
 window.__nexusNavClick=function(){
 var N=window.__nexusNav;var el=(N.prev&&document.contains(N.prev))?N.prev:null;
