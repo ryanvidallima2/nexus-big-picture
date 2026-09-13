@@ -2492,7 +2492,7 @@ class OpenTargetDialog:
             self._close()
             try:
                 self.app.root.after(
-                    900, lambda: self.app.enter_site_remote(proc, svc, splash, born))
+                    450, lambda: self.app.enter_site_remote(proc, svc, splash, born))
             except Exception:
                 self.app.enter_site_remote(proc, svc, splash, born)
             return
@@ -3606,6 +3606,7 @@ class BigPictureApp:
         self.db = NexusDB()
         self.opener = StreamingOpener(self.settings)
         self.photo_cache = {}
+        self.logo_path_cache = {}
         self.current_tab = "all"
         self.sidebar_visible = False
         self.sidebar_menu_index = 0
@@ -3692,7 +3693,7 @@ class BigPictureApp:
             if key in self.photo_cache:
                 return self.photo_cache[key]
             pil_img = Image.open(filepath)
-            pil_img.thumbnail((size, size), Image.LANCZOS)
+            pil_img.thumbnail((size, size), Image.BILINEAR)  # 2x mais rapido; igual em 80px
             photo = ImageTk.PhotoImage(pil_img)
             self.photo_cache[key] = photo
             return photo
@@ -3705,6 +3706,12 @@ class BigPictureApp:
             img_path = custom[name]["image"]
             if img_path and os.path.exists(img_path):
                 return self.load_photo(img_path)
+        try:
+            hit = self.logo_path_cache.get(name)
+            if hit and os.path.exists(hit):
+                return self.load_photo(hit)
+        except Exception:
+            pass
         # Variantes do nome de arquivo: exato, minusculo e normalizado
         # ("Amazon Prime" -> Amazon_Prime, "Paramount+" -> Paramount_Plus)
         normalized = name.replace(" ", "_").replace("+", "_Plus")
@@ -3719,6 +3726,10 @@ class BigPictureApp:
             for base in candidates:
                 p = os.path.join(IMAGES_DIR, base + "_logo" + ext)
                 if os.path.exists(p):
+                    try:
+                        self.logo_path_cache[name] = p
+                    except Exception:
+                        pass
                     return self.load_photo(p)
         return None
 
@@ -4886,6 +4897,13 @@ class BigPictureApp:
             gp = self.gamepad
             if not gp or not gp.running:
                 return
+            try:
+                self._pre_remote = {
+                    "fullscreen": bool(self.root.attributes("-fullscreen")),
+                    "zoomed": self.root.state() == "zoomed",
+                }
+            except Exception:
+                self._pre_remote = {"fullscreen": False, "zoomed": False}
             gp.remote_active = True
             gp.remote_service = service
             gp.remote_watch_list = list(watch) if watch else list(REMOTE_WATCH.get(service, []))
@@ -4931,9 +4949,25 @@ class BigPictureApp:
         except Exception:
             pass
         try:
+            pre = getattr(self, "_pre_remote", None) or {}
             self.root.deiconify()
+            if pre.get("fullscreen"):
+                try:
+                    self.root.attributes("-fullscreen", True)
+                except Exception:
+                    pass
+            else:
+                # Volta sempre maximizada (nunca minimizada nem janela pequena)
+                try:
+                    self.root.state("zoomed")
+                except Exception:
+                    pass
             self.root.lift()
             self.root.update_idletasks()
+            try:
+                self.root.focus_force()
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -5169,6 +5203,11 @@ class BigPictureApp:
                 custom[name] = {}
             custom[name]["image"] = dest
             self.settings["custom_streamings"] = custom
+            try:
+                self.logo_path_cache.pop(name, None)
+                self.photo_cache.pop(dest + str(Config.LOGO_SIZE), None)
+            except Exception:
+                pass
             save_settings(self.settings)
             self.refresh_ui()
 
@@ -5368,6 +5407,10 @@ class BigPictureApp:
                 data["image"] = img
         custom[name] = data
         self.settings["custom_streamings"] = custom
+        try:
+            self.logo_path_cache.pop(name, None)
+        except Exception:
+            pass
         if name not in self.settings.get("favorites", []):
             self.settings["favorites"].append(name)
         save_settings(self.settings)
