@@ -1129,6 +1129,8 @@ class GamepadManager:
         self.remote_watch_count = 0
         self.remote_watch_list = []
         self.remote_hwnd = None
+        self.browser_nav_dir = (0, 0)
+        self.browser_nav_next = 0.0
         self.remote_enter_time = 0.0
         self.remote_off = [0.0, 0.0, 0.0, 0.0]
         self.remote_cal = []
@@ -1390,8 +1392,7 @@ class GamepadManager:
             if count == 0 or not alive:
                 self.refresh_devices()
                 try:
-                    if (self.app.pad_window is not None
-                            and not self.app.pad_window.closed):
+                    if _modal_alive(self.app.pad_window):
                         self.app.pad_window.refresh_device_bar()
                 except Exception:
                     pass
@@ -1442,8 +1443,7 @@ class GamepadManager:
             pass
         else:
             pw = self.app.pad_window
-            if (pw is not None and not pw.closed
-                    and self.app.pad_capture is None):
+            if _modal_alive(pw) and self.app.pad_capture is None:
                 if ndir == (0, 1):
                     pw.move_focus(-1)
                 elif ndir == (0, -1):
@@ -1533,7 +1533,7 @@ class GamepadManager:
                         pass
                     else:
                         pw = self.app.pad_window
-                        if (pw is not None and not pw.closed
+                        if (_modal_alive(pw)
                                 and self.app.pad_capture is None):
                             if hat == (0, 1):
                                 pw.move_focus(-1)
@@ -1592,7 +1592,7 @@ class GamepadManager:
                         self.app.finish_pad_capture(logical)
                 else:
                     pw = self.app.pad_window
-                    if pw is not None and not pw.closed:
+                    if _modal_alive(pw):
                         if is_confirm:
                             pw.activate_focused()
                         elif is_cancel:
@@ -1671,7 +1671,10 @@ class GamepadManager:
                 ly -= self.remote_off[1]
                 rx -= self.remote_off[2]
                 ry -= self.remote_off[3]
-            self._remote_stick_scroll(lx, ly)
+            if self.app.browser_nav_active():
+                self._browser_stick_nav(lx, ly)
+            else:
+                self._remote_stick_scroll(lx, ly)
             self._remote_stick_mouse(rx, ry)
 
             # Back + Start juntos = sair do modo remoto (logico: vale p/
@@ -1732,6 +1735,33 @@ class GamepadManager:
             self._remote_watch_tick()
         except Exception:
             pass
+
+    def _browser_stick_nav(self, x, y):
+        """Analogico esquerdo no navegador: move o anel entre os quadros
+        (modo console). Repeticao ao segurar; analógico direito segue mouse."""
+        ndir = (0, 0)
+        if abs(x) >= 0.5 or abs(y) >= 0.5:
+            if abs(x) >= abs(y):
+                ndir = (1 if x > 0 else -1, 0)
+            else:
+                ndir = (0, -1 if y > 0 else 1)
+        now = time.time()
+        if ndir != (0, 0):
+            if ndir != self.browser_nav_dir:
+                self.browser_nav_dir = ndir
+                self.browser_nav_next = now
+            if now >= self.browser_nav_next:
+                self.browser_nav_next = now + 0.28
+                if ndir == (0, 1):
+                    tap_key(VK_UP)
+                elif ndir == (0, -1):
+                    tap_key(VK_DOWN)
+                elif ndir == (-1, 0):
+                    tap_key(VK_LEFT)
+                else:
+                    tap_key(VK_RIGHT)
+        else:
+            self.browser_nav_dir = (0, 0)
 
     def _remote_stick_scroll(self, x, y):
         """Analogico esquerdo = rolagem da pagina (vertical + horizontal)."""
@@ -1926,6 +1956,7 @@ TRANSLATIONS = {
         "pad_device": "Controle em uso:",
         "pad_rescan": "Atualizar lista",
         "pad_deadzone": "Zona morta do analogico:",
+        "pad_test_idle": "Pressione botoes p/ testar o controle aqui",
         "pad_conn_wired": "\U0001F50C Cabo (latencia minima)",
         "pad_batt_empty": "\U0001FAAB Bateria esgotando (sem fio)",
         "pad_batt_low": "\U0001FAAB Bateria baixa (sem fio)",
@@ -2052,6 +2083,7 @@ TRANSLATIONS = {
         "pad_device": "Active controller:",
         "pad_rescan": "Refresh list",
         "pad_deadzone": "Stick deadzone:",
+        "pad_test_idle": "Press buttons to test the controller here",
         "pad_conn_wired": "\U0001F50C Wired (lowest latency)",
         "pad_batt_empty": "\U0001FAAB Battery critical (wireless)",
         "pad_batt_low": "\U0001FAAB Battery low (wireless)",
@@ -2961,18 +2993,29 @@ class NexusKeyboard:
             pass
 
 
+def _modal_alive(w):
+    """Janela modal realmente aberta (nao so flag: sem zumbis destruidos)."""
+    try:
+        if w is None or getattr(w, "closed", True):
+            return False
+        win = getattr(w, "win", None)
+        return bool(win is not None and win.winfo_exists())
+    except Exception:
+        return False
+
+
 def top_modal(app):
     """A janela modal mais nova ainda aberta (dialogo, menu, texto, teclado)."""
     cands = []
     try:
         d = app.open_dialog
-        if d is not None and not d.closed:
+        if _modal_alive(d):
             cands.append(d)
         m = app.active_menu
-        if m is not None and not m.closed:
+        if _modal_alive(m):
             cands.append(m)
         k = getattr(app, "kb_window", None)
-        if k is not None and not k.closed:
+        if _modal_alive(k):
             cands.append(k)
     except Exception:
         pass
@@ -3045,6 +3088,12 @@ class GamepadConfigWindow:
         self.capture_lbl = tk.Label(self.body, text="", font=("Segoe UI", 13, "bold"),
                                     fg=Config.ACCENT_GLOW, bg=Config.BG_PRIMARY)
         self.capture_lbl.pack(pady=(0, 4))
+
+        self.test_lbl = tk.Label(self.body, text="", font=("Segoe UI", 12),
+                                 fg=Config.ACCENT_GLOW, bg=Config.BG_PRIMARY,
+                                 wraplength=500, justify="center")
+        self.test_lbl.pack(pady=(0, 4))
+        self._tick_test()
 
         self.rows_frame = tk.Frame(self.body, bg=Config.BG_PRIMARY)
         self.rows_frame.pack(fill="x", padx=24)
@@ -3361,6 +3410,31 @@ class GamepadConfigWindow:
             pass
         return "break"
 
+    def _tick_test(self):
+        """Leitura ao vivo dos botoes: prova se o controle chega ao app."""
+        if self.closed:
+            return
+        try:
+            gp = self.app.gamepad
+            if gp is not None and gp.joystick is not None:
+                pressed = sorted(gp.pressed_logical())
+                if pressed:
+                    names = [pad_logical_label(
+                        l, gp.layout,
+                        gp.raw_for_logical(l)) for l in pressed]
+                    txt = "\u25CF " + " + ".join(names)
+                else:
+                    txt = t("pad_test_idle", self.app.lang)
+            else:
+                txt = t("pad_none", self.app.lang)
+            self.test_lbl.configure(text=txt)
+        except Exception:
+            pass
+        try:
+            self.win.after(300, self._tick_test)
+        except Exception:
+            pass
+
     def on_capture_start(self):
         if self.closed:
             return
@@ -3592,6 +3666,11 @@ class BigPictureApp:
         self.root.title("Nexus - Big Picture")
         self.root.configure(bg=Config.BG_PRIMARY)
         self.root.geometry("1920x1080")
+        # Hub abre em tela cheia sem bordas (modo big picture); F11 alterna.
+        try:
+            self.root.attributes("-fullscreen", True)
+        except Exception:
+            pass
         self._set_dark_title_bar()
         self._set_app_icon()
         # Reaplica ao mostrar/restaurar (o atributo pre-mapeamento pode ser ignorado)
@@ -3602,6 +3681,12 @@ class BigPictureApp:
             pass
 
         self.settings = load_settings()
+        if self.settings.get("resolution_mode") != "fullscreen":
+            self.settings["resolution_mode"] = "fullscreen"
+            try:
+                save_settings(self.settings)
+            except Exception:
+                pass
         ensure_images_dir()
         self.db = NexusDB()
         self.opener = StreamingOpener(self.settings)
@@ -3779,6 +3864,7 @@ class BigPictureApp:
 
     # ===================== BUILD UI =====================
     def build_ui(self):
+        self.close_child_windows()
         for w in self.root.winfo_children():
             w.destroy()
 
@@ -3794,6 +3880,19 @@ class BigPictureApp:
         self.build_qa_overlay()
 
         self.render_tab(self.current_tab)
+
+    def close_child_windows(self):
+        """Fecha logicamente as janelas filhas antes de reconstruir a UI.
+        Sem isso elas viram zumbis (destruidas com closed=False) e o
+        controle passa a falar com janela morta: confirmar/X param."""
+        for attr, closer in (("kb_window", "close"), ("pad_window", "close"),
+                             ("open_dialog", "_close"), ("active_menu", "close")):
+            try:
+                w = getattr(self, attr, None)
+                if w is not None and not getattr(w, "closed", True):
+                    getattr(w, closer)()
+            except Exception:
+                pass
 
     def build_top_bar(self):
         bar = tk.Frame(self.main_frame, bg=Config.BG_SIDEBAR, height=70)
@@ -4245,7 +4344,7 @@ class BigPictureApp:
         return len(sec["names"])
 
     def select_current(self):
-        if self.open_dialog is not None:
+        if _modal_alive(self.open_dialog):
             return
         if self.sidebar_visible:
             if 0 <= self.sidebar_menu_index < len(self.sidebar_items):
@@ -4769,7 +4868,7 @@ class BigPictureApp:
         self.ask_open_target(name)
 
     def ask_open_target(self, name):
-        if self.open_dialog is not None and not self.open_dialog.closed:
+        if _modal_alive(self.open_dialog):
             return
         self.open_dialog = OpenTargetDialog(self, name)
 
@@ -4847,7 +4946,7 @@ class BigPictureApp:
             if gp is None:
                 return False
             ok = gp.select_device(pos)
-            if ok and self.pad_window is not None and not self.pad_window.closed:
+            if ok and _modal_alive(self.pad_window):
                 self.pad_window.refresh()
             return ok
         except Exception:
@@ -5234,7 +5333,7 @@ class BigPictureApp:
 
     def show_gamepad_info(self):
         self.close_sidebar()
-        if self.pad_window is not None and not self.pad_window.closed:
+        if _modal_alive(self.pad_window):
             try:
                 self.pad_window.win.lift()
             except Exception:
@@ -5249,7 +5348,7 @@ class BigPictureApp:
     def open_keyboard(self, entry=None, mode="auto"):
         try:
             kb = self.kb_window
-            if kb is not None and not kb.closed:
+            if _modal_alive(kb):
                 try:
                     kb.win.lift()
                 except Exception:
@@ -5275,7 +5374,7 @@ class BigPictureApp:
 
     def _entry_clicked(self, entry):
         try:
-            if self.kb_window is not None and not self.kb_window.closed:
+            if _modal_alive(self.kb_window):
                 return
             mode = getattr(entry, "kb_mode", "auto") or "auto"
             self.open_keyboard(entry, mode=mode)
