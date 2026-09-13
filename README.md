@@ -28,6 +28,7 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **Modo console nos sites**: no navegador embutido, setas/analogico selecionam os quadros (filmes, series) com anel roxo como num videogame; A abre, B volta. Funciona nos catalogos (testado YouTube/Vimeo); sites com bloqueio regional nao carregam
 - **Midia no controle**: botao Back/View = play/pause universal (Spotify, Netflix, YouTube); proxima/anterior remapeaveis em Controles
 - **Shoulders e gatilhos**: LB/RB trocam abas dentro dos apps (Ctrl+Tab); LT/RT controlam o volume (com repeticao ao segurar)
+- **L1/R1/L2/R2 no PS**: abas em L1/R1 e volume em L2/R2 como acoes mapeaveis (eixo analogico comanda junto, sem duplo)
 - **3 perfis de botoes**: slot 1 sempre o padrao; slots 2-3 salvos com o nome que quiser (mapeamento manual por clique + pressao, compativel com qq controle)
 - **Hub em fullscreen**: abre em tela cheia sem bordas (F11 alterna); controles com deteccao automatica e area de teste ao vivo em Configuracoes > Controles
 - **Instalacao automatica**: botao App baixa e instala sozinho via winget/Store quando o app nao esta instalado

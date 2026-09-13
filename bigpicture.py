@@ -1014,7 +1014,7 @@ BROWSER_WATCH = ["chrome.exe", "msedge.exe", "firefox.exe", "opera.exe",
 # PlayStation, Switch e genericos — o indice fisico (raw) de cada controle
 # e resolvido por controle via SDL (pygame._sdl2.controller).
 LOGICAL_BUTTONS = ("south", "east", "west", "north", "lb", "rb",
-                   "back", "start", "guide", "l3", "r3")
+                   "back", "start", "guide", "l3", "r3", "l2", "r2")
 
 # Tabela raw padrao (Xbox / ordem classica). Indices salvos antigos usam ela.
 XBOX_RAW = {"south": 0, "east": 1, "west": 2, "north": 3, "lb": 4,
@@ -1025,14 +1025,16 @@ XBOX_POSITIONAL = {v: k for k, v in XBOX_RAW.items()}
 PAD_LAYOUT_NAMES = {
     "xbox": {"south": "A", "east": "B", "west": "X", "north": "Y",
              "lb": "LB", "rb": "RB", "back": "Back", "start": "Start",
-             "guide": "Guide", "l3": "L3", "r3": "R3"},
+             "guide": "Guide", "l3": "L3", "r3": "R3",
+             "l2": "LT", "r2": "RT"},
     "playstation": {"south": "\u2715", "east": "\u25CB", "west": "\u25A1",
                     "north": "\u25B3", "lb": "L1", "rb": "R1",
                     "back": "Share", "start": "Options", "guide": "PS",
-                    "l3": "L3", "r3": "R3"},
+                    "l3": "L3", "r3": "R3", "l2": "L2", "r2": "R2"},
     "switch": {"south": "B", "east": "A", "west": "Y", "north": "X",
                "lb": "L", "rb": "R", "back": "-", "start": "+",
-               "guide": "Home", "l3": "L3", "r3": "R3"},
+               "guide": "Home", "l3": "L3", "r3": "R3",
+               "l2": "ZL", "r2": "ZR"},
     "generic": {},
 }
 PAD_LAYOUT_LABEL = {"xbox": "Xbox", "playstation": "PlayStation",
@@ -1093,7 +1095,8 @@ DEFAULT_NEXUS_MAP = {"select": 0, "back": 1, "cards": 2,
                      "sidebar": 3, "tab_prev": 4, "tab_next": 5}
 DEFAULT_REMOTE_MAP = {"click_left": 0, "back": 1, "click_right": 2,
                        "fullscreen": 3, "app_tab_prev": 4, "app_tab_next": 5,
-                       "space": 8, "enter": 9, "play_pause": 6}
+                       "space": 8, "enter": 9, "play_pause": 6,
+                       "vol_down": "l2", "vol_up": "r2"}
 NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_next"]
 REMOTE_ACTION_ORDER = ["click_left", "click_right", "enter", "back",
                        "space", "fullscreen", "vol_down", "vol_up",
@@ -1246,6 +1249,22 @@ class GamepadManager:
         if table:
             self.logical_to_raw = table
             self.raw_to_logical = {v: k for k, v in table.items()}
+        try:
+            name = js.get_name() or ""
+        except Exception:
+            name = ""
+        if detect_pad_layout(name) == "playstation":
+            # DS4/DualSense: L2/R2 digitais (raw 6/7) alem dos eixos.
+            # So preenche o que o SDL nao mapeou (nunca rouba botao real).
+            for _log, _raw in (("l2", 6), ("r2", 7)):
+                if _log in self.logical_to_raw or _raw in self.raw_to_logical:
+                    continue
+                try:
+                    if js.get_numbuttons() > _raw:
+                        self.logical_to_raw[_log] = _raw
+                        self.raw_to_logical[_raw] = _log
+                except Exception:
+                    pass
         self.dpad_sources = self._dpad_sources(js)
         self.prev_buttons = {}
         self.prev_logical = {}
@@ -1822,6 +1841,11 @@ class GamepadManager:
 
     def _remote_triggers(self):
         """LT = volume -, RT = volume +. Calibra o repouso e repete ao segurar."""
+        try:
+            if not self.app.vol_trigger_enabled():
+                return
+        except Exception:
+            pass
         vals = self._trigger_axes()
         if len(vals) < 2:
             return
@@ -5117,6 +5141,17 @@ class BigPictureApp:
 
     def remote_action_for(self, btn_or_logical):
         return self._pad_lookup(DEFAULT_REMOTE_MAP, "pad_remote", btn_or_logical)
+
+    def vol_trigger_enabled(self):
+        """Eixo do gatilho so comanda volume se o usuario nao remapeou
+        vol_down/vol_up para outros botoes (evita volume duplo)."""
+        try:
+            merged = dict(DEFAULT_REMOTE_MAP)
+            merged.update(self.settings.get("pad_remote", {}))
+            return (normalize_pad_value(merged.get("vol_down")) == "l2"
+                    and normalize_pad_value(merged.get("vol_up")) == "r2")
+        except Exception:
+            return True
 
     def pad_sensitivity(self):
         try:
