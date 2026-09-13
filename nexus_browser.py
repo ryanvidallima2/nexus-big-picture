@@ -167,10 +167,18 @@ _NAV_JS = """try{
 if(!window.__nexusNav){
 window.__nexusNav={idx:-1,prev:null};
 window.__nexusNavCollect=function(){
-var sel='a[href],button,input,select,textarea,video,[role="button"],[tabindex]:not([tabindex="-1"])';
+var sel='a[href],button,input,select,textarea,video,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="option"],[tabindex]:not([tabindex="-1"]),[jsaction],[onclick]';
 var out=[],els=document.querySelectorAll(sel);
 for(var i=0;i<els.length;i++){var el=els[i];try{var r=el.getBoundingClientRect();
 if(r.width>40&&r.height>20&&r.bottom>0&&r.top<window.innerHeight&&r.right>0&&r.left<window.innerWidth&&!el.disabled)out.push(el);}catch(e){}}
+if(out.length<5){
+try{var divs=document.querySelectorAll('div');var n=0;
+for(var j=0;j<divs.length&&n<2000;j++){var d=divs[j];n++;
+try{var q=d.getBoundingClientRect();
+if(q.width<80||q.height<40)continue;
+if(q.bottom<=0||q.top>=window.innerHeight||q.right<=0||q.left>=window.innerWidth)continue;
+var cur='';try{cur=window.getComputedStyle(d).cursor;}catch(e2){}
+if(cur==='pointer'){out.push(d);}}catch(e3){}}}catch(e4){}}
 return out;};
 window.__nexusNavFocus=function(el){
 var N=window.__nexusNav;

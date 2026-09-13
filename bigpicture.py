@@ -850,6 +850,10 @@ VK_F = 0x46
 VK_SHIFT = 0x10
 VK_CONTROL = 0x11
 VK_BACK = 0x08
+VK_MEDIA_NEXT = 0xB0
+VK_MEDIA_PREV = 0xB1
+VK_MEDIA_STOP = 0xB2
+VK_MEDIA_PLAY_PAUSE = 0xB3
 VK_VOL_DOWN = 0xAE
 VK_VOL_UP = 0xAF
 
@@ -1071,11 +1075,11 @@ def parse_sdl_mapping(mapping):
 DEFAULT_NEXUS_MAP = {"select": 0, "back": 1, "cards": 2,
                      "sidebar": 3, "tab_prev": 4, "tab_next": 5}
 DEFAULT_REMOTE_MAP = {"click_left": 0, "back": 1, "click_right": 2,
-                      "fullscreen": 3, "vol_down": 4, "vol_up": 5,
-                      "space": 8, "enter": 9}
-NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_next"]
+                       "fullscreen": 3, "vol_down": 4, "vol_up": 5,
+                       "space": 8, "enter": 9, "play_pause": 6}
 REMOTE_ACTION_ORDER = ["click_left", "click_right", "enter", "back",
-                       "space", "fullscreen", "vol_down", "vol_up"]
+                       "space", "fullscreen", "vol_down", "vol_up",
+                       "play_pause", "next_track", "prev_track"]
 DEFAULT_PAD_SENSITIVITY = 12
 DEFAULT_PAD_SCROLL = 8
 
@@ -1732,6 +1736,12 @@ class GamepadManager:
                         tap_key(VK_VOL_DOWN)
                     elif action == "vol_up":
                         tap_key(VK_VOL_UP)
+                    elif action == "play_pause":
+                        tap_key(VK_MEDIA_PLAY_PAUSE)
+                    elif action == "next_track":
+                        tap_key(VK_MEDIA_NEXT)
+                    elif action == "prev_track":
+                        tap_key(VK_MEDIA_PREV)
             self._remote_watch_tick()
         except Exception:
             pass
@@ -1980,6 +1990,9 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Tela cheia",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_play_pause": "Play/pause (midia)",
+        "pad_a_next_track": "Proxima faixa",
+        "pad_a_prev_track": "Faixa anterior",
         "delete_confirm": "Remover",
         "delete_question": "Remover para sempre?",
         "welcome": "Bem-vindo!",
@@ -2107,6 +2120,9 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Fullscreen",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_play_pause": "Play/pause (media)",
+        "pad_a_next_track": "Next track",
+        "pad_a_prev_track": "Previous track",
         "delete_confirm": "Delete",
         "delete_question": "Delete forever?",
         "welcome": "Welcome!",
@@ -3191,11 +3207,14 @@ class GamepadConfigWindow:
             try:
                 gp = self.app.gamepad
                 layout = gp.layout if gp else "xbox"
-                logical = normalize_pad_value(btn)
-                raw = gp.raw_for_logical(logical) if gp else None
-                if not isinstance(raw, int):
-                    raw = btn if isinstance(btn, int) else None
-                label = pad_logical_label(logical, layout, raw)
+                if btn is None:
+                    label = "\u2014"
+                else:
+                    logical = normalize_pad_value(btn)
+                    raw = gp.raw_for_logical(logical) if gp else None
+                    if not isinstance(raw, int):
+                        raw = btn if isinstance(btn, int) else None
+                    label = pad_logical_label(logical, layout, raw)
             except Exception:
                 label = "?"
             tk.Label(row, text=label,
