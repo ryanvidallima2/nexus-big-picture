@@ -850,6 +850,7 @@ VK_F = 0x46
 VK_SHIFT = 0x10
 VK_CONTROL = 0x11
 VK_BACK = 0x08
+VK_TAB = 0x09
 VK_MEDIA_NEXT = 0xB0
 VK_MEDIA_PREV = 0xB1
 VK_MEDIA_STOP = 0xB2
@@ -934,6 +935,20 @@ def type_text(root, text):
                 time.sleep(0.02)
         except Exception:
             pass
+
+
+def ctrl_tab(prev=False):
+    """Troca de aba no app em foco (Ctrl+Tab / Ctrl+Shift+Tab)."""
+    try:
+        key_down(VK_CONTROL)
+        if prev:
+            key_down(VK_SHIFT)
+        tap_key(VK_TAB)
+        if prev:
+            key_up(VK_SHIFT)
+        key_up(VK_CONTROL)
+    except Exception:
+        pass
 
 
 def mouse_move(dx, dy):
@@ -1075,11 +1090,12 @@ def parse_sdl_mapping(mapping):
 DEFAULT_NEXUS_MAP = {"select": 0, "back": 1, "cards": 2,
                      "sidebar": 3, "tab_prev": 4, "tab_next": 5}
 DEFAULT_REMOTE_MAP = {"click_left": 0, "back": 1, "click_right": 2,
-                       "fullscreen": 3, "vol_down": 4, "vol_up": 5,
+                       "fullscreen": 3, "app_tab_prev": 4, "app_tab_next": 5,
                        "space": 8, "enter": 9, "play_pause": 6}
 REMOTE_ACTION_ORDER = ["click_left", "click_right", "enter", "back",
                        "space", "fullscreen", "vol_down", "vol_up",
-                       "play_pause", "next_track", "prev_track"]
+                       "play_pause", "next_track", "prev_track",
+                       "app_tab_prev", "app_tab_next"]
 DEFAULT_PAD_SENSITIVITY = 12
 DEFAULT_PAD_SCROLL = 8
 
@@ -1133,6 +1149,9 @@ class GamepadManager:
         self.remote_watch_count = 0
         self.remote_watch_list = []
         self.remote_hwnd = None
+        self.remote_trig_rest = None
+        self.remote_trig_samples = []
+        self.remote_trig_state = {}
         self.browser_nav_dir = (0, 0)
         self.browser_nav_next = 0.0
         self.remote_enter_time = 0.0
@@ -1680,6 +1699,7 @@ class GamepadManager:
             else:
                 self._remote_stick_scroll(lx, ly)
             self._remote_stick_mouse(rx, ry)
+            self._remote_triggers()
 
             # Back + Start juntos = sair do modo remoto (logico: vale p/
             # Xbox, PlayStation, Switch e genericos). Fixo, antes de tudo.
@@ -1742,6 +1762,10 @@ class GamepadManager:
                         tap_key(VK_MEDIA_NEXT)
                     elif action == "prev_track":
                         tap_key(VK_MEDIA_PREV)
+                    elif action == "app_tab_prev":
+                        ctrl_tab(prev=True)
+                    elif action == "app_tab_next":
+                        ctrl_tab(prev=False)
             self._remote_watch_tick()
         except Exception:
             pass
@@ -1772,6 +1796,53 @@ class GamepadManager:
                     tap_key(VK_RIGHT)
         else:
             self.browser_nav_dir = (0, 0)
+
+    def _trigger_axes(self):
+        """Eixos 4/5 = gatilhos LT/RT na maioria dos controles."""
+        js = self.joystick
+        if js is None:
+            return []
+        try:
+            na = js.get_numaxes()
+        except Exception:
+            return []
+        out = []
+        for i in (4, 5):
+            if i < na:
+                try:
+                    out.append(float(js.get_axis(i)))
+                except Exception:
+                    out.append(0.0)
+        return out
+
+    def _remote_triggers(self):
+        """LT = volume -, RT = volume +. Calibra o repouso e repete ao segurar."""
+        vals = self._trigger_axes()
+        if len(vals) < 2:
+            return
+        if self.remote_trig_rest is None:
+            self.remote_trig_samples.append(list(vals))
+            if len(self.remote_trig_samples) >= 8:
+                ok = True
+                rest = []
+                for i in range(2):
+                    col = [s[i] for s in self.remote_trig_samples]
+                    if max(col) - min(col) > 0.3:
+                        ok = False
+                    rest.append(sum(col) / len(col))
+                if ok or len(self.remote_trig_samples) >= 40:
+                    self.remote_trig_rest = rest
+                    self.remote_trig_samples = []
+            return
+        now = time.time()
+        for i, vk in ((0, VK_VOL_DOWN), (1, VK_VOL_UP)):
+            pressed = (vals[i] - self.remote_trig_rest[i]) > 0.5
+            st = self.remote_trig_state.get(i, [False, 0.0])
+            if pressed and (not st[0] or now >= st[1]):
+                tap_key(vk)
+                self.remote_trig_state[i] = [True, now + 0.25]
+            elif not pressed:
+                self.remote_trig_state[i] = [False, 0.0]
 
     def _remote_stick_scroll(self, x, y):
         """Analogico esquerdo = rolagem da pagina (vertical + horizontal)."""
@@ -1914,7 +1985,7 @@ TRANSLATIONS = {
         "gamepad_connected": "Conectado",
         "gamepad_none": "Nenhum gamepad detectado",
         "gamepad_info": "Conecte um controle USB/Bluetooth e reinicie o app.",
-        "gamepad_controls": "\n\nA: Selecionar | B: Voltar\nD-Pad: Navegar\nStart: Menu | LB/RB: Abas\n\nNo app/site (remoto):\nSetas: navegar | A: clique esq. | B: Voltar\nX: clique dir. | Y: Tela cheia | LB/RB: Volume\nAnalogico dir.: mouse | R3: Enter | L3: Espaco\nAnalogico esq.: rolagem\nBack+Start: sair do remoto",
+        "gamepad_controls": "\n\nA: Selecionar | B: Voltar\nD-Pad: Navegar\nStart: Menu | LB/RB: Abas\n\nNo app/site (remoto):\nSetas: navegar nos quadros | A: abrir | B: Voltar\nX: clique dir. | Y: Tela cheia | LB/RB: Abas | LT/RT: Volume\nView: Play/pause | Analogico dir.: mouse | R3: Enter | L3: Espaco\nAnalogico esq.: quadros (site) / rolagem (app)\nBack+Start: sair do remoto",
         "lang_title": "Idioma",
         "lang_portuguese": "Portugues (BR)",
         "lang_english": "English",
@@ -1993,6 +2064,8 @@ TRANSLATIONS = {
         "pad_a_play_pause": "Play/pause (midia)",
         "pad_a_next_track": "Proxima faixa",
         "pad_a_prev_track": "Faixa anterior",
+        "pad_a_app_tab_prev": "Aba anterior (app)",
+        "pad_a_app_tab_next": "Proxima aba (app)",
         "delete_confirm": "Remover",
         "delete_question": "Remover para sempre?",
         "welcome": "Bem-vindo!",
@@ -2044,7 +2117,7 @@ TRANSLATIONS = {
         "gamepad_connected": "Connected",
         "gamepad_none": "No gamepad detected",
         "gamepad_info": "Connect a USB/Bluetooth controller and restart the app.",
-        "gamepad_controls": "\n\nA: Select | B: Back\nD-Pad: Navigate\nStart: Menu | LB/RB: Tabs\n\nIn app/site (remote):\nArrows: navigate | A: left click | B: Back\nX: right click | Y: Fullscreen | LB/RB: Volume\nRight stick: mouse | R3: Enter | L3: Space\nLeft stick: scroll\nBack+Start: exit remote",
+        "gamepad_controls": "\n\nA: Select | B: Back\nD-Pad: Navigate\nStart: Menu | LB/RB: Tabs\n\nIn app/site (remote):\nArrows: move across tiles | A: open | B: Back\nX: right click | Y: Fullscreen | LB/RB: Tabs | LT/RT: Volume\nView: Play/pause | Right stick: mouse | R3: Enter | L3: Space\nLeft stick: tiles (site) / scroll (app)\nBack+Start: exit remote",
         "lang_title": "Language",
         "lang_portuguese": "Portugues (BR)",
         "lang_english": "English",
@@ -2123,6 +2196,8 @@ TRANSLATIONS = {
         "pad_a_play_pause": "Play/pause (media)",
         "pad_a_next_track": "Next track",
         "pad_a_prev_track": "Previous track",
+        "pad_a_app_tab_prev": "Previous app tab",
+        "pad_a_app_tab_next": "Next app tab",
         "delete_confirm": "Delete",
         "delete_question": "Delete forever?",
         "welcome": "Welcome!",
@@ -5030,6 +5105,9 @@ class BigPictureApp:
             gp.remote_watch_missed = 0
             gp.remote_watch_count = 0
             gp.remote_hwnd = None
+            gp.remote_trig_rest = None
+            gp.remote_trig_samples = []
+            gp.remote_trig_state = {}
             gp.remote_enter_time = time.time()
             gp.remote_off = [0.0, 0.0, 0.0, 0.0]
             gp.remote_cal = []

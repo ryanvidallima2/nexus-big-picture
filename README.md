@@ -27,6 +27,7 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **Foco unificado**: cursor do mouse e selecao sao uma coisa so - navegar com controle/teclado leva o cursor junto; apontar com o mouse leva o foco junto
 - **Modo console nos sites**: no navegador embutido, setas/analogico selecionam os quadros (filmes, series) com anel roxo como num videogame; A abre, B volta. Funciona nos catalogos (testado YouTube/Vimeo); sites com bloqueio regional nao carregam
 - **Midia no controle**: botao Back/View = play/pause universal (Spotify, Netflix, YouTube); proxima/anterior remapeaveis em Controles
+- **Shoulders e gatilhos**: LB/RB trocam abas dentro dos apps (Ctrl+Tab); LT/RT controlam o volume (com repeticao ao segurar)
 - **Hub em fullscreen**: abre em tela cheia sem bordas (F11 alterna); controles com deteccao automatica e area de teste ao vivo em Configuracoes > Controles
 - **Instalacao automatica**: botao App baixa e instala sozinho via winget/Store quando o app nao esta instalado
 - **Resolucoes**: Tela cheia, 1920x1080, 1400x900, 1280x720, Janela
