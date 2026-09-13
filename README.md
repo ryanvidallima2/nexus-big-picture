@@ -1,4 +1,4 @@
-# Nexus - Big Picture v5.0
+# Nexus - Big Picture v5.1
 
 Interface de streaming inspirada no Steam Big Picture Mode.
 
