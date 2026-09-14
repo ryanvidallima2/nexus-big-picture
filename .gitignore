@@ -20,6 +20,9 @@ desktop.ini
 # em %LOCALAPPDATA%\Nexus - nunca commitar credenciais
 browser_profile/
 
+# Pasta de jogos (binarios e arquivos de cada maquina - nunca commitar)
+games/
+
 # Build do executavel (PyInstaller)
 dist/
 build/

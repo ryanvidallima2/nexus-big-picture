@@ -64,6 +64,7 @@ except ImportError:
 BASE_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 IMAGES_DIR = os.path.join(BASE_DIR, "streaming_images")
+GAMES_DIR = os.path.join(BASE_DIR, "games")
 DATABASE_FILE = os.path.join(BASE_DIR, "nexus.db")
 NEXUS_BROWSER_FILE = os.path.join(BASE_DIR, "nexus_browser.py")
 NEXUS_BROWSER_EXE = os.path.join(BASE_DIR, "nexus_browser.exe")
@@ -278,12 +279,68 @@ def save_settings(settings):
 
 
 # Abas visiveis na barra superior (aba Home foi removida)
-TABS = ["favorites", "movies", "music", "videos", "all"]
+TABS = ["favorites", "movies", "music", "videos", "all", "games"]
 
 
 def ensure_images_dir():
     if not os.path.exists(IMAGES_DIR):
         os.makedirs(IMAGES_DIR)
+
+
+GAME_IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".ico")
+GAME_COVER_HINTS = ("cover", "front", "box", "poster", "icon", "logo",
+                    "capsule", "header", "capa")
+GAME_SKIP_EXE = ("uninstall", "uninstal", "setup", "installer", "update",
+                 "crash", "report", "redist", "vcredist", "dxsetup",
+                 "oalinst", "dotnet", "helper", "config")
+GAME_SKIP_DIRS = ("redist", "installer", "__installer", "directx", "dotnet",
+                  "vcredist", "vulkanrt", "nodejs", "python", "drivers")
+
+
+def find_game_cover(folder):
+    """Capa do jogo: imagem no topo da pasta (prefere cover/front/...)."""
+    try:
+        files = [f for f in sorted(os.listdir(folder))
+                 if os.path.isfile(os.path.join(folder, f))
+                 and f.lower().endswith(GAME_IMG_EXTS)]
+    except Exception:
+        return None
+    if not files:
+        return None
+    for f in files:
+        if f.lower().startswith(GAME_COVER_HINTS):
+            return os.path.join(folder, f)
+    return os.path.join(folder, files[0])
+
+
+def find_game_exe(folder):
+    """Acha o executavel principal do jogo (pasta do jogo)."""
+    cands = []
+    try:
+        for dirpath, dirnames, files in os.walk(folder):
+            dirnames[:] = [d for d in dirnames if d.lower() not in GAME_SKIP_DIRS]
+            for f in files:
+                if not f.lower().endswith(".exe"):
+                    continue
+                low = f.lower()
+                if any(k in low for k in GAME_SKIP_EXE):
+                    continue
+                full = os.path.join(dirpath, f)
+                try:
+                    size = os.path.getsize(full)
+                except Exception:
+                    size = 0
+                depth = os.path.relpath(full, folder).count(os.sep)
+                cands.append((depth, -size, full))
+    except Exception:
+        return None
+    if not cands:
+        return None
+    norm_folder = _norm(os.path.basename(folder.rstrip(os.sep)))
+    for depth, negsize, full in sorted(cands):
+        if _norm(os.path.splitext(os.path.basename(full))[0]) == norm_folder:
+            return full
+    return sorted(cands)[0][2]
 
 
 # ===================== DATABASE =====================
@@ -1989,6 +2046,12 @@ TRANSLATIONS = {
         "tab_music": "Musica",
         "tab_videos": "Videos",
         "tab_all": "Todos",
+        "tab_games": "Jogos",
+        "games_title": "Meus Jogos",
+        "games_empty": "Nenhum jogo ainda.\nClique em Abrir Pasta e coloque cada jogo numa pasta.",
+        "games_open": "Abrir Pasta",
+        "games_refresh": "Atualizar",
+        "games_noexe": "Nenhum executavel encontrado nesta pasta.",
         "sidebar_history": "Historico",
         "sidebar_favorites": "Favoritos",
         "sidebar_settings": "Configuracoes",
@@ -2129,6 +2192,12 @@ TRANSLATIONS = {
         "tab_music": "Music",
         "tab_videos": "Videos",
         "tab_all": "All",
+        "tab_games": "Games",
+        "games_title": "My Games",
+        "games_empty": "No games yet.\nClick Open Folder and put each game in its own folder.",
+        "games_open": "Open Folder",
+        "games_refresh": "Refresh",
+        "games_noexe": "No executable found in this folder.",
         "sidebar_history": "History",
         "sidebar_favorites": "Favorites",
         "sidebar_settings": "Settings",
@@ -4036,6 +4105,11 @@ class BigPictureApp:
             return None
 
     def get_logo(self, name):
+        gf = self.game_folder(name)
+        if gf:
+            cover = find_game_cover(gf)
+            if cover:
+                return self.load_photo(cover)
         custom = self.settings.get("custom_streamings", {})
         if name in custom and "image" in custom[name]:
             img_path = custom[name]["image"]
@@ -4163,6 +4237,7 @@ class BigPictureApp:
             (t("tab_music", self.lang), "music"),
             (t("tab_videos", self.lang), "videos"),
             (t("tab_all", self.lang), "all"),
+            (t("tab_games", self.lang), "games"),
         ]
         for idx, (text, tid) in enumerate(tabs):
             btn = tk.Button(self.nav_frame, text=text, font=("Segoe UI", 13),
@@ -4612,7 +4687,10 @@ class BigPictureApp:
                 name_idx = sec["scroll_offset"] + self.focus_mgr.focused_col
             if 0 <= name_idx < len(sec["names"]):
                 name = sec["names"][name_idx]
-                self.ask_open_target(name)
+                if self.current_tab == "games":
+                    self.launch_game(name)
+                else:
+                    self.ask_open_target(name)
 
     def go_back(self):
         if self.sidebar_visible:
@@ -4807,6 +4885,8 @@ class BigPictureApp:
             self.render_category("Musica")
         elif tab == "videos":
             self.render_category("Videos")
+        elif tab == "games":
+            self.render_games()
         else:
             all_names = list(self.get_all_services().keys())
             self.render_grid("Todos os Streamings", all_names)
@@ -4817,6 +4897,68 @@ class BigPictureApp:
         all_s = self.get_all_services()
         items = [n for n, info in all_s.items() if info.get("category") == category]
         self.render_section(category, items)
+
+    def game_folder(self, name):
+        p = os.path.join(GAMES_DIR, name)
+        return p if os.path.isdir(p) else None
+
+    def scan_games(self):
+        try:
+            os.makedirs(GAMES_DIR, exist_ok=True)
+        except Exception:
+            pass
+        try:
+            entries = sorted(os.listdir(GAMES_DIR))
+        except Exception:
+            return []
+        return [e for e in entries
+                if os.path.isdir(os.path.join(GAMES_DIR, e))]
+
+    def open_games_folder(self):
+        try:
+            os.makedirs(GAMES_DIR, exist_ok=True)
+            os.startfile(GAMES_DIR)
+        except Exception:
+            pass
+
+    def render_games(self):
+        names = self.scan_games()
+        bar = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
+        bar.pack(fill="x", padx=30, pady=(20, 0))
+        tk.Button(bar, text=f"\U0001F4C1 {t('games_open', self.lang)}",
+                  font=("Segoe UI", 13, "bold"),
+                  bg=Config.ACCENT, fg="white",
+                  activebackground=Config.ACCENT_GLOW, activeforeground="white",
+                  relief="flat", cursor="hand2", bd=0, padx=20, pady=8,
+                  command=self.open_games_folder).pack(side="left", padx=(0, 10))
+        tk.Button(bar, text=f"\u21BB {t('games_refresh', self.lang)}",
+                  font=("Segoe UI", 13),
+                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                  activebackground=Config.BG_CARD_HOVER,
+                  activeforeground=Config.TEXT_PRIMARY,
+                  relief="flat", cursor="hand2", bd=0, padx=20, pady=8,
+                  command=lambda: self.switch_tab("games")).pack(side="left")
+        if names:
+            self.render_section(f"\U0001F3AE {t('games_title', self.lang)}", names)
+        else:
+            tk.Label(self.scroll_frame, text=t("games_empty", self.lang),
+                     font=("Segoe UI", 18), fg=Config.TEXT_SECONDARY,
+                     bg=Config.BG_PRIMARY, justify="center",
+                     wraplength=900).pack(expand=True, pady=100)
+
+    def launch_game(self, name):
+        folder = self.game_folder(name)
+        if not folder:
+            return
+        exe = find_game_exe(folder)
+        if not exe:
+            self.show_info_message(name, t("games_noexe", self.lang))
+            return
+        try:
+            subprocess.Popen([exe], cwd=os.path.dirname(exe))
+            self.db.add_history(name)
+        except Exception:
+            self.show_info_message(name, t("games_noexe", self.lang))
 
     def render_section(self, title, names):
         if not names:
@@ -4963,6 +5105,8 @@ class BigPictureApp:
 
     def create_card(self, parent, name):
         info = self.get_all_services().get(name, {})
+        if not info and self.game_folder(name):
+            info = {"icon": "\U0001F3AE", "category": "Games"}
         icon = info.get("icon", "\U0001F4F0")
         url = info.get("url", "#")
         category = info.get("category", "")
@@ -5130,7 +5274,10 @@ class BigPictureApp:
             pass
 
     def on_card_click(self, name):
-        self.ask_open_target(name)
+        if self.current_tab == "games":
+            self.launch_game(name)
+        else:
+            self.ask_open_target(name)
 
     def ask_open_target(self, name):
         if _modal_alive(self.open_dialog):
