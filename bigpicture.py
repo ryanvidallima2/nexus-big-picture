@@ -4152,18 +4152,6 @@ class BigPictureApp:
         logo = tk.Label(bar, text="\u25C6 NEXUS", font=("Segoe UI", 24, "bold"),
                         fg=Config.ACCENT, bg=Config.BG_SIDEBAR)
         logo.pack(side="left", padx=30)
-        try:
-            brand_path = os.path.join(BASE_DIR, "logo_nexus", "Logo_bar.png")
-            if os.path.exists(brand_path):
-                from PIL import Image as _BrandImg, ImageTk as _BrandTk
-                _bi = _BrandImg.open(brand_path).convert("RGB")
-                _h = 44
-                _bi = _bi.resize((int(_bi.width * _h / _bi.height), _h),
-                                 _BrandImg.LANCZOS)
-                self.brand_photo = _BrandTk.PhotoImage(_bi)
-                logo.configure(image=self.brand_photo, text="")
-        except Exception:
-            pass
 
         self.nav_frame = tk.Frame(bar, bg=Config.BG_SIDEBAR)
         self.nav_frame.pack(side="left", padx=40)

@@ -32,7 +32,6 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **L1/R1/L2/R2 no PS**: abas em L1/R1 e volume em L2/R2 como acoes mapeaveis (eixo analogico comanda junto, sem duplo)
 - **3 perfis de botoes**: slot 1 sempre o padrao; slots 2-3 salvos com o nome que quiser (mapeamento manual por clique + pressao, compativel com qq controle)
 - **Hub em fullscreen**: abre em tela cheia sem bordas (F11 alterna); controles com deteccao automatica e area de teste ao vivo em Configuracoes > Controles
-- **Marca Nexus**: logo roxa com simbolo de rede na barra, icone e janela (opcao 2)
 - **Instalacao automatica**: botao App baixa e instala sozinho via winget/Store quando o app nao esta instalado
 - **Resolucoes**: Tela cheia, 1920x1080, 1400x900, 1280x720, Janela
 - **Temas**: 8 cores de destaque disponiveis
