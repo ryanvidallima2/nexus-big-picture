@@ -4298,6 +4298,10 @@ class BigPictureApp:
             (t("tab_games", self.lang), "games"),
         ]
         for idx, (text, tid) in enumerate(tabs):
+            if tid == "games":
+                # Divisoria visual: Jogos e outra categoria (so visual)
+                sep = tk.Frame(self.nav_frame, bg=Config.BORDER, width=2)
+                sep.pack(side="left", fill="y", padx=10, pady=12)
             btn = tk.Button(self.nav_frame, text=text, font=("Segoe UI", 13),
                             bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
                             activebackground=Config.ACCENT, activeforeground="white",
@@ -5568,7 +5572,15 @@ class BigPictureApp:
         except Exception:
             pass
         if self.pad_window is not None:
-            self.pad_window.on_capture_end()
+            # Atualiza na hora: sem isso o selo mostra o botao antigo
+            # ate qualquer outro refresh (parecia "nao salvou").
+            try:
+                self.pad_window.refresh()
+            except Exception:
+                try:
+                    self.pad_window.on_capture_end()
+                except Exception:
+                    pass
 
     def enter_remote_mode(self, service, watch=None):
         """O controle passa a comandar o app/site aberto. So com controle ligado."""
