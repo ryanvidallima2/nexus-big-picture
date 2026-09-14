@@ -38,8 +38,7 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 
 ## Como Rodar
 
-1. Duplo clique em **`start.bat`**
-2. Ou no Prompt: `python bigpicture.py`
+1. Duplo clique em **`Nexus.exe`**
 
 ## Atalhos de Teclado
 
