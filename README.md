@@ -1,4 +1,4 @@
-# Nexus - Big Picture v5.3
+# Nexus - Big Picture v5.4
 
 Interface de streaming inspirada no Steam Big Picture Mode.
 
@@ -33,13 +33,18 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **3 perfis de botoes**: slot 1 sempre o padrao; slots 2-3 salvos com o nome que quiser (mapeamento manual por clique + pressao, compativel com qq controle)
 - **Hub em fullscreen**: abre em tela cheia sem bordas (F11 alterna); controles com deteccao automatica e area de teste ao vivo em Configuracoes > Controles
 - **Instalacao automatica**: botao App baixa e instala sozinho via winget/Store quando o app nao esta instalado
+- **Aba Jogos**: cada pasta em `games/` vira um card que abre o jogo (capa + executavel detectados sozinhos)
+- **Atualizacao automatica**: o Nexus avisa e se atualiza sozinho pela aba Configuracoes ou na abertura
 - **Resolucoes**: Tela cheia, 1920x1080, 1400x900, 1280x720, Janela
 - **Temas**: 8 cores de destaque disponiveis
 
 ## Como Rodar
 
-1. Duplo clique em **`start.bat`**
-2. Ou no Prompt: `python bigpicture.py`
+1. Baixe o **`Nexus-vX.X.X-windows.zip`** na pagina de Releases do GitHub
+2. Extraia numa pasta e duplo clique em **`Nexus.exe`** (sem instalar nada)
+3. Para atualizar: o proprio app avisa, ou use Configuracoes > Verificar atualizacao
+
+Para desenvolver (`start.bat` / `python bigpicture.py`), veja Requisitos abaixo.
 
 ## Atalhos de Teclado
 
@@ -69,7 +74,7 @@ Dailymotion, Bandcamp, SoundCloud, Pluto TV, Apple TV, Peacock, Paramount+,
 Discovery+, Globoplay, Vix, Curiosity Stream, MUBI, Shudder, BritBox, Tubi,
 Plex, Kodi, Jellyfin, Mixer, Vimeo, Rumble, Tidal, Deezer, Mixcloud
 
-## Requisitos
+## Requisitos (so para desenvolver)
 
 - Windows 10 ou superior
 - Python 3.12
@@ -79,7 +84,21 @@ Plex, Kodi, Jellyfin, Mixer, Vimeo, Rumble, Tidal, Deezer, Mixcloud
 - winget (ja vem no Windows 10/11) - instalacao automatica de apps
 - Internet
 
-## Estrutura de Pastas
+## Pasta do .exe (release)
+
+```
+Nexus/
+├── Nexus.exe                # Aplicativo (duplo clique)
+├── nexus_browser.exe        # Navegador embutido (aberto pelo Nexus)
+├── streaming_images/        # Logos dos streamings
+├── logo_nexus/              # Icones do Nexus
+├── games/                   # Seus jogos (uma pasta por jogo) - crie se nao existir
+├── settings.json            # Criado sozinho no 1o uso
+├── nexus.db                 # Criado sozinho no 1o uso
+└── README.md                # Este arquivo
+```
+
+## Estrutura do codigo (desenvolvimento)
 
 ```
 Default Project/

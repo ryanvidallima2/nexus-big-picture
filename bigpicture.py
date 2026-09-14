@@ -43,6 +43,7 @@ import time
 import random
 import ctypes
 import urllib.parse
+import urllib.request
 import winreg
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -68,6 +69,40 @@ GAMES_DIR = os.path.join(BASE_DIR, "games")
 DATABASE_FILE = os.path.join(BASE_DIR, "nexus.db")
 NEXUS_BROWSER_FILE = os.path.join(BASE_DIR, "nexus_browser.py")
 NEXUS_BROWSER_EXE = os.path.join(BASE_DIR, "nexus_browser.exe")
+
+APP_VERSION = "5.4.0"
+GITHUB_REPO = "ryanvidallima2/nexus-big-picture"
+UPDATE_URL = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest"
+
+
+def ver_tuple(v):
+    parts = []
+    for p in str(v).lstrip("vV").split("."):
+        digits = "".join(c for c in p if c.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def fetch_latest_release(timeout=15):
+    """Ultima release no GitHub {tag, zip, notes} ou None (sem internet)."""
+    try:
+        req = urllib.request.Request(
+            UPDATE_URL,
+            headers={"User-Agent": "NexusBigPicture",
+                     "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        tag = str(data.get("tag_name", ""))
+        zip_url = ""
+        for a in data.get("assets", []) or []:
+            url = a.get("browser_download_url", "")
+            if url.lower().endswith(".zip"):
+                zip_url = url
+                break
+        return {"tag": tag, "zip": zip_url,
+                "notes": str(data.get("body", "") or "")[:600]}
+    except Exception:
+        return None
 
 
 def nexus_profile_dir():
@@ -2066,6 +2101,17 @@ TRANSLATIONS = {
         "cache_clear_yes": "Apagar tudo",
         "cache_cleared": "Logins, cookies e cache apagados.",
         "cache_in_use": "Feche o navegador do Nexus antes de limpar.",
+        "update_check": "Verificar atualizacao",
+        "update_title": "Atualizacao",
+        "update_found": "Nova versao %s disponivel (atual: %s). Novidades:",
+        "update_now": "Atualizar agora",
+        "update_later": "Depois",
+        "update_downloading": "Baixando atualizacao...",
+        "update_ready": "Download pronto! Aplicar agora? O Nexus vai fechar e reabrir.",
+        "update_apply": "Aplicar e reiniciar",
+        "update_error": "Nao foi possivel verificar (sem internet?).",
+        "update_latest": "Nexus ja esta atualizado!",
+        "update_git": "Nova versao %s no GitHub. Rode git pull.",
         "sidebar_keyboard": "Teclado virtual",
         "kb_title": "Teclado",
         "kb_hint": "Analogico/setas movem \u2022 confirmar tecla \u2022 B fecha",
@@ -2212,6 +2258,17 @@ TRANSLATIONS = {
         "cache_clear_yes": "Delete everything",
         "cache_cleared": "Logins, cookies and cache cleared.",
         "cache_in_use": "Close the Nexus browser before clearing.",
+        "update_check": "Check for updates",
+        "update_title": "Update",
+        "update_found": "New version %s available (current: %s). News:",
+        "update_now": "Update now",
+        "update_later": "Later",
+        "update_downloading": "Downloading update...",
+        "update_ready": "Download ready! Apply now? Nexus will close and reopen.",
+        "update_apply": "Apply and restart",
+        "update_error": "Could not check (offline?).",
+        "update_latest": "Nexus is up to date!",
+        "update_git": "New version %s on GitHub. Run git pull.",
         "sidebar_keyboard": "Virtual keyboard",
         "kb_title": "Keyboard",
         "kb_hint": "Stick/arrows move \u2022 confirm types \u2022 B closes",
@@ -4038,6 +4095,7 @@ class BigPictureApp:
             pass
         self.gamepad = GamepadManager(self)
         self.update_clock()
+        self.check_updates_startup()
 
     def _set_app_icon(self):
         # Logo_mini na barra de tarefas/titulo (vale p/ todas as janelas).
@@ -4397,6 +4455,7 @@ class BigPictureApp:
             (t("settings_language", self.lang), self.open_language_picker, "\U0001F310"),
             (t("sidebar_keyboard", self.lang), self.open_keyboard_sidebar, "\u2328"),
             (t("settings_clear_cache", self.lang), self.confirm_clear_browser_profile, "\U0001F9F9"),
+            (t("update_check", self.lang), self.check_updates_manual, "\u2193"),
         ]
 
         for text, cmd, icon in settings_items:
@@ -6207,6 +6266,125 @@ class BigPictureApp:
             self.root.destroy()
         except Exception:
             pass
+
+    # ===================== AUTO-UPDATE =====================
+    def check_updates_startup(self):
+        threading.Thread(target=self._update_check_thread,
+                         args=(True,), daemon=True).start()
+
+    def check_updates_manual(self):
+        self.close_sidebar()
+        threading.Thread(target=self._update_check_thread,
+                         args=(False,), daemon=True).start()
+
+    def _update_check_thread(self, auto):
+        info = fetch_latest_release()
+        if not info or not info.get("tag"):
+            if not auto:
+                self.root.after(0, lambda: self.show_info_message(
+                    t("msg_warning", self.lang), t("update_error", self.lang)))
+            return
+        try:
+            newer = ver_tuple(info["tag"]) > ver_tuple(APP_VERSION)
+        except Exception:
+            newer = False
+        if not newer:
+            if not auto:
+                self.root.after(0, lambda: self.show_info_message(
+                    t("msg_success", self.lang), t("update_latest", self.lang)))
+            return
+        if auto:
+            try:
+                if self.settings.get("update_seen", "") == info["tag"]:
+                    return
+            except Exception:
+                pass
+        self.root.after(0, lambda: self.offer_update(info))
+
+    def offer_update(self, info):
+        if getattr(sys, "frozen", False):
+            subtitle = t("update_found", self.lang) % (info["tag"], APP_VERSION)
+            notes = (info.get("notes") or "").strip()
+            if notes:
+                subtitle += "\n\n" + notes[:300]
+            menu = NexusMenuWindow(self, t("update_title", self.lang), [],
+                                   subtitle=subtitle, icon="\u2193", width=520)
+            menu.set_options([(t("update_now", self.lang),
+                               lambda: self.start_update_download(info, menu)),
+                              (t("update_later", self.lang),
+                               lambda: self.defer_update(info, menu))])
+        else:
+            self.show_info_message(t("update_title", self.lang),
+                                   t("update_git", self.lang) % info["tag"])
+
+    def defer_update(self, info, menu):
+        try:
+            self.settings["update_seen"] = info.get("tag", "")
+            save_settings(self.settings)
+        except Exception:
+            pass
+        try:
+            menu.close()
+        except Exception:
+            pass
+
+    def start_update_download(self, info, menu):
+        try:
+            menu.close()
+        except Exception:
+            pass
+        self.show_info_message(t("update_title", self.lang),
+                               t("update_downloading", self.lang))
+        threading.Thread(target=self._update_download_thread,
+                         args=(info,), daemon=True).start()
+
+    def _update_download_thread(self, info):
+        url = info.get("zip", "")
+        tmp = ""
+        try:
+            tmpdir = os.environ.get("TEMP") or os.path.expanduser("~")
+            tmp = os.path.join(tmpdir, "nexus_update.zip")
+            with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as f:
+                shutil.copyfileobj(r, f, 1024 * 256)
+        except Exception:
+            self.root.after(0, lambda: self.show_info_message(
+                t("msg_warning", self.lang), t("update_error", self.lang)))
+            return
+        self.root.after(0, lambda: self.offer_update_apply(info, tmp))
+
+    def offer_update_apply(self, info, tmp):
+        menu = NexusMenuWindow(self, t("update_title", self.lang), [],
+                               subtitle=t("update_ready", self.lang),
+                               icon="\u2193", width=480)
+        menu.set_options([(t("update_apply", self.lang),
+                           lambda: self.apply_update_and_restart(menu, tmp)),
+                          (t("sidebar_close", self.lang), menu.close)])
+
+    def apply_update_and_restart(self, menu, tmp):
+        try:
+            install_dir = os.path.dirname(os.path.realpath(sys.executable))
+            bat = os.path.join(os.environ.get("TEMP") or os.path.expanduser("~"),
+                               "nexus_atualizar.bat")
+            with open(bat, "w") as f:
+                f.write("@echo off\r\n"
+                        "taskkill /F /IM Nexus.exe >nul 2>nul\r\n"
+                        "taskkill /F /IM nexus_browser.exe >nul 2>nul\r\n"
+                        "timeout /t 3 /nobreak >nul\r\n"
+                        "powershell -NoProfile -Command \"Expand-Archive"
+                        " -LiteralPath '" + tmp + "' -DestinationPath '" + install_dir + "'"
+                        " -Force\"\r\n"
+                        "del \"" + tmp + "\"\r\n"
+                        "start \"\" \"" + install_dir + "\\Nexus.exe\"\r\n"
+                        "(goto) 2>nul & del \"%~f0\"\r\n")
+            subprocess.Popen(["cmd", "/c", "start", "/min", "", bat], shell=False)
+        except Exception:
+            try:
+                self.show_info_message(t("msg_warning", self.lang),
+                                       t("update_error", self.lang))
+            except Exception:
+                pass
+            return
+        self.quit_app(menu)
 
     def refresh_ui(self):
         self.build_ui()
