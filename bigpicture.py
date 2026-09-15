@@ -4079,10 +4079,40 @@ class NexusKeyboard:
             pass
         win.update_idletasks()
         try:
-            w = min(1000, max(640, app.root.winfo_width() - 120))
-            h = 430
-            x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
-            y = app.root.winfo_y() + app.root.winfo_height() - h
+            state = ""
+            try:
+                state = app.root.state()
+            except Exception:
+                pass
+            if state in ("iconic", "withdrawn"):
+                # Root minimizado (modo remoto): ancora na area util da
+                # tela (winfo da erro -32000). Respeita a barra de tarefas.
+                w2, h2, x2, y2 = None, None, None, None
+                try:
+                    rect = (ctypes.c_long * 4)()
+                    if ctypes.windll.user32.SystemParametersInfoW(
+                            0x0030, 0, rect, 0):
+                        w2 = min(1000, max(640, (rect[2] - rect[0]) - 120))
+                        h2 = 430
+                        x2 = rect[0] + (rect[2] - rect[0] - w2) // 2
+                        y2 = rect[3] - h2
+                except Exception:
+                    pass
+                if w2 is None:
+                    try:
+                        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+                        w2 = min(1000, max(640, sw - 120))
+                        h2 = 430
+                        x2 = (sw - w2) // 2
+                        y2 = sh - h2 - 60
+                    except Exception:
+                        w2, h2, x2, y2 = 620, 430, 200, 150
+                w, h, x, y = w2, h2, x2, y2
+            else:
+                w = min(1000, max(640, app.root.winfo_width() - 120))
+                h = 430
+                x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
+                y = app.root.winfo_y() + app.root.winfo_height() - h
         except Exception:
             w, h, x, y = 620, 430, 200, 150
         win.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
