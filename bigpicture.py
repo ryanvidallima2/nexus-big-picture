@@ -2171,6 +2171,7 @@ TRANSLATIONS = {
         "games_openfolder": "\U0001F4C1 Abrir pasta",
         "games_del_q": "Excluir a PASTA e todos os arquivos?",
         "dlg_cover": "\U0001F5BC Trocar imagem",
+        "dlg_cover_remove": "\u2716 Remover imagem",
         "msg_warning": "Aviso",
         "msg_success": "Sucesso",
         "quit_title": "Sair do Nexus",
@@ -2334,6 +2335,7 @@ TRANSLATIONS = {
         "games_openfolder": "\U0001F4C1 Open folder",
         "games_del_q": "Delete the FOLDER and all files?",
         "dlg_cover": "\U0001F5BC Change image",
+        "dlg_cover_remove": "\u2716 Remove image",
         "msg_warning": "Warning",
         "msg_success": "Success",
         "quit_title": "Exit Nexus",
@@ -2413,8 +2415,27 @@ CARD_COLOR_PRESETS = [
     ("Nexus", "#7c4dff"), ("Ciano", "#00bcd4"), ("Verde", "#00c853"),
     ("Amarelo", "#ffd600"), ("Rosa", "#ff4081"), ("Laranja", "#ff6d00"),
     ("Vermelho", "#e94560"), ("Azul", "#0d47a1"), ("Preto", "#000000"),
-    ("Cinza", "#424242"),
+    ("Cinza", "#424242"), ("Branco", "#FFFFFF"), ("Cinza claro", "#BDBDBD"),
+    ("Marrom", "#795548"), ("Azul claro", "#64B5F6"), ("Verde limao", "#CDDC39"),
+    ("Roxo claro", "#BA68C8"), ("Magenta", "#D81B60"), ("Verde escuro", "#1B5E20"),
 ]
+
+
+def open_color_menu(app, on_pick):
+    """Grade de cores Nexus: presets espacados + Fechar embaixo, foco evidente."""
+    menu = NexusMenuWindow(app, t("dlg_color", app.lang), [],
+                           icon="\U0001F3A8", width=520, cols=4)
+    opts = []
+    for label, color in CARD_COLOR_PRESETS:
+        opts.append((label, lambda col=color: on_pick(menu, col),
+                     {"bg": color,
+                      "fg": ("black" if color in
+                             ("#ffd600", "#FFFFFF", "#BDBDBD", "#CDDC39")
+                             else "white"),
+                      "activebackground": color, "width": 10}))
+    opts.append((t("sidebar_close", app.lang), menu.close, {"span": True}))
+    menu.set_options(opts, opt_font=11, focus_width=5)
+    return menu
 
 
 def _log_dark_result(tag, hwnd, hrs):
@@ -2645,17 +2666,7 @@ class OpenTargetDialog:
         self._after_refresh()
 
     def _edit_color(self):
-        menu = NexusMenuWindow(self.app, t("dlg_color", self.app.lang), [],
-                               icon="\U0001F3A8", width=480, cols=4)
-        opts = []
-        for label, color in CARD_COLOR_PRESETS:
-            opts.append((label,
-                         lambda col=color: self._pick_card_color(menu, col),
-                         {"bg": color,
-                          "fg": "black" if color == "#ffd600" else "white",
-                          "activebackground": color, "width": 8}))
-        opts.append((t("sidebar_close", self.app.lang), menu.close, {"width": 8}))
-        menu.set_options(opts, opt_font=10)
+        open_color_menu(self.app, self._pick_card_color)
 
     def _pick_card_color(self, menu, color):
         try:
@@ -3030,6 +3041,7 @@ class GameCardDialog:
             (t("dlg_color", lang), self._edit_color),
             (t("dlg_color_reset", lang), self._edit_color_reset),
             (t("dlg_cover", lang), self._edit_cover),
+            (t("dlg_cover_remove", lang), self._edit_cover_remove),
             (t("games_openfolder", lang), self._edit_open_folder),
             (f"\U0001F5D1 {t('ctx_delete', lang)}", self._edit_delete),
             (t("dlg_back", lang), self.show_main),
@@ -3071,17 +3083,7 @@ class GameCardDialog:
         self._after_refresh()
 
     def _edit_color(self):
-        menu = NexusMenuWindow(self.app, t("dlg_color", self.app.lang), [],
-                               icon="\U0001F3A8", width=480, cols=4)
-        opts = []
-        for label, color in CARD_COLOR_PRESETS:
-            opts.append((label,
-                         lambda col=color: self._pick_card_color(menu, col),
-                         {"bg": color,
-                          "fg": "black" if color == "#ffd600" else "white",
-                          "activebackground": color, "width": 8}))
-        opts.append((t("sidebar_close", self.app.lang), menu.close, {"width": 8}))
-        menu.set_options(opts, opt_font=10)
+        open_color_menu(self.app, self._pick_card_color)
 
     def _pick_card_color(self, menu, color):
         try:
@@ -3108,6 +3110,13 @@ class GameCardDialog:
             picked = ""
         if picked and self.app.set_game_cover(self.name, picked):
             self.app.refresh_ui()
+        self._after_refresh(rebuild=False)
+        if self._alive() and self.mode == "edit":
+            self.show_edit()
+
+    def _edit_cover_remove(self):
+        self.app.remove_game_cover(self.name)
+        self.app.refresh_ui()
         self._after_refresh(rebuild=False)
         if self._alive() and self.mode == "edit":
             self.show_edit()
@@ -4245,7 +4254,7 @@ class NexusMenuWindow:
         except Exception:
             pass
 
-    def set_options(self, options, opt_font=14):
+    def set_options(self, options, opt_font=14, focus_width=3):
         if self.closed:
             return
         for w in self.body.winfo_children():
@@ -4253,12 +4262,13 @@ class NexusMenuWindow:
         self.options = list(options)
         self.btns = []
         self.focus_idx = 0
+        r = c = 0
         for i, opt in enumerate(self.options):
             label, cmd = opt[0], opt[1]
             style = opt[2] if len(opt) > 2 else {}
             b = tk.Button(self.body, text=label, font=("Segoe UI", opt_font, "bold"),
                           relief="flat", bd=0, cursor="hand2",
-                          highlightthickness=3,
+                          highlightthickness=focus_width,
                           command=lambda idx=i: (self.set_focus(idx), self.confirm()))
             b.configure(bg=style.get("bg", Config.BG_CARD),
                         fg=style.get("fg", Config.TEXT_PRIMARY),
@@ -4267,12 +4277,21 @@ class NexusMenuWindow:
             if self.cols == 1:
                 b.configure(anchor="w", padx=18)
                 b.pack(fill="x", padx=40, pady=3)
+            elif style.get("span"):
+                b.grid(row=r, column=c, columnspan=self.cols - c,
+                       sticky="ew", padx=4, pady=4)
+                r += 1
+                c = 0
             else:
                 b.configure(width=style.get("width", 10))
-                b.grid(row=i // self.cols, column=i % self.cols, padx=4, pady=4)
+                b.grid(row=r, column=c, padx=4, pady=4)
+                c += 1
+                if c >= self.cols:
+                    r += 1
+                    c = 0
             b.bind("<Enter>", lambda e, idx=i: self.set_focus(idx))
             self.btns.append(b)
-        rows = (len(self.options) + self.cols - 1) // max(1, self.cols)
+        rows = r + (1 if c else 0)
         h = 250 + rows * (56 if self.cols > 1 else 52)
         try:
             self.win.geometry(f"{self.win_w}x{h}+{self.win_x}+{self.win_y}")
@@ -4627,6 +4646,10 @@ class BigPictureApp:
             (t("tab_games", self.lang), "games"),
         ]
         for idx, (text, tid) in enumerate(tabs):
+            if tid == "games":
+                # Divisoria visual: Jogos e outra categoria (so visual)
+                sep = tk.Frame(self.nav_frame, bg=Config.BORDER, width=2)
+                sep.pack(side="left", fill="y", padx=10, pady=12)
             btn = tk.Button(self.nav_frame, text=text, font=("Segoe UI", 13),
                             bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
                             activebackground=Config.ACCENT, activeforeground="white",
@@ -5693,6 +5716,20 @@ class BigPictureApp:
         except Exception:
             return False
 
+    def remove_game_cover(self, name):
+        folder = self.game_folder(name)
+        if not folder:
+            return False
+        try:
+            removed = False
+            for f in os.listdir(folder):
+                if f.lower().startswith("cover") and f.lower().endswith(GAME_IMG_EXTS):
+                    os.remove(os.path.join(folder, f))
+                    removed = True
+            return removed
+        except Exception:
+            return False
+
     def delete_game_folder(self, name):
         folder = self.game_folder(name)
         if not folder:
@@ -5942,7 +5979,15 @@ class BigPictureApp:
         except Exception:
             pass
         if self.pad_window is not None:
-            self.pad_window.on_capture_end()
+            # Atualiza na hora: sem isso o selo mostra o botao antigo
+            # ate qualquer outro refresh (parecia "nao salvou").
+            try:
+                self.pad_window.refresh()
+            except Exception:
+                try:
+                    self.pad_window.on_capture_end()
+                except Exception:
+                    pass
 
     def enter_remote_mode(self, service, watch=None):
         """O controle passa a comandar o app/site aberto. So com controle ligado."""
