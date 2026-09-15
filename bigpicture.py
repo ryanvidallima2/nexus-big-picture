@@ -4120,6 +4120,10 @@ class NexusKeyboard:
             win.lift()
         except Exception:
             pass
+        try:
+            win.after(150, self.dock_bottom)
+        except Exception:
+            pass
         _apply_dark_title(win, "kbd")
 
         tk.Label(win, text=f"\u2328 {t('kb_title', lang)}",
@@ -4143,6 +4147,10 @@ class NexusKeyboard:
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
                   bd=0, cursor="hand2", padx=60, pady=6,
                   command=lambda: self.press_key(" ")).pack(side="left", padx=8)
+        tk.Button(bottom, text="\u2B07", font=("Segoe UI", 13, "bold"),
+                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
+                  bd=0, cursor="hand2", padx=16, pady=6,
+                  command=self.dock_bottom).pack(side="left", padx=8)
         tk.Button(bottom, text=t("kb_ok", lang), font=("Segoe UI", 13, "bold"),
                   bg=Config.ACCENT, fg="white", relief="flat",
                   bd=0, cursor="hand2", padx=40, pady=6,
@@ -4156,6 +4164,35 @@ class NexusKeyboard:
 
     def _rows(self):
         return self.ROWS_NUM if self.numeric else self.ROWS
+
+    def dock_bottom(self):
+        """Reancora na base da area util (barra de tarefas descontada)."""
+        if self.closed:
+            return
+        try:
+            self.win.update_idletasks()
+            w = self.win.winfo_width()
+            h = self.win.winfo_height()
+            if w < 50 or h < 50:
+                w, h = 1000, 430
+        except Exception:
+            return
+        placed = False
+        try:
+            rect = (ctypes.c_long * 4)()
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, rect, 0):
+                x = rect[0] + (rect[2] - rect[0] - w) // 2
+                y = rect[3] - h
+                self.win.geometry(f"+{max(0, x)}+{max(0, y)}")
+                placed = True
+        except Exception:
+            pass
+        if not placed:
+            try:
+                sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
+                self.win.geometry(f"+{max(0, (sw - w) // 2)}+{max(0, sh - h - 60)}")
+            except Exception:
+                pass
 
     def _build_keys(self):
         try:
