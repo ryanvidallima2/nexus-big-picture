@@ -1702,6 +1702,88 @@ def stick_response(v, deadzone=0.22):
     return (1.0 if v > 0 else -1.0) * (a - deadzone) / (1.0 - deadzone)
 
 
+_UIA_PS = (
+    "Add-Type -AssemblyName UIAutomationClient; "
+    "$el = [System.Windows.Automation.AutomationElement]::FocusedElement; "
+    "if ($el -eq $null) { 'none' } "
+    "else { $el.Current.ControlType.ProgrammaticName }"
+)
+_UIA_TEXT_TYPES = frozenset(["ControlType.Edit"])
+_EDIT_CLASS_NAMES = frozenset([
+    "edit", "richedit20wpt", "richedit20a", "richedit50w", "richedit50a",
+    "_wwg", "_wwn",
+])
+
+
+def _uia_focused_control():
+    out = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", _UIA_PS],
+        capture_output=True, text=True, timeout=12,
+        creationflags=subprocess.CREATE_NO_WINDOW)
+    lines = (out.stdout or "").strip().splitlines()
+    return lines[-1].strip() if lines else None
+
+
+def _caret_visible():
+    try:
+        u = ctypes.windll.user32
+
+        class _RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                        ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        class _GUITHREADINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_ulong), ("flags", ctypes.c_ulong),
+                        ("hwndActive", ctypes.c_void_p),
+                        ("hwndFocus", ctypes.c_void_p),
+                        ("hwndCapture", ctypes.c_void_p),
+                        ("hwndMenuOwner", ctypes.c_void_p),
+                        ("hwndMoveSize", ctypes.c_void_p),
+                        ("hwndCaret", ctypes.c_void_p),
+                        ("rcCaret", _RECT)]
+
+        try:
+            u.GetGUIThreadInfo.argtypes = [ctypes.c_ulong,
+                                           ctypes.POINTER(_GUITHREADINFO)]
+            u.GetGUIThreadInfo.restype = ctypes.c_bool
+            u.GetClassNameW.argtypes = [ctypes.c_void_p,
+                                        ctypes.c_wchar_p, ctypes.c_int]
+            u.GetClassNameW.restype = ctypes.c_int
+        except Exception:
+            pass
+        info = _GUITHREADINFO()
+        info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+        if not u.GetGUIThreadInfo(0, ctypes.byref(info)):
+            return False
+        if info.hwndCaret:
+            return True
+        if info.hwndFocus:
+            try:
+                buf = ctypes.create_unicode_buffer(128)
+                if u.GetClassNameW(info.hwndFocus, buf, 128) > 0:
+                    if buf.value.lower() in _EDIT_CLASS_NAMES:
+                        return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
+def focused_is_text_field():
+    """True se o foco atual (outro app) esta num campo de texto."""
+    try:
+        name = _uia_focused_control()
+        if name and name != "none":
+            return name in _UIA_TEXT_TYPES
+    except Exception:
+        pass
+    try:
+        return _caret_visible()
+    except Exception:
+        return False
+
+
 # Processos para detectar que o app foi fechado (saida automatica do remoto).
 # So nomes confiaveis: se o processo nunca aparecer, nao ha saida automatica
 # (o usuario sai com Back+Start).
@@ -1813,7 +1895,7 @@ NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_nex
 REMOTE_ACTION_ORDER = ["click_left", "click_right", "enter", "back",
                        "space", "fullscreen", "vol_down", "vol_up",
                        "play_pause", "next_track", "prev_track",
-                       "app_tab_prev", "app_tab_next"]
+                       "app_tab_prev", "app_tab_next", "keyboard"]
 DEFAULT_PAD_SENSITIVITY = 12
 DEFAULT_PAD_SCROLL = 8
 DEFAULT_PAD_DEADZONE = 22
@@ -1877,6 +1959,7 @@ class GamepadManager:
         self.remote_enter_time = 0.0
         self.remote_off = [0.0, 0.0, 0.0, 0.0]
         self.remote_cal = []
+        self.remote_kb_time = 0.0
         if PYGAME_AVAILABLE:
             try:
                 pygame.init()
@@ -2484,6 +2567,9 @@ class GamepadManager:
                             tap_key(VK_RETURN)  # modo console: A abre o quadro
                         else:
                             mouse_click(right=False)
+                            self._maybe_open_kb_for_focus()
+                    elif action == "keyboard":
+                        self._open_kb_global()
                     elif action == "click_right":
                         mouse_click(right=True)
                     elif action == "enter":
@@ -2509,6 +2595,48 @@ class GamepadManager:
                     elif action == "app_tab_next":
                         self.app.remote_tab(prev=False)
             self._remote_watch_tick()
+        except Exception:
+            pass
+
+    def _maybe_open_kb_for_focus(self):
+        """Apos clique com o controle: se o foco caiu num campo de texto,
+        abre o teclado (com cooldown)."""
+        try:
+            if _modal_alive(self.app.kb_window):
+                return
+            now = time.time()
+            if now - (self.remote_kb_time or 0.0) < 3.0:
+                return
+            self.remote_kb_time = now
+        except Exception:
+            return
+        try:
+            threading.Thread(target=self._focus_check_thread,
+                             daemon=True).start()
+        except Exception:
+            pass
+
+    def _focus_check_thread(self):
+        try:
+            time.sleep(0.45)
+            is_text = focused_is_text_field()
+        except Exception:
+            is_text = False
+        if is_text:
+            try:
+                self.app.root.after(0, self._open_kb_global)
+            except Exception:
+                pass
+
+    def _open_kb_global(self):
+        try:
+            if _modal_alive(self.app.kb_window):
+                try:
+                    self.app.kb_window.win.lift()
+                except Exception:
+                    pass
+                return
+            self.app.open_keyboard(None)
         except Exception:
             pass
 
@@ -2869,6 +2997,7 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Tela cheia",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_keyboard": "Teclado",
         "pad_a_play_pause": "Play/pause (midia)",
         "pad_a_next_track": "Proxima faixa",
         "pad_a_prev_track": "Faixa anterior",
@@ -3062,6 +3191,7 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Fullscreen",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_keyboard": "Keyboard",
         "pad_a_play_pause": "Play/pause (media)",
         "pad_a_next_track": "Next track",
         "pad_a_prev_track": "Previous track",
@@ -4249,9 +4379,11 @@ class NexusKeyboard:
             s = self._dock_scale()
             grid_font = max(8, round((16 if self.numeric else 14) * s))
             bottom_font = max(8, round(13 * s))
+            grid_pady = 1
         else:
             grid_font = 16 if self.numeric else 14
             bottom_font = 13
+            grid_pady = 4
         try:
             if on:
                 self.title_lbl.pack_forget()
@@ -4265,7 +4397,7 @@ class NexusKeyboard:
             for _key, b in row:
                 try:
                     b.configure(font=("Segoe UI", grid_font, "bold"))
-                    b.grid_configure(pady=1 if on else 4)
+                    b.grid_configure(pady=grid_pady)
                 except Exception:
                     pass
         for _bid, b in self.bottom_btns:
@@ -4275,6 +4407,12 @@ class NexusKeyboard:
                 pass
         try:
             self.bottom_frame.pack_configure(pady=(2, 4) if on else (8, 10))
+            self.grid_frame.pack_configure(fill="both" if on else "none",
+                                           expand=on)
+            for c in range(10):
+                self.grid_frame.grid_columnconfigure(c, weight=1 if on else 0)
+            for r in range(len(self.cells)):
+                self.grid_frame.grid_rowconfigure(r, weight=1 if on else 0)
         except Exception:
             pass
         self._paint()
@@ -8031,6 +8169,7 @@ class BigPictureApp:
             gp.remote_enter_time = time.time()
             gp.remote_off = [0.0, 0.0, 0.0, 0.0]
             gp.remote_cal = []
+            gp.remote_kb_time = 0.0
             gp.hat_debounce.clear()
             gp.prev_buttons.clear()
             self.root.iconify()
