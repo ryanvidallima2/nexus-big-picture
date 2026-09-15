@@ -2428,13 +2428,21 @@ def _log_dark_result(tag, hwnd, hrs):
 
 
 def _apply_dark_title(widget, tag="win"):
-    # Barra de titulo escura na JANELA CERTA (pelo HWND dela, nao
-    # pela janela em foco no momento, que podia ser outro programa).
+    # Barra de titulo escura na JANELA CERTA: o HWND que o DWM gerencia
+    # e o PAI do winfo_id (o id cru e o filho interno -> E_HANDLE).
     # Tenta attr 20 e 19; depois forca o redesenho da moldura, senao o
     # Windows pode ignorar o atributo aplicado antes da janela abrir.
     # So registra log se o attr 20 falhar (para diagnostico).
     try:
-        hwnd = int(widget.winfo_id())
+        inner = int(widget.winfo_id())
+        try:
+            _get_parent = ctypes.windll.user32.GetParent
+            _get_parent.argtypes = [ctypes.c_void_p]
+            _get_parent.restype = ctypes.c_void_p
+            outer = _get_parent(inner)
+            hwnd = outer if outer else inner
+        except Exception:
+            hwnd = inner
         hrs = []
         v = ctypes.c_int(1)
         for attr in (20, 19):
