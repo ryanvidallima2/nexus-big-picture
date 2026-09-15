@@ -4143,6 +4143,7 @@ class NexusKeyboard:
 
         bottom = tk.Frame(win, bg=Config.BG_SIDEBAR)
         bottom.pack(pady=(8, 10))
+        self.bottom_frame = bottom
         self.mode_btn = tk.Button(bottom, text="123", font=("Segoe UI", 13, "bold"),
                                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                                   relief="flat", bd=0, cursor="hand2",
@@ -4196,8 +4197,6 @@ class NexusKeyboard:
                 self.float_geom = self.win.geometry()
             except Exception:
                 self.float_geom = None
-        self._apply_compact(on)
-        if on:
             self._place_docked()
         else:
             try:
@@ -4209,6 +4208,7 @@ class NexusKeyboard:
             self.win.update_idletasks()
         except Exception:
             pass
+        self._apply_compact(on)
 
     def _place_docked(self):
         # Uma unica fonte (workarea ou tela-60) p/ largura, altura e posicao.
@@ -4233,8 +4233,21 @@ class NexusKeyboard:
         except Exception:
             pass
 
+    def _layout_scale(self):
+        try:
+            self.win.update_idletasks()
+            h = self.win.winfo_height()
+            if h < 50:
+                return 1.0
+        except Exception:
+            return 1.0
+        return min(1.3, max(0.65, h / 430.0))
+
     def _apply_compact(self, on):
-        full_font = 16 if self.numeric else 14
+        s = self._layout_scale() if on else 1.0
+        grid_font = max(9, round((16 if self.numeric else 14) * s))
+        bottom_font = max(10, round(13 * s))
+        grid_pady = 4 if not on else max(1, round(3 * s))
         try:
             if on:
                 self.title_lbl.pack_forget()
@@ -4247,22 +4260,25 @@ class NexusKeyboard:
         for row in self.cells:
             for _key, b in row:
                 try:
-                    b.configure(font=("Segoe UI", 10 if on else full_font, "bold"))
-                    b.grid_configure(pady=1 if on else 4)
+                    b.configure(font=("Segoe UI", grid_font, "bold"))
+                    b.grid_configure(pady=grid_pady,
+                                     sticky="nsew" if on else "")
                 except Exception:
                     pass
         for _bid, b in self.bottom_btns:
             try:
-                b.configure(font=("Segoe UI", 10 if on else 13, "bold"))
+                b.configure(font=("Segoe UI", bottom_font, "bold"))
             except Exception:
                 pass
         try:
-            self.grid_frame.pack_configure(fill="x" if on else "none")
+            self.grid_frame.pack_configure(fill="both" if on else "none",
+                                           expand=on)
             for c in range(10):
                 self.grid_frame.grid_columnconfigure(c, weight=1 if on else 0)
-            for row in self.cells:
-                for _k, b in row:
-                    b.grid_configure(sticky="ew" if on else "")
+            for r in range(len(self.cells)):
+                self.grid_frame.grid_rowconfigure(r, weight=1 if on else 0)
+            self.bottom_frame.pack_configure(
+                pady=(max(2, round(8 * s)), max(2, round(10 * s))) if on else (8, 10))
         except Exception:
             pass
         self._paint()
