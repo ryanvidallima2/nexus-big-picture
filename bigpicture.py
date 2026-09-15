@@ -4233,7 +4233,8 @@ class NexusKeyboard:
         except Exception:
             pass
 
-    def _layout_scale(self):
+    def _dock_scale(self):
+        # Escala uniforme pela altura real: mesma proporcao da v1, so menor.
         try:
             self.win.update_idletasks()
             h = self.win.winfo_height()
@@ -4241,13 +4242,16 @@ class NexusKeyboard:
                 return 1.0
         except Exception:
             return 1.0
-        return min(1.3, max(0.65, h / 430.0))
+        return h / 430.0
 
     def _apply_compact(self, on):
-        s = self._layout_scale() if on else 1.0
-        grid_font = max(9, round((16 if self.numeric else 14) * s))
-        bottom_font = max(10, round(13 * s))
-        grid_pady = 4 if not on else max(1, round(3 * s))
+        if on:
+            s = self._dock_scale()
+            grid_font = max(8, round((16 if self.numeric else 14) * s))
+            bottom_font = max(8, round(13 * s))
+        else:
+            grid_font = 16 if self.numeric else 14
+            bottom_font = 13
         try:
             if on:
                 self.title_lbl.pack_forget()
@@ -4261,8 +4265,7 @@ class NexusKeyboard:
             for _key, b in row:
                 try:
                     b.configure(font=("Segoe UI", grid_font, "bold"))
-                    b.grid_configure(pady=grid_pady,
-                                     sticky="nsew" if on else "")
+                    b.grid_configure(pady=1 if on else 4)
                 except Exception:
                     pass
         for _bid, b in self.bottom_btns:
@@ -4271,14 +4274,7 @@ class NexusKeyboard:
             except Exception:
                 pass
         try:
-            self.grid_frame.pack_configure(fill="both" if on else "none",
-                                           expand=on)
-            for c in range(10):
-                self.grid_frame.grid_columnconfigure(c, weight=1 if on else 0)
-            for r in range(len(self.cells)):
-                self.grid_frame.grid_rowconfigure(r, weight=1 if on else 0)
-            self.bottom_frame.pack_configure(
-                pady=(max(2, round(8 * s)), max(2, round(10 * s))) if on else (8, 10))
+            self.bottom_frame.pack_configure(pady=(2, 4) if on else (8, 10))
         except Exception:
             pass
         self._paint()
