@@ -1702,6 +1702,88 @@ def stick_response(v, deadzone=0.22):
     return (1.0 if v > 0 else -1.0) * (a - deadzone) / (1.0 - deadzone)
 
 
+_UIA_PS = (
+    "Add-Type -AssemblyName UIAutomationClient; "
+    "$el = [System.Windows.Automation.AutomationElement]::FocusedElement; "
+    "if ($el -eq $null) { 'none' } "
+    "else { $el.Current.ControlType.ProgrammaticName }"
+)
+_UIA_TEXT_TYPES = frozenset(["ControlType.Edit"])
+_EDIT_CLASS_NAMES = frozenset([
+    "edit", "richedit20wpt", "richedit20a", "richedit50w", "richedit50a",
+    "_wwg", "_wwn",
+])
+
+
+def _uia_focused_control():
+    out = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", _UIA_PS],
+        capture_output=True, text=True, timeout=12,
+        creationflags=subprocess.CREATE_NO_WINDOW)
+    lines = (out.stdout or "").strip().splitlines()
+    return lines[-1].strip() if lines else None
+
+
+def _caret_visible():
+    try:
+        u = ctypes.windll.user32
+
+        class _RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                        ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        class _GUITHREADINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_ulong), ("flags", ctypes.c_ulong),
+                        ("hwndActive", ctypes.c_void_p),
+                        ("hwndFocus", ctypes.c_void_p),
+                        ("hwndCapture", ctypes.c_void_p),
+                        ("hwndMenuOwner", ctypes.c_void_p),
+                        ("hwndMoveSize", ctypes.c_void_p),
+                        ("hwndCaret", ctypes.c_void_p),
+                        ("rcCaret", _RECT)]
+
+        try:
+            u.GetGUIThreadInfo.argtypes = [ctypes.c_ulong,
+                                           ctypes.POINTER(_GUITHREADINFO)]
+            u.GetGUIThreadInfo.restype = ctypes.c_bool
+            u.GetClassNameW.argtypes = [ctypes.c_void_p,
+                                        ctypes.c_wchar_p, ctypes.c_int]
+            u.GetClassNameW.restype = ctypes.c_int
+        except Exception:
+            pass
+        info = _GUITHREADINFO()
+        info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+        if not u.GetGUIThreadInfo(0, ctypes.byref(info)):
+            return False
+        if info.hwndCaret:
+            return True
+        if info.hwndFocus:
+            try:
+                buf = ctypes.create_unicode_buffer(128)
+                if u.GetClassNameW(info.hwndFocus, buf, 128) > 0:
+                    if buf.value.lower() in _EDIT_CLASS_NAMES:
+                        return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
+def focused_is_text_field():
+    """True se o foco atual (outro app) esta num campo de texto."""
+    try:
+        name = _uia_focused_control()
+        if name and name != "none":
+            return name in _UIA_TEXT_TYPES
+    except Exception:
+        pass
+    try:
+        return _caret_visible()
+    except Exception:
+        return False
+
+
 # Processos para detectar que o app foi fechado (saida automatica do remoto).
 # So nomes confiaveis: se o processo nunca aparecer, nao ha saida automatica
 # (o usuario sai com Back+Start).
@@ -1813,7 +1895,7 @@ NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_nex
 REMOTE_ACTION_ORDER = ["click_left", "click_right", "enter", "back",
                        "space", "fullscreen", "vol_down", "vol_up",
                        "play_pause", "next_track", "prev_track",
-                       "app_tab_prev", "app_tab_next"]
+                       "app_tab_prev", "app_tab_next", "keyboard"]
 DEFAULT_PAD_SENSITIVITY = 12
 DEFAULT_PAD_SCROLL = 8
 DEFAULT_PAD_DEADZONE = 22
@@ -1877,6 +1959,7 @@ class GamepadManager:
         self.remote_enter_time = 0.0
         self.remote_off = [0.0, 0.0, 0.0, 0.0]
         self.remote_cal = []
+        self.remote_kb_time = 0.0
         if PYGAME_AVAILABLE:
             try:
                 pygame.init()
@@ -2484,6 +2567,9 @@ class GamepadManager:
                             tap_key(VK_RETURN)  # modo console: A abre o quadro
                         else:
                             mouse_click(right=False)
+                            self._maybe_open_kb_for_focus()
+                    elif action == "keyboard":
+                        self._open_kb_global()
                     elif action == "click_right":
                         mouse_click(right=True)
                     elif action == "enter":
@@ -2509,6 +2595,48 @@ class GamepadManager:
                     elif action == "app_tab_next":
                         self.app.remote_tab(prev=False)
             self._remote_watch_tick()
+        except Exception:
+            pass
+
+    def _maybe_open_kb_for_focus(self):
+        """Apos clique com o controle: se o foco caiu num campo de texto,
+        abre o teclado (com cooldown)."""
+        try:
+            if _modal_alive(self.app.kb_window):
+                return
+            now = time.time()
+            if now - (self.remote_kb_time or 0.0) < 3.0:
+                return
+            self.remote_kb_time = now
+        except Exception:
+            return
+        try:
+            threading.Thread(target=self._focus_check_thread,
+                             daemon=True).start()
+        except Exception:
+            pass
+
+    def _focus_check_thread(self):
+        try:
+            time.sleep(0.45)
+            is_text = focused_is_text_field()
+        except Exception:
+            is_text = False
+        if is_text:
+            try:
+                self.app.root.after(0, self._open_kb_global)
+            except Exception:
+                pass
+
+    def _open_kb_global(self):
+        try:
+            if _modal_alive(self.app.kb_window):
+                try:
+                    self.app.kb_window.win.lift()
+                except Exception:
+                    pass
+                return
+            self.app.open_keyboard(None)
         except Exception:
             pass
 
@@ -2869,6 +2997,7 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Tela cheia",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_keyboard": "Teclado",
         "pad_a_play_pause": "Play/pause (midia)",
         "pad_a_next_track": "Proxima faixa",
         "pad_a_prev_track": "Faixa anterior",
@@ -3062,6 +3191,7 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Fullscreen",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_keyboard": "Keyboard",
         "pad_a_play_pause": "Play/pause (media)",
         "pad_a_next_track": "Next track",
         "pad_a_prev_track": "Previous track",
@@ -4061,6 +4191,9 @@ class NexusKeyboard:
         self.numeric = bool(numeric)
         self.cur = [0, 0]
         self.cells = []
+        self.bottom_btns = []
+        self.docked = False
+        self.float_geom = None
         try:
             self.target_hwnd = foreground_hwnd()
         except Exception:
@@ -4077,6 +4210,17 @@ class NexusKeyboard:
             win.overrideredirect(True)
         except Exception:
             pass
+        try:
+            # Sempre visivel, inclusive sobre o navegador/app externo
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        if entry is None:
+            # Modo global: nao rouba o foco do campo (o digitado vai p/ ele)
+            try:
+                win.focusmodel("passive")
+            except Exception:
+                pass
         win.update_idletasks()
         try:
             state = ""
@@ -4126,11 +4270,13 @@ class NexusKeyboard:
             pass
         _apply_dark_title(win, "kbd")
 
-        tk.Label(win, text=f"\u2328 {t('kb_title', lang)}",
-                 font=("Segoe UI", 16, "bold"), fg=Config.ACCENT,
-                 bg=Config.BG_SIDEBAR).pack(pady=(12, 6))
-        tk.Label(win, text=t("kb_hint", lang), font=("Segoe UI", 11),
-                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR).pack(pady=(0, 6))
+        self.title_lbl = tk.Label(win, text=f"\u2328 {t('kb_title', lang)}",
+                                  font=("Segoe UI", 16, "bold"), fg=Config.ACCENT,
+                                  bg=Config.BG_SIDEBAR)
+        self.title_lbl.pack(pady=(12, 6))
+        self.hint_lbl = tk.Label(win, text=t("kb_hint", lang), font=("Segoe UI", 11),
+                                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR)
+        self.hint_lbl.pack(pady=(0, 6))
 
         self.grid_frame = tk.Frame(win, bg=Config.BG_SIDEBAR)
         self.grid_frame.pack()
@@ -4138,23 +4284,33 @@ class NexusKeyboard:
 
         bottom = tk.Frame(win, bg=Config.BG_SIDEBAR)
         bottom.pack(pady=(8, 10))
+        self.bottom_frame = bottom
         self.mode_btn = tk.Button(bottom, text="123", font=("Segoe UI", 13, "bold"),
                                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                                   relief="flat", bd=0, cursor="hand2",
                                   padx=24, pady=6, command=self.toggle_mode)
         self.mode_btn.pack(side="left", padx=8)
-        tk.Button(bottom, text=t("kb_space", lang), font=("Segoe UI", 13, "bold"),
+        self.bottom_btns.append(("mode", self.mode_btn))
+        space_btn = tk.Button(bottom, text=t("kb_space", lang), font=("Segoe UI", 13, "bold"),
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
                   bd=0, cursor="hand2", padx=60, pady=6,
-                  command=lambda: self.press_key(" ")).pack(side="left", padx=8)
-        tk.Button(bottom, text="\u2B07", font=("Segoe UI", 13, "bold"),
+                  command=lambda: self.press_key(" "))
+        space_btn.pack(side="left", padx=8)
+        self.bottom_btns.append(("space", space_btn))
+        dock_btn = tk.Button(bottom, text="\u2B07", font=("Segoe UI", 13, "bold"),
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
                   bd=0, cursor="hand2", padx=16, pady=6,
-                  command=self.dock_bottom).pack(side="left", padx=8)
-        tk.Button(bottom, text=t("kb_ok", lang), font=("Segoe UI", 13, "bold"),
+                  command=self.toggle_dock)
+        dock_btn.pack(side="left", padx=8)
+        self.bottom_btns.append(("dock", dock_btn))
+        ok_btn = tk.Button(bottom, text=t("kb_ok", lang), font=("Segoe UI", 13, "bold"),
                   bg=Config.ACCENT, fg="white", relief="flat",
                   bd=0, cursor="hand2", padx=40, pady=6,
-                  command=self.close).pack(side="left", padx=8)
+                  command=self.close)
+        ok_btn.pack(side="left", padx=8)
+        self.bottom_btns.append(("ok", ok_btn))
+        for i, (_bid, _b) in enumerate(self.bottom_btns):
+            _b.bind("<Enter>", lambda e, idx=i: self.set_bottom(idx))
 
         self._paint()
         self._paint_mode_btn()
@@ -4164,6 +4320,113 @@ class NexusKeyboard:
 
     def _rows(self):
         return self.ROWS_NUM if self.numeric else self.ROWS
+
+    def toggle_dock(self):
+        self.set_docked(not self.docked)
+
+    def set_docked(self, on):
+        if self.closed:
+            return
+        on = bool(on)
+        if on == self.docked:
+            if on:
+                self._place_docked()
+            return
+        self.docked = on
+        if on:
+            try:
+                self.float_geom = self.win.geometry()
+            except Exception:
+                self.float_geom = None
+            self._place_docked()
+        else:
+            try:
+                if self.float_geom:
+                    self.win.geometry(self.float_geom)
+            except Exception:
+                pass
+        try:
+            self.win.update_idletasks()
+        except Exception:
+            pass
+        self._apply_compact(on)
+
+    def _place_docked(self):
+        # Uma unica fonte (workarea ou tela-60) p/ largura, altura e posicao.
+        try:
+            rect = (ctypes.c_long * 4)()
+            ok = bool(ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, rect, 0))
+        except Exception:
+            ok = False
+            rect = None
+        if ok:
+            sw, sh, x0, yb = rect[2] - rect[0], rect[3] - rect[1], rect[0], rect[3]
+        else:
+            try:
+                sw = self.win.winfo_screenwidth()
+                sh = self.win.winfo_screenheight() - 60
+                x0, yb = 0, sh
+            except Exception:
+                return
+        h = max(80, int(sh * 0.2))
+        try:
+            self.win.geometry(f"{sw}x{h}+{max(0, x0)}+{max(0, yb - h)}")
+        except Exception:
+            pass
+
+    def _dock_scale(self):
+        # Escala uniforme pela altura real: mesma proporcao da v1, so menor.
+        try:
+            self.win.update_idletasks()
+            h = self.win.winfo_height()
+            if h < 50:
+                return 1.0
+        except Exception:
+            return 1.0
+        return h / 430.0
+
+    def _apply_compact(self, on):
+        if on:
+            s = self._dock_scale()
+            grid_font = max(8, round((16 if self.numeric else 14) * s))
+            bottom_font = max(8, round(13 * s))
+            grid_pady = 1
+        else:
+            grid_font = 16 if self.numeric else 14
+            bottom_font = 13
+            grid_pady = 4
+        try:
+            if on:
+                self.title_lbl.pack_forget()
+                self.hint_lbl.pack_forget()
+            else:
+                self.title_lbl.pack(pady=(12, 6))
+                self.hint_lbl.pack(pady=(0, 6))
+        except Exception:
+            pass
+        for row in self.cells:
+            for _key, b in row:
+                try:
+                    b.configure(font=("Segoe UI", grid_font, "bold"))
+                    b.grid_configure(pady=grid_pady)
+                except Exception:
+                    pass
+        for _bid, b in self.bottom_btns:
+            try:
+                b.configure(font=("Segoe UI", bottom_font, "bold"))
+            except Exception:
+                pass
+        try:
+            self.bottom_frame.pack_configure(pady=(2, 4) if on else (8, 10))
+            self.grid_frame.pack_configure(fill="both" if on else "none",
+                                           expand=on)
+            for c in range(10):
+                self.grid_frame.grid_columnconfigure(c, weight=1 if on else 0)
+            for r in range(len(self.cells)):
+                self.grid_frame.grid_rowconfigure(r, weight=1 if on else 0)
+        except Exception:
+            pass
+        self._paint()
 
     def dock_bottom(self):
         """Reancora na base da area util (barra de tarefas descontada)."""
@@ -4220,9 +4483,19 @@ class NexusKeyboard:
     def toggle_mode(self):
         if self.closed:
             return
+        try:
+            was_bottom = self.cur[0] >= len(self.cells)
+            was_c = self.cur[1] if was_bottom else 0
+        except Exception:
+            was_bottom, was_c = False, 0
         self.numeric = not self.numeric
         self.shift = False
         self._build_keys()
+        if was_bottom:
+            self.cur = [len(self.cells), min(was_c, len(self.bottom_btns) - 1)]
+        if self.docked:
+            self._apply_compact(True)
+        self._paint()
         self._paint_mode_btn()
 
     def _paint_mode_btn(self):
@@ -4251,32 +4524,74 @@ class NexusKeyboard:
                     b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                                 highlightbackground=Config.BORDER,
                                 highlightthickness=1)
+        for i, (_bid, b) in enumerate(self.bottom_btns):
+            try:
+                if self.cur == [len(self.cells), i]:
+                    b.configure(bg=Config.ACCENT, fg="white",
+                                highlightbackground="white",
+                                highlightthickness=3)
+                else:
+                    b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                highlightbackground=Config.BORDER,
+                                highlightthickness=1)
+            except Exception:
+                pass
 
     def set_cursor(self, r, c):
         if self.closed:
             return
-        r = max(0, min(r, len(self.cells) - 1))
-        c = max(0, min(c, len(self.cells[r]) - 1))
+        rows = len(self.cells)
+        nb = len(self.bottom_btns)
+        if r >= rows:
+            r = rows
+            c = max(0, min(c, nb - 1)) if nb else 0
+        else:
+            r = max(0, min(r, rows - 1))
+            c = max(0, min(c, len(self.cells[r]) - 1))
         self.cur = [r, c]
+        self._paint()
+
+    def set_bottom(self, idx):
+        if self.closed or not self.bottom_btns:
+            return
+        self.cur = [len(self.cells), max(0, min(idx, len(self.bottom_btns) - 1))]
         self._paint()
 
     def on_hat(self, hat):
         if self.closed:
             return
+        rows = len(self.cells)
+        nb = len(self.bottom_btns)
         r, c = self.cur
-        if hat == (0, 1):
-            r -= 1
-        elif hat == (0, -1):
-            r += 1
-        elif hat == (-1, 0):
-            c -= 1
-        elif hat == (1, 0):
-            c += 1
+        if r < rows:
+            if hat == (0, 1):
+                r = (r - 1) % rows
+            elif hat == (0, -1):
+                if r == rows - 1 and nb:
+                    r, c = rows, min(c, nb - 1)
+                else:
+                    r = (r + 1) % rows
+            elif hat == (-1, 0):
+                c = (c - 1) % len(self.cells[r])
+            elif hat == (1, 0):
+                c = (c + 1) % len(self.cells[r])
+            else:
+                return
         else:
-            return
-        r %= len(self.cells)
-        c %= len(self.cells[r])
-        self.set_cursor(r, c)
+            if not nb:
+                return
+            if hat == (0, 1):
+                r, c = rows - 1, min(c, len(self.cells[rows - 1]) - 1)
+            elif hat == (0, -1):
+                r, c = 0, 0
+            elif hat == (-1, 0):
+                c = (c - 1) % nb
+            elif hat == (1, 0):
+                c = (c + 1) % nb
+            else:
+                return
+        self.cur = [r, c]
+        self._paint()
 
     def _click(self, r, c):
         self.set_cursor(r, c)
@@ -4285,8 +4600,23 @@ class NexusKeyboard:
     def press_focused(self):
         if self.closed:
             return
+        r, c = self.cur
+        if r >= len(self.cells):
+            try:
+                bid = self.bottom_btns[c][0]
+            except Exception:
+                return
+            if bid == "mode":
+                self.toggle_mode()
+            elif bid == "space":
+                self.press_key(" ")
+            elif bid == "dock":
+                self.toggle_dock()
+            elif bid == "ok":
+                self.close()
+            return
         try:
-            key = self.cells[self.cur[0]][self.cur[1]][0]
+            key = self.cells[r][c][0]
         except Exception:
             return
         self.press_key(key)
@@ -7850,6 +8180,7 @@ class BigPictureApp:
             gp.remote_enter_time = time.time()
             gp.remote_off = [0.0, 0.0, 0.0, 0.0]
             gp.remote_cal = []
+            gp.remote_kb_time = 0.0
             gp.hat_debounce.clear()
             gp.prev_buttons.clear()
             self.root.iconify()
