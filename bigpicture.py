@@ -1576,7 +1576,7 @@ class GamepadManager:
     def _stick_nav_action(self, ndir):
         """Mesmos alvos do D-pad: dialogos, janela de controles e cards."""
         top = top_modal(self.app)
-        if isinstance(top, OpenTargetDialog):
+        if isinstance(top, (OpenTargetDialog, GameCardDialog)):
             top.move()
         elif isinstance(top, NexusMenuWindow):
             top.on_hat(ndir)
@@ -1666,7 +1666,7 @@ class GamepadManager:
                 if hat not in self.hat_debounce or (now - self.hat_debounce[hat]) > 0.15:
                     self.hat_debounce[hat] = now
                     top = top_modal(self.app)
-                    if isinstance(top, OpenTargetDialog):
+                    if isinstance(top, (OpenTargetDialog, GameCardDialog)):
                         top.move()
                     elif isinstance(top, NexusMenuWindow):
                         top.on_hat(hat)
@@ -1713,7 +1713,7 @@ class GamepadManager:
                 is_confirm = (logical == "south")
                 is_cancel = (logical == "east")
                 top = top_modal(self.app)
-                if isinstance(top, OpenTargetDialog):
+                if isinstance(top, (OpenTargetDialog, GameCardDialog)):
                     if is_confirm:
                         top.confirm()
                     elif is_cancel:
@@ -2165,6 +2165,12 @@ TRANSLATIONS = {
         "dlg_url": "\U0001F517 Editar link",
         "dlg_url_title": "Editar link",
         "dlg_url_prompt": "URL do streaming:",
+        "dlg_play": "\u25B6 Jogar",
+        "games_how": "O que fazer com este jogo?",
+        "games_folder": "Pasta:",
+        "games_openfolder": "\U0001F4C1 Abrir pasta",
+        "games_del_q": "Excluir a PASTA e todos os arquivos?",
+        "dlg_cover": "\U0001F5BC Trocar imagem",
         "msg_warning": "Aviso",
         "msg_success": "Sucesso",
         "quit_title": "Sair do Nexus",
@@ -2322,6 +2328,12 @@ TRANSLATIONS = {
         "dlg_url": "\U0001F517 Edit link",
         "dlg_url_title": "Edit link",
         "dlg_url_prompt": "Streaming URL:",
+        "dlg_play": "\u25B6 Play",
+        "games_how": "What to do with this game?",
+        "games_folder": "Folder:",
+        "games_openfolder": "\U0001F4C1 Open folder",
+        "games_del_q": "Delete the FOLDER and all files?",
+        "dlg_cover": "\U0001F5BC Change image",
         "msg_warning": "Warning",
         "msg_success": "Success",
         "quit_title": "Exit Nexus",
@@ -2881,6 +2893,323 @@ class OpenTargetDialog:
             except Exception:
                 pass
         self._close()
+
+
+        self._close()
+
+
+# ===================== GAME CARD DIALOG =====================
+class GameCardDialog:
+    """Janela do card de jogo: Play + Config. Mouse, teclado e controle."""
+
+    def __init__(self, app, name):
+        self.app = app
+        self.name = name
+        self.mode = "main"
+        self.focus_idx = 0
+        self.closed = False
+        self.born = time.time()
+        self.options = []
+
+        lang = app.lang
+        win = tk.Toplevel(app.root)
+        self.win = win
+        win.title(name)
+        win.configure(bg=Config.BG_SIDEBAR)
+        win.transient(app.root)
+        win.resizable(False, False)
+        self.win_w = 480
+        _apply_dark_title(win, "gamedlg")
+        _apply_dark_title_later(win, tag="gamedlg")
+        win.update_idletasks()
+        try:
+            x = app.root.winfo_x() + (app.root.winfo_width() - self.win_w) // 2
+            y = app.root.winfo_y() + (app.root.winfo_height() - 360) // 2
+        except Exception:
+            x, y = 200, 150
+        win.geometry(f"{self.win_w}x360+{max(0, x)}+{max(0, y)}")
+
+        tk.Label(win, text=f"\u25C6 {name}", font=("Segoe UI", 20, "bold"),
+                 fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
+                 wraplength=self.win_w - 40).pack(pady=(22, 4))
+        self.sub = tk.Label(win, text=t("games_how", lang), font=("Segoe UI", 13),
+                            fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR)
+        self.sub.pack(pady=(0, 16))
+
+        self.body = tk.Frame(win, bg=Config.BG_SIDEBAR)
+        self.body.pack(fill="both", expand=True)
+
+        tk.Label(win, text=t("dlg_hint", lang), font=("Segoe UI", 11),
+                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR).pack(side="bottom", pady=14)
+
+        win.bind("<Left>", lambda e: self.move_prev())
+        win.bind("<Right>", lambda e: self.move_next())
+        win.bind("<Up>", lambda e: self.move_prev())
+        win.bind("<Down>", lambda e: self.move_next())
+        win.bind("<Return>", lambda e: self.confirm())
+        win.bind("<KP_Enter>", lambda e: self.confirm())
+        win.bind("<space>", lambda e: self.confirm())
+        win.bind("<Escape>", lambda e: self.cancel())
+        win.protocol("WM_DELETE_WINDOW", self.cancel)
+        win.grab_set()
+
+        self.show_main()
+
+    def _reg(self, btn, command):
+        idx = len(self.options)
+        self.options.append((btn, command))
+        btn.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+        return btn
+
+    def _click(self, idx):
+        self.set_focus(idx)
+        self.confirm()
+
+    def _resize(self, h):
+        try:
+            self.win.geometry(f"{self.win_w}x{h}+{self.win.winfo_x()}+{self.win.winfo_y()}")
+        except Exception:
+            pass
+
+    def show_main(self):
+        if self.closed:
+            return
+        self.mode = "main"
+        lang = self.app.lang
+        self._resize(360)
+        try:
+            self.sub.configure(text=t("games_how", lang))
+        except Exception:
+            pass
+        for w in self.body.winfo_children():
+            w.destroy()
+        self.options = []
+        self.focus_idx = 0
+        row = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+        row.pack()
+        for i, (key, cmd) in enumerate((("dlg_play", self.play),
+                                        ("dlg_config", self.show_edit))):
+            b = tk.Button(row, text=t(key, lang), font=("Segoe UI", 16, "bold"),
+                          width=11, height=2, relief="flat", bd=0, cursor="hand2",
+                          command=lambda idx=i: self._click(idx))
+            b.grid(row=0, column=i, padx=12)
+            self._reg(b, cmd)
+        self._paint()
+        try:
+            self.options[0][0].focus_set()
+        except Exception:
+            pass
+
+    def show_edit(self):
+        if self.closed:
+            return
+        self.mode = "edit"
+        lang = self.app.lang
+        name = self.name
+        self._resize(640)
+        try:
+            self.sub.configure(text=t("dlg_config", lang))
+        except Exception:
+            pass
+        for w in self.body.winfo_children():
+            w.destroy()
+        self.options = []
+        self.focus_idx = 0
+        try:
+            folder = self.app.game_folder(name) or ""
+            tk.Label(self.body, text=f"{t('games_folder', lang)} {folder}",
+                     font=("Segoe UI", 10), fg=Config.TEXT_SECONDARY,
+                     bg=Config.BG_SIDEBAR, wraplength=self.win_w - 60,
+                     justify="center").pack(pady=(0, 8))
+        except Exception:
+            pass
+        favs = self.app.settings.get("favorites", [])
+        rows = [
+            ((f"\u2716 {t('ctx_remove_fav', lang)}" if name in favs
+              else f"\u2B50 {t('ctx_add_fav', lang)}"), self._edit_fav),
+            (t("dlg_color", lang), self._edit_color),
+            (t("dlg_color_reset", lang), self._edit_color_reset),
+            (t("dlg_cover", lang), self._edit_cover),
+            (t("games_openfolder", lang), self._edit_open_folder),
+            (f"\U0001F5D1 {t('ctx_delete', lang)}", self._edit_delete),
+            (t("dlg_back", lang), self.show_main),
+        ]
+        for i, (text, cmd) in enumerate(rows):
+            b = tk.Button(self.body, text=text, font=("Segoe UI", 13),
+                          relief="flat", bd=0, cursor="hand2", anchor="w",
+                          padx=18, command=lambda idx=i: self._click(idx))
+            b.pack(fill="x", padx=40, pady=2)
+            self._reg(b, cmd)
+        self._paint()
+        try:
+            self.options[0][0].focus_set()
+        except Exception:
+            pass
+
+    def _alive(self):
+        try:
+            return bool(self.win.winfo_exists())
+        except Exception:
+            return False
+
+    def _after_refresh(self, rebuild=True):
+        if not self._alive():
+            self._close()
+            return False
+        if rebuild and self.mode == "edit":
+            self.show_edit()
+        return True
+
+    def play(self):
+        try:
+            self.app.launch_game(self.name)
+        finally:
+            self._close()
+
+    def _edit_fav(self):
+        self.app.toggle_favorite(self.name)
+        self._after_refresh()
+
+    def _edit_color(self):
+        menu = NexusMenuWindow(self.app, t("dlg_color", self.app.lang), [],
+                               icon="\U0001F3A8", width=480, cols=4)
+        opts = []
+        for label, color in CARD_COLOR_PRESETS:
+            opts.append((label,
+                         lambda col=color: self._pick_card_color(menu, col),
+                         {"bg": color,
+                          "fg": "black" if color == "#ffd600" else "white",
+                          "activebackground": color, "width": 8}))
+        opts.append((t("sidebar_close", self.app.lang), menu.close, {"width": 8}))
+        menu.set_options(opts, opt_font=10)
+
+    def _pick_card_color(self, menu, color):
+        try:
+            menu.close()
+        except Exception:
+            pass
+        self.app.set_card_color(self.name, color)
+        self._after_refresh(rebuild=False)
+        if self._alive() and self.mode == "edit":
+            self.show_edit()
+
+    def _edit_color_reset(self):
+        self.app.reset_card_color(self.name)
+        self._after_refresh()
+
+    def _edit_cover(self):
+        try:
+            picked = filedialog.askopenfilename(
+                title=self.name,
+                filetypes=[("Imagens", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.ico"),
+                           ("Todas", "*.*")],
+                parent=self.win)
+        except Exception:
+            picked = ""
+        if picked and self.app.set_game_cover(self.name, picked):
+            self.app.refresh_ui()
+        self._after_refresh(rebuild=False)
+        if self._alive() and self.mode == "edit":
+            self.show_edit()
+
+    def _edit_open_folder(self):
+        try:
+            folder = self.app.game_folder(self.name)
+            if folder:
+                os.startfile(folder)
+        except Exception:
+            pass
+
+    def _edit_delete(self):
+        name = self.name
+        lang = self.app.lang
+
+        def _yes(menu):
+            try:
+                menu.close()
+            except Exception:
+                pass
+            ok = self.app.delete_game_folder(name)
+            if ok:
+                try:
+                    self.app.refresh_ui()
+                except Exception:
+                    pass
+            if not self._alive():
+                self._close()
+            elif self.mode == "edit":
+                self.show_edit()
+
+        menu = NexusMenuWindow(self.app, t("ctx_delete", lang), [],
+                               subtitle=f"{t('games_del_q', lang)} '{name}'?",
+                               icon="\U0001F5D1", width=460)
+        menu.set_options([(t("ctx_delete", lang), lambda: _yes(menu)),
+                          (t("sidebar_close", lang), menu.close)])
+
+    def _paint(self):
+        for i, (b, _cmd) in enumerate(self.options):
+            if i == self.focus_idx:
+                b.configure(bg=Config.ACCENT, fg="white",
+                            highlightbackground=Config.ACCENT_GLOW, highlightthickness=2)
+            else:
+                b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                            highlightbackground=Config.BORDER, highlightthickness=1)
+
+    def set_focus(self, idx):
+        if self.closed or not self.options:
+            return
+        self.focus_idx = idx % len(self.options)
+        self._paint()
+
+    def move(self, direction=None):
+        self.move_next()
+
+    def move_prev(self):
+        if self.closed or not self.options:
+            return
+        self.focus_idx = (self.focus_idx - 1) % len(self.options)
+        self._paint()
+
+    def move_next(self):
+        if self.closed or not self.options:
+            return
+        self.focus_idx = (self.focus_idx + 1) % len(self.options)
+        self._paint()
+
+    def confirm(self):
+        if self.closed or not self.options:
+            return
+        _btn, cmd = self.options[self.focus_idx]
+        try:
+            cmd()
+        except Exception:
+            pass
+
+    def cancel(self):
+        if self.closed:
+            return
+        if self.mode == "edit":
+            self.show_main()
+        else:
+            self._close()
+
+    def _close(self):
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            if self.app.open_dialog is self:
+                self.app.open_dialog = None
+        except Exception:
+            pass
+        try:
+            self.win.grab_release()
+        except Exception:
+            pass
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
 
 
 # ===================== NEXUS TEXT DIALOG =====================
@@ -4751,7 +5080,7 @@ class BigPictureApp:
             if 0 <= name_idx < len(sec["names"]):
                 name = sec["names"][name_idx]
                 if self.current_tab == "games":
-                    self.launch_game(name)
+                    self.ask_game_card(name)
                 else:
                     self.ask_open_target(name)
 
@@ -4986,6 +5315,11 @@ class BigPictureApp:
 
     def render_games(self):
         names = self.scan_games()
+        try:
+            favs = set(self.settings.get("favorites", []))
+        except Exception:
+            favs = set()
+        names.sort(key=lambda n: (0 if n in favs else 1, n.lower()))
         bar = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
         bar.pack(fill="x", padx=30, pady=(20, 0))
         tk.Button(bar, text=f"\U0001F4C1 {t('games_open', self.lang)}",
@@ -5338,9 +5672,49 @@ class BigPictureApp:
 
     def on_card_click(self, name):
         if self.current_tab == "games":
-            self.launch_game(name)
+            self.ask_game_card(name)
         else:
             self.ask_open_target(name)
+
+    def ask_game_card(self, name):
+        if _modal_alive(self.open_dialog):
+            return
+        self.open_dialog = GameCardDialog(self, name)
+
+    def set_game_cover(self, name, src_path):
+        folder = self.game_folder(name)
+        if not folder or not src_path or not os.path.isfile(src_path):
+            return False
+        ext = os.path.splitext(src_path)[1].lower()
+        if ext not in GAME_IMG_EXTS:
+            return False
+        try:
+            for f in os.listdir(folder):
+                if f.lower().startswith("cover") and f.lower().endswith(GAME_IMG_EXTS):
+                    os.remove(os.path.join(folder, f))
+            copy2(src_path, os.path.join(folder, "cover" + ext))
+            return True
+        except Exception:
+            return False
+
+    def delete_game_folder(self, name):
+        folder = self.game_folder(name)
+        if not folder:
+            return False
+        try:
+            base = os.path.realpath(GAMES_DIR)
+            target = os.path.realpath(folder)
+            if os.path.commonpath([base, target]) != base or target == base:
+                return False
+            shutil.rmtree(target)
+            favs = self.settings.get("favorites", [])
+            if name in favs:
+                favs.remove(name)
+                self.settings["favorites"] = favs
+                save_settings(self.settings)
+            return True
+        except Exception:
+            return False
 
     def ask_open_target(self, name):
         if _modal_alive(self.open_dialog):
