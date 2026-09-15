@@ -2281,6 +2281,7 @@ class GamepadManager:
             if hat != (0, 0):
                 if hat not in self.hat_debounce or (now - self.hat_debounce[hat]) > 0.15:
                     self.hat_debounce[hat] = now
+                    self.app.using_gamepad = True
                     top = top_modal(self.app)
                     if isinstance(top, (OpenTargetDialog, GameCardDialog)):
                         top.move()
@@ -2325,6 +2326,7 @@ class GamepadManager:
                 if self.prev_buttons.get(btn_id, False):
                     continue
                 self.prev_buttons[btn_id] = True
+                self.app.using_gamepad = True
                 logical = self.logical_for_raw(btn_id)
                 is_confirm = (logical == "south")
                 is_cancel = (logical == "east")
@@ -2387,6 +2389,7 @@ class GamepadManager:
             if hat != (0, 0):
                 if hat not in self.hat_debounce or (now - self.hat_debounce[hat]) > 0.15:
                     self.hat_debounce[hat] = now
+                    self.app.using_gamepad = True
                     if hat == (0, 1):
                         tap_key(VK_UP)
                     elif hat == (0, -1):
@@ -2435,6 +2438,8 @@ class GamepadManager:
             else:
                 self._remote_stick_scroll(lx, ly)
             self._remote_stick_mouse(rx, ry)
+            if any(abs(v) > 0.2 for v in (lx, ly, rx, ry)):
+                self.app.using_gamepad = True
             self._remote_triggers()
 
             # Back + Start juntos = sair do modo remoto (logico: vale p/
@@ -2459,6 +2464,7 @@ class GamepadManager:
                 if self.prev_buttons.get(btn_id, False):
                     continue
                 self.prev_buttons[btn_id] = True
+                self.app.using_gamepad = True
                 logical = self.logical_for_raw(btn_id)
                 top = top_modal(self.app)
                 if isinstance(top, NexusKeyboard):
@@ -3935,6 +3941,9 @@ class NexusTextDialog:
         win.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
         _apply_dark_title(win, "textdlg")
         _apply_dark_title_later(win, tag="textdlg")
+        # O grab bloqueia os binds do root: limpa o latch aqui dentro
+        win.bind("<Button-1>", lambda e: setattr(app, "using_gamepad", False), add="+")
+        win.bind("<Key>", lambda e: setattr(app, "using_gamepad", False), add="+")
 
         tk.Label(win, text=f"\U0001F517 {title}", font=("Segoe UI", 18, "bold"),
                  fg=Config.ACCENT, bg=Config.BG_SIDEBAR).pack(pady=(18, 4))
@@ -4063,14 +4072,58 @@ class NexusKeyboard:
         win.title(t("kb_title", lang))
         win.configure(bg=Config.BG_SIDEBAR)
         win.resizable(False, False)
+        # Ancorado embaixo como o teclado virtual do Windows (sem moldura)
+        try:
+            win.overrideredirect(True)
+        except Exception:
+            pass
         win.update_idletasks()
         try:
-            w = 620
-            x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
-            y = app.root.winfo_y() + app.root.winfo_height() - 480
+            state = ""
+            try:
+                state = app.root.state()
+            except Exception:
+                pass
+            if state in ("iconic", "withdrawn"):
+                # Root minimizado (modo remoto): ancora na area util da
+                # tela (winfo da erro -32000). Respeita a barra de tarefas.
+                w2, h2, x2, y2 = None, None, None, None
+                try:
+                    rect = (ctypes.c_long * 4)()
+                    if ctypes.windll.user32.SystemParametersInfoW(
+                            0x0030, 0, rect, 0):
+                        w2 = min(1000, max(640, (rect[2] - rect[0]) - 120))
+                        h2 = 430
+                        x2 = rect[0] + (rect[2] - rect[0] - w2) // 2
+                        y2 = rect[3] - h2
+                except Exception:
+                    pass
+                if w2 is None:
+                    try:
+                        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+                        w2 = min(1000, max(640, sw - 120))
+                        h2 = 430
+                        x2 = (sw - w2) // 2
+                        y2 = sh - h2 - 60
+                    except Exception:
+                        w2, h2, x2, y2 = 620, 430, 200, 150
+                w, h, x, y = w2, h2, x2, y2
+            else:
+                w = min(1000, max(640, app.root.winfo_width() - 120))
+                h = 430
+                x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
+                y = app.root.winfo_y() + app.root.winfo_height() - h
         except Exception:
-            x, y = 200, 150
-        win.geometry(f"{w}x430+{max(0, x)}+{max(0, y)}")
+            w, h, x, y = 620, 430, 200, 150
+        win.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
+        try:
+            win.lift()
+        except Exception:
+            pass
+        try:
+            win.after(150, self.dock_bottom)
+        except Exception:
+            pass
         _apply_dark_title(win, "kbd")
 
         tk.Label(win, text=f"\u2328 {t('kb_title', lang)}",
@@ -4094,6 +4147,10 @@ class NexusKeyboard:
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
                   bd=0, cursor="hand2", padx=60, pady=6,
                   command=lambda: self.press_key(" ")).pack(side="left", padx=8)
+        tk.Button(bottom, text="\u2B07", font=("Segoe UI", 13, "bold"),
+                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
+                  bd=0, cursor="hand2", padx=16, pady=6,
+                  command=self.dock_bottom).pack(side="left", padx=8)
         tk.Button(bottom, text=t("kb_ok", lang), font=("Segoe UI", 13, "bold"),
                   bg=Config.ACCENT, fg="white", relief="flat",
                   bd=0, cursor="hand2", padx=40, pady=6,
@@ -4107,6 +4164,35 @@ class NexusKeyboard:
 
     def _rows(self):
         return self.ROWS_NUM if self.numeric else self.ROWS
+
+    def dock_bottom(self):
+        """Reancora na base da area util (barra de tarefas descontada)."""
+        if self.closed:
+            return
+        try:
+            self.win.update_idletasks()
+            w = self.win.winfo_width()
+            h = self.win.winfo_height()
+            if w < 50 or h < 50:
+                w, h = 1000, 430
+        except Exception:
+            return
+        placed = False
+        try:
+            rect = (ctypes.c_long * 4)()
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, rect, 0):
+                x = rect[0] + (rect[2] - rect[0] - w) // 2
+                y = rect[3] - h
+                self.win.geometry(f"+{max(0, x)}+{max(0, y)}")
+                placed = True
+        except Exception:
+            pass
+        if not placed:
+            try:
+                sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
+                self.win.geometry(f"+{max(0, (sw - w) // 2)}+{max(0, sh - h - 60)}")
+            except Exception:
+                pass
 
     def _build_keys(self):
         try:
@@ -5110,6 +5196,9 @@ class BigPictureApp:
         self.pad_window = None
         self.kb_window = None
         self.browser_remote = None
+        self.using_gamepad = False
+        self.form_focus = []
+        self.form_idx = 0
         self.lang = self.settings.get("language", "pt-br")
 
         self.build_ui()
@@ -5587,6 +5676,10 @@ class BigPictureApp:
         self.root.bind("<x>", lambda e: self.go_to_cards())
         self.root.bind("<X>", lambda e: self.go_to_cards())
         self.root.bind("<FocusIn>", lambda e: self._on_focus_in())
+        # Modalidade de entrada: controle x mouse/teclado (teclado virtual
+        # so abre quando o foco veio do controle)
+        self.root.bind("<Button-1>", lambda e: setattr(self, "using_gamepad", False), add="+")
+        self.root.bind("<Key>", lambda e: setattr(self, "using_gamepad", False), add="+")
 
     # ===================== NAVIGATION =====================
     def _nav_keys(self, direction):
@@ -5649,6 +5742,12 @@ class BigPictureApp:
                 return  # no limite: para, sem update/scroll
             self.sidebar_menu_index = new_idx
             self.update_sidebar_focus()
+            return
+        if self.nav_level == "form":
+            if direction in ("up", "left"):
+                self._form_move(-1)
+            elif direction in ("down", "right"):
+                self._form_move(1)
             return
         if direction == "up":
             self._dpad_up()
@@ -5791,6 +5890,9 @@ class BigPictureApp:
             if 0 <= self.sidebar_menu_index < len(self.sidebar_items):
                 self.sidebar_items[self.sidebar_menu_index][1]()
             return
+        if self.nav_level == "form":
+            self._form_activate()
+            return
         if self.nav_level == "tabs":
             tabs = TABS
             if self.focus_tab < len(tabs):
@@ -5813,6 +5915,8 @@ class BigPictureApp:
             self.toggle_sidebar()
         elif hasattr(self, 'qa_visible') and self.qa_visible:
             self.close_qa()
+        elif self.nav_level == "form":
+            self.switch_tab(self.current_tab)
         elif self.nav_level == "items":
             self.nav_level = "tabs"
             self.update_all_focus()
@@ -5951,9 +6055,58 @@ class BigPictureApp:
         self.current_tab = tab
         self.focus_mgr.reset()
         self.nav_level = "tabs"
+        self.form_focus = []
+        self.form_idx = 0
         if tab in tabs:
             self.focus_tab = tabs.index(tab)
         self.render_tab(tab)
+
+    def _reg_form(self, widget, kind, action=None):
+        try:
+            orig = (widget.cget("bg"), widget.cget("fg"))
+        except Exception:
+            orig = (None, None)
+        self.form_focus.append((widget, kind, action, orig))
+
+    def _paint_form(self):
+        for i, (w, kind, _action, orig) in enumerate(self.form_focus):
+            try:
+                if not w.winfo_exists():
+                    continue
+                if i == self.form_idx:
+                    if kind == "entry":
+                        w.configure(highlightbackground=Config.ACCENT_GLOW,
+                                    highlightthickness=2)
+                    else:
+                        w.configure(bg=Config.ACCENT, fg="white")
+                else:
+                    if kind == "entry":
+                        w.configure(highlightbackground=Config.BORDER,
+                                    highlightthickness=1)
+                    elif orig[0] is not None:
+                        w.configure(bg=orig[0], fg=orig[1])
+            except Exception:
+                pass
+
+    def _form_move(self, d):
+        if self.nav_level != "form" or not self.form_focus:
+            return
+        self.form_idx = (self.form_idx + d) % len(self.form_focus)
+        self._paint_form()
+
+    def _form_activate(self):
+        if self.nav_level != "form" or not self.form_focus:
+            return
+        try:
+            w, kind, action, _orig = self.form_focus[self.form_idx]
+            if not w.winfo_exists():
+                return
+            if kind == "entry":
+                w.focus_set()
+            elif callable(action):
+                action()
+        except Exception:
+            pass
 
     def tab_prev(self):
         tabs = TABS
@@ -8111,16 +8264,19 @@ class BigPictureApp:
         NexusKeyboard(self, entry, numeric=numeric)
 
     def bind_keyboard_popup(self, entry, mode="auto"):
-        """Clique no campo abre o teclado sozinho (letras ou numerico)."""
+        """Foco via controle abre o teclado sozinho (letras ou numerico).
+        Clique do mouse ou Tab do teclado nao abrem (usa o teclado fisico)."""
         try:
             entry.kb_mode = mode
-            entry.bind("<Button-1>",
-                       lambda e, ent=entry: self._entry_clicked(ent), add="+")
+            entry.bind("<FocusIn>",
+                       lambda e, ent=entry: self._entry_focused(ent), add="+")
         except Exception:
             pass
 
-    def _entry_clicked(self, entry):
+    def _entry_focused(self, entry):
         try:
+            if not getattr(self, "using_gamepad", False):
+                return
             if _modal_alive(self.kb_window):
                 return
             mode = getattr(entry, "kb_mode", "auto") or "auto"
@@ -8175,6 +8331,8 @@ class BigPictureApp:
                   t("add_logo", self.lang)]
         defaults = ["Meu Streaming", "https://", "Filmes", "\U0001F4F0", ""]
         self.add_entries = {}
+        self.form_focus = []
+        self.form_idx = 0
 
         for i, (label, default) in enumerate(zip(labels, defaults)):
             tk.Label(form, text=label, font=("Segoe UI", 14),
@@ -8188,11 +8346,15 @@ class BigPictureApp:
                              insertbackground=Config.ACCENT, bd=0,
                              highlightbackground=Config.BORDER, highlightthickness=1)
                 e.pack(side="left")
-                tk.Button(bf, text="...", font=("Segoe UI", 12),
+                browse_btn = tk.Button(bf, text="...", font=("Segoe UI", 12),
                           bg=Config.ACCENT, fg="white", relief="flat", cursor="hand2",
-                          command=lambda ent=e: self.browse_image(ent), padx=8).pack(side="left", padx=5)
+                          command=lambda ent=e: self.browse_image(ent), padx=8)
+                browse_btn.pack(side="left", padx=5)
                 self.add_entries[label] = e
                 self.bind_keyboard_popup(e, mode="text")
+                self._reg_form(e, "entry")
+                self._reg_form(browse_btn, "button",
+                               lambda ent=e: self.browse_image(ent))
             else:
                 e = tk.Entry(form, font=("Segoe UI", 14), width=30,
                              bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
@@ -8207,16 +8369,28 @@ class BigPictureApp:
                           relief="flat", bd=0, cursor="hand2", padx=8,
                           command=lambda ent=e: self.open_keyboard(ent)).grid(
                     row=i, column=2, padx=(8, 0))
+                self._reg_form(e, "entry")
 
-        tk.Button(form, text=f"{t('add_submit', self.lang)} \u2192", font=("Segoe UI", 15, "bold"),
+        submit_btn = tk.Button(form, text=f"{t('add_submit', self.lang)} \u2192", font=("Segoe UI", 15, "bold"),
                   bg=Config.ACCENT, fg="white", activebackground=Config.ACCENT_GLOW,
                   relief="flat", cursor="hand2", command=self.add_new_streaming,
-                  padx=30, pady=10).grid(row=len(labels), column=0, columnspan=2, pady=30)
+                  padx=30, pady=10)
+        submit_btn.grid(row=len(labels), column=0, columnspan=2, pady=30)
+        self._reg_form(submit_btn, "button", self.add_new_streaming)
 
-        tk.Button(self.scroll_frame, text=f"\u2190 {t('add_back', self.lang)}", font=("Segoe UI", 14),
+        back_btn = tk.Button(self.scroll_frame, text=f"\u2190 {t('add_back', self.lang)}", font=("Segoe UI", 14),
                   bg=Config.BG_CARD, fg=Config.TEXT_SECONDARY, relief="flat",
                   cursor="hand2", command=lambda: self.switch_tab(self.current_tab),
-                  padx=20, pady=8).pack(pady=10)
+                  padx=20, pady=8)
+        back_btn.pack(pady=10)
+        self._reg_form(back_btn, "button", lambda: self.switch_tab(self.current_tab))
+
+        self.nav_level = "form"
+        self.form_idx = 0
+        self._paint_form()
+
+        self.nav_level = "form"
+        self._paint_form()
 
     def browse_image(self, entry):
         fp = filedialog.askopenfilename(
