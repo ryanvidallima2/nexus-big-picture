@@ -4210,6 +4210,17 @@ class NexusKeyboard:
             win.overrideredirect(True)
         except Exception:
             pass
+        try:
+            # Sempre visivel, inclusive sobre o navegador/app externo
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        if entry is None:
+            # Modo global: nao rouba o foco do campo (o digitado vai p/ ele)
+            try:
+                win.focusmodel("passive")
+            except Exception:
+                pass
         win.update_idletasks()
         try:
             state = ""
