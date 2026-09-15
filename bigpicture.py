@@ -105,10 +105,50 @@ def fetch_latest_release(timeout=15):
         return None
 
 
-def nexus_profile_dir():
-    """Perfil do navegador embutido (logins, cookies, senhas)."""
+def legacy_profile_dir():
+    """Caminho antigo no C (só leitura p/ migração)."""
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    d = os.path.join(base, "Nexus", "browser_profile")
+    return os.path.join(base, "Nexus", "browser_profile")
+
+
+def configured_profile_dir():
+    """Override do perfil: env NEXUS_PROFILE_DIR > settings.json > ''."""
+    try:
+        env = (os.environ.get("NEXUS_PROFILE_DIR") or "").strip()
+        if env:
+            return env
+    except Exception:
+        pass
+    try:
+        if os.path.isfile(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            custom = (data.get("browser_profile_dir") or "").strip()
+            if custom:
+                return custom
+    except Exception:
+        pass
+    return ""
+
+
+def nexus_profile_dir():
+    """Perfil do navegador embutido (logins, cookies, senhas).
+
+    Configurável p/ tirar do C pequeno: settings.json -> browser_profile_dir
+    ou env NEXUS_PROFILE_DIR. Cai no caminho legado do C se vazio.
+    """
+    try:
+        custom = configured_profile_dir()
+        if custom:
+            d = os.path.abspath(os.path.expandvars(custom))
+            try:
+                os.makedirs(d, exist_ok=True)
+            except Exception:
+                pass
+            return d
+    except Exception:
+        pass
+    d = legacy_profile_dir()
     try:
         os.makedirs(d, exist_ok=True)
     except Exception:
@@ -290,6 +330,11 @@ DEFAULT_SETTINGS = {
     "pad_deadzone": 22,
     "pad_profiles": {},
     "pad_profile_active": 1,
+    "external_games": {},
+    "platform_games": {},
+    "platform_ignored": [],
+    "browser_profile_dir": "",
+    "view_modes": {},
 }
 
 
@@ -300,6 +345,10 @@ def load_settings():
                 data = json.load(f)
                 merged = {**DEFAULT_SETTINGS, **data}
                 merged.setdefault("custom_streamings", {})
+                merged.setdefault("external_games", {})
+                merged.setdefault("platform_games", {})
+                merged.setdefault("platform_ignored", [])
+                merged.setdefault("view_modes", {})
                 merged.setdefault("favorites", DEFAULT_SETTINGS["favorites"])
                 merged.setdefault("search_history", [])
                 return merged
@@ -316,6 +365,17 @@ def save_settings(settings):
 # Abas visiveis na barra superior (aba Home foi removida)
 TABS = ["favorites", "movies", "music", "videos", "all", "games"]
 
+# Modos de exibicao estilo Windows Explorer (por aba, salvos em view_modes).
+# cards = carrossel atual | grid = grade | list = lista | details = detalhes
+VIEW_MODES = ("cards", "grid", "list", "details")
+VIEW_MODE_ICONS = {"cards": "\u25A6", "grid": "\u25A3",
+                   "list": "\u2630", "details": "\u25A4"}
+VIEW_TAB_DEFAULT = {"all": "grid"}
+
+
+def view_mode_default(tab):
+    return VIEW_TAB_DEFAULT.get(tab, "cards")
+
 
 def ensure_images_dir():
     if not os.path.exists(IMAGES_DIR):
@@ -330,6 +390,137 @@ GAME_SKIP_EXE = ("uninstall", "uninstal", "setup", "installer", "update",
                  "oalinst", "dotnet", "helper", "config")
 GAME_SKIP_DIRS = ("redist", "installer", "__installer", "directx", "dotnet",
                   "vcredist", "vulkanrt", "nodejs", "python", "drivers")
+
+# Capa dos cards de jogo: area do topo tem 260x160 -> capa 616x353 da Steam
+# (260x149) preenche quase perfeito. Streamings continuam em 80x80.
+GAME_COVER_SIZE = (250, 150)
+
+STEAM_SEARCH_URL = ("https://store.steampowered.com/api/storesearch/"
+                    "?term=%s&l=english&cc=US")
+STEAM_UA = "NexusBigPicture/5.4 (uso pessoal local; Python-urllib)"
+
+
+def steam_search_game(name, timeout=15):
+    """Busca o jogo na Steam. Retorna (appid, nome, tiny_image) ou (None, None, None)."""
+    try:
+        term = urllib.parse.quote((name or "").strip())
+        if not term:
+            return None, None, None
+        req = urllib.request.Request(STEAM_SEARCH_URL % term,
+                                     headers={"User-Agent": STEAM_UA})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        items = [i for i in (data.get("items") or [])
+                 if isinstance(i, dict) and i.get("id") and i.get("name")]
+        if not items:
+            return None, None, None
+        want = _norm(name)
+        best = items[0]
+        for it in items:
+            if _norm(it.get("name", "")) == want:
+                best = it
+                break
+        return int(best["id"]), best["name"], best.get("tiny_image", "")
+    except Exception:
+        return None, None, None
+
+
+def _fetch_cover_urls(urls, dest_path, timeout=25, min_width=200):
+    """Baixa a primeira URL valida (imagem >= min_width). True se salvou."""
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(dest_path)), exist_ok=True)
+    except Exception:
+        pass
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": STEAM_UA})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = r.read()
+            if len(data) < 5000:
+                continue
+            # Valida que e imagem de verdade e tem largura minima
+            try:
+                from PIL import Image as _Img
+                import io as _io
+                img = _Img.open(_io.BytesIO(data))
+                img.load()
+                if img.width < min_width:
+                    continue
+            except Exception:
+                continue
+            with open(dest_path, "wb") as f:
+                f.write(data)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def download_steam_cover_by_appid(appid, dest_path, timeout=25):
+    """Capa oficial da Steam sabendo o appid (via appdetails). True se baixou."""
+    try:
+        appid = int(appid)
+    except Exception:
+        return False
+    urls = []
+    try:
+        req = urllib.request.Request(
+            "https://store.steampowered.com/api/appdetails?appids=%d&l=english" % appid,
+            headers={"User-Agent": STEAM_UA})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        info = (data.get(str(appid)) or {}).get("data") or {}
+        header = info.get("header_image", "")
+        if header:
+            urls.append(header.split("?")[0])
+    except Exception:
+        pass
+    urls += [
+        ("https://shared.akamai.steamstatic.com/store_item_assets"
+         "/steam/apps/%d/capsule_616x353.jpg" % appid),
+        ("https://shared.akamai.steamstatic.com/store_item_assets"
+         "/steam/apps/%d/header.jpg" % appid),
+    ]
+    return _fetch_cover_urls(urls, dest_path, timeout=timeout)
+
+
+def download_game_cover(game_name, dest_path, timeout=25):
+    """Baixa a capa oficial da Steam (616x353, ideal p/ o card).
+
+    Jogos novos as vezes so tem a capsula pequena (231x87): usa como
+    ultimo recurso. Retorna o nome encontrado na Steam ou None
+    (sem internet / nao achou).
+    """
+    try:
+        appid, found, tiny = steam_search_game(game_name, timeout=15)
+        if not appid:
+            return None
+        urls = [
+            ("https://shared.akamai.steamstatic.com/store_item_assets"
+             "/steam/apps/%d/capsule_616x353.jpg" % appid),
+            ("https://shared.akamai.steamstatic.com/store_item_assets"
+             "/steam/apps/%d/header.jpg" % appid),
+        ]
+        # Jogos novos: assets moram sob hash (ex. .../apps/ID/HASH/capsule_231x87.jpg)
+        # dado pelo tiny_image -> tenta os irmaos grandes no mesmo diretorio
+        try:
+            if tiny and ("/apps/%d/" % appid) in tiny:
+                base = tiny.rsplit("/", 1)[0]
+                for fn in ("capsule_616x353.jpg", "header.jpg",
+                           "hero_capsule.jpg", "library_600x900.jpg"):
+                    urls.append(base + "/" + fn)
+                urls.append(tiny.split("?")[0])  # capsula 231x87 original
+        except Exception:
+            pass
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(dest_path)), exist_ok=True)
+        except Exception:
+            pass
+        if _fetch_cover_urls(urls, dest_path, timeout=timeout):
+            return found
+        return None
+    except Exception:
+        return None
 
 
 def find_game_cover(folder):
@@ -376,6 +567,422 @@ def find_game_exe(folder):
         if _norm(os.path.splitext(os.path.basename(full))[0]) == norm_folder:
             return full
     return sorted(cands)[0][2]
+
+
+# ===================== PLATAFORMAS (deteccao local, sem login) =====================
+# Le os manifestos de jogos JA INSTALADOS no PC: Steam (appmanifest_*.acf),
+# Epic (Manifests/*.item) e Xbox/MS Store (Get-AppxPackage). Nenhuma conta,
+# chave de API ou internet e necessaria p/ detectar (so p/ baixar capas).
+PLATFORM_LABEL = {"steam": "Steam", "epic": "Epic Games", "xbox": "Xbox"}
+
+STEAM_SKIP_SUBSTR = ("steamworks", "redistributable", "proton", " runtime",
+                     "dedicated server", "soundtrack", "linux runtime")
+EPIC_SKIP_SUBSTR = ("unreal engine", "epic games launcher", "epic online services")
+EPIC_MANIFEST_DIR = r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests"
+# Substrings (normalizadas) que NUNCA sao jogo no Xbox: streamings + Ferragens
+XBOX_SKIP_SUBSTR = ("netflix", "spotify", "whatsapp", "youtube", "disney",
+                    "primevideo", "hbomax", "crunchyroll", "deezer", "dailymotion",
+                    "soundcloud", "paramount", "discovery", "curiosity", "shudder",
+                    "britbox", "mixcloud", "peacock", "twitch", "vimeo", "tidal",
+                    "plex", "tubi", "vix", "clipchamp", "winrar", "realtek",
+                    "nvidia", "hpprinter", "onedrive", "powerautomate", "pcmanager",
+                    "devhome", "gethelp", "feedbackhub", "notepad", "calculator",
+                    "stickynotes", "soundrecorder", "screensketch", "alarms",
+                    "camera", "photos", "maps", "weather", "paint", "terminal",
+                    "onenote", "yourphone", "crossdevice", "winget", "storepurchase",
+                    "desktophostinstaller", "sechealth", "startExperiences",
+                    "gamingservices", "gamingapp", "gamingoverlay", "identityprovider",
+                    "tcui", "gamecallableui", "oobe", "shellExperience",
+                    "startmenu", "pinningconfirmation", "printqueue", "printdialog",
+                    "secureassessment", "capturepicker", "cloudexperience",
+                    "contentdelivery", "parentalcontrols", "peopleexperience",
+                    "xgpueject", "narratorquickstart", "cbs", "photon",
+                    "undockeddevkit", "mixedreality", "asyncText", "brokerplugin",
+                    "accountscontrol", "bioenrollment", "creddialoghost",
+                    "devtoolsclient", "webviewhost", "apprep", "assignedaccess",
+                    "lockapp", "immersivecontrolpanel", "handwriting",
+                    "videoextension", "imageextension", "widgetsplatform",
+                    "languageexperience", "webmediaextension", "rawimage",
+                    "webexperience", "winaappruntime", "fileexp", "coreai",
+                    "ecapp", "voiess", "livtop", "speion", "inpapp")
+# Jogos Microsoft.* que SAO jogo de verdade (o resto Microsoft.* e sistema)
+XBOX_KEEP_SUBSTR = ("solitaire", "mahjong", "minecraft", "forza", "halo",
+                    "gears", "seaofthieves", "flightsimulator", "ageofempires",
+                    "stateofdecay", "killerinstinct", "crackdown", "recore",
+                    "sunsetoverdrive", "quantumbreak", "bleedingedge", "grounded",
+                    "pentiment", "hifirush", "ori", "psychonauts", "fable",
+                    "everwild", "perfectdark", "avowed", "clockwork")
+XBOX_KNOWN_NAMES = {"microsoftminecraftuwp": "Minecraft",
+                    "microsoftmahjong": "Mahjong",
+                    "microsoftmicrosoftmahjong": "Mahjong",
+                    "microsoftmicrosoftsolitairecollection": "Solitaire Collection",
+                    "microsoft4297127d64ec6": "Minecraft Launcher"}
+# Prefixos (normalizados, sem ponto) que sao sistema/inbox salvo excecao
+XBOX_MS_PREFIXES = ("microsoft", "microsoftwindows", "windows",
+                    "microsoftcorporation")
+
+
+def platform_key(platform, pid):
+    return "%s:%s" % (platform, pid)
+
+
+def parse_acf(path):
+    """Le appmanifest_*.acf da Steam -> dict minusculo ou {}."""
+    out = {}
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for m in re.finditer(r'"([^"]+)"\s+"([^"]*)"', f.read()):
+                out[m.group(1).lower()] = m.group(2)
+    except Exception:
+        pass
+    return out
+
+
+def find_steam_path():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as k:
+            p, _ = winreg.QueryValueEx(k, "SteamPath")
+            if p and os.path.isdir(p):
+                return os.path.normpath(p)
+    except OSError:
+        pass
+    for cand in (r"C:\Program Files (x86)\Steam", r"C:\Program Files\Steam",
+                 r"D:\Arquivos e Programas\Steam"):
+        if os.path.isdir(cand):
+            return cand
+    return None
+
+
+def steam_library_folders(steam_path):
+    folders = [os.path.join(steam_path, "steamapps")]
+    seen = {os.path.normcase(folders[0])}
+    try:
+        with open(os.path.join(steam_path, "steamapps", "libraryfolders.vdf"),
+                  encoding="utf-8", errors="replace") as f:
+            for m in re.finditer(r'"path"\s+"([^"]+)"', f.read()):
+                sa = os.path.join(os.path.normpath(m.group(1)), "steamapps")
+                if os.path.isdir(sa) and os.path.normcase(sa) not in seen:
+                    seen.add(os.path.normcase(sa))
+                    folders.append(sa)
+    except Exception:
+        pass
+    return folders
+
+
+def scan_steam_games():
+    """Jogos instalados na Steam: [{platform, id, name, location}]."""
+    found = []
+    sp = find_steam_path()
+    if not sp:
+        return found
+    for lib in steam_library_folders(sp):
+        try:
+            files = sorted(os.listdir(lib))
+        except Exception:
+            continue
+        for fn in files:
+            if not (fn.startswith("appmanifest_") and fn.endswith(".acf")):
+                continue
+            appid = fn[len("appmanifest_"):-len(".acf")]
+            if not appid.isdigit():
+                continue
+            acf = parse_acf(os.path.join(lib, fn))
+            name = (acf.get("name") or "").strip()
+            inst = (acf.get("installdir") or "").strip()
+            if not name or not inst:
+                continue
+            if any(k in name.lower() for k in STEAM_SKIP_SUBSTR):
+                continue
+            loc = os.path.join(lib, "common", inst)
+            if not os.path.isdir(loc):
+                continue
+            found.append({"platform": "steam", "id": appid,
+                          "name": name, "location": loc})
+    return found
+
+
+def scan_epic_games():
+    """Jogos instalados na Epic: [{platform, id, name, location, exe, args}]."""
+    found = []
+    try:
+        files = sorted(os.listdir(EPIC_MANIFEST_DIR))
+    except Exception:
+        return found
+    for fn in files:
+        if not fn.endswith(".item"):
+            continue
+        try:
+            with open(os.path.join(EPIC_MANIFEST_DIR, fn), encoding="utf-8") as f:
+                d = json.load(f)
+        except Exception:
+            continue
+        name = (d.get("DisplayName") or "").strip()
+        app = (d.get("AppName") or "").strip()
+        loc = (d.get("InstallLocation") or "").strip()
+        if not name or not app or not loc:
+            continue
+        if any(k in name.lower() for k in EPIC_SKIP_SUBSTR):
+            continue
+        if not os.path.isdir(loc):
+            continue
+        exe_rel = (d.get("LaunchExecutable") or "").strip().replace("/", os.sep)
+        exe = os.path.join(loc, exe_rel) if exe_rel else ""
+        if exe_rel and not os.path.isfile(exe):
+            try:
+                exe = find_game_exe(loc) or ""
+            except Exception:
+                exe = ""
+        args = (d.get("LaunchCommand") or "").strip()
+        found.append({"platform": "epic", "id": app, "name": name,
+                      "location": loc, "exe": exe or "", "args": args})
+    return found
+
+
+def resolve_ms_resource(s, pri_path=""):
+    """Resolve 'ms-resource:...' p/ texto (SHLoadIndirectString). '' se nao der."""
+    if not s or not s.lower().startswith("ms-resource:"):
+        return s or ""
+    cands = []
+    if pri_path and os.path.isfile(pri_path):
+        cands.append("@%s? %s" % (pri_path, s))
+    cands += ["@" + s, s]
+    try:
+        from ctypes import windll, create_unicode_buffer
+        for src in cands:
+            try:
+                buf = create_unicode_buffer(512)
+                if windll.shlwapi.SHLoadIndirectString(src, buf, 512, None) == 0:
+                    val = buf.value.strip()
+                    if val and not val.lower().startswith("ms-resource:"):
+                        return val
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return ""
+
+
+def prettify_pkg_name(pname):
+    """'HoodedHorse.CorsairCove' -> 'Corsair Cove' (fallback sem recurso)."""
+    try:
+        base = (pname or "").split(".")[-1]
+        base = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", base)
+        base = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", base)
+        base = re.sub(r"\s+", " ", base).strip(" -_")
+        return base or pname
+    except Exception:
+        return pname
+
+
+def parse_xbox_manifest(loc):
+    """AppxManifest.xml -> {appid, display, logos[]} ou {}."""
+    out = {}
+    try:
+        root = ET.parse(os.path.join(loc, "AppxManifest.xml")).getroot()
+    except Exception:
+        return out
+    try:
+        for el in root.iter():
+            tag = el.tag.split("}")[-1]
+            if tag == "Application" and el.get("Id"):
+                out["appid"] = el.get("Id")
+                for ch in el.iter():
+                    if ch.tag.split("}")[-1] == "VisualElements":
+                        out["display"] = ch.get("DisplayName", "")
+                        out["logos"] = [ch.get("Square310x310Logo", ""),
+                                        ch.get("Square150x150Logo", ""),
+                                        ch.get("Square44x44Logo", "")]
+                        break
+                break
+    except Exception:
+        pass
+    return out
+
+
+def find_xbox_logo(loc, rels):
+    """Resolve logo do manifesto (tokens {scale} viram glob). Maior arquivo."""
+    import glob as _g
+    for rel in rels or []:
+        if not rel:
+            continue
+        pat = os.path.join(loc, rel.replace("/", os.sep))
+        if "{" in pat:
+            cands = _g.glob(re.sub(r"\{[^}]*\}", "*", pat))
+        elif os.path.isfile(pat):
+            cands = [pat]
+        else:
+            # Fallback: mesmo radical com variante (MedTile.jpg ->
+            # MedTile.scale-200.png); ignora contrast e tamanhos miudos
+            d, base = os.path.split(pat)
+            stem = os.path.splitext(base)[0]
+            cands = []
+            try:
+                for c in _g.glob(os.path.join(d, stem + "*")):
+                    low = os.path.basename(c).lower()
+                    if "contrast-" in low:
+                        continue
+                    if re.search(r"targetsize-(16|20|24|32|48)[^0-9]", low):
+                        continue
+                    cands.append(c)
+            except Exception:
+                cands = []
+        best = None
+        for c in cands:
+            try:
+                if not os.path.isfile(c):
+                    continue
+                low = os.path.basename(c).lower()
+                m = re.search(r"scale-(\d+)", low)
+                score = (int(m.group(1)) if m else 0, os.path.getsize(c))
+                if best is None or score > best[1]:
+                    best = (c, score)
+            except Exception:
+                continue
+        if best:
+            return best[0]
+    return None
+
+
+def scan_xbox_games(timeout=40):
+    """Jogos da MS Store/Xbox instalados: [{platform, id, name, ...}]."""
+    found = []
+    ps = ("Get-AppxPackage | Select-Object Name,PackageFamilyName,"
+          "InstallLocation,SignatureKind | ConvertTo-Json -Compress")
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, text=True, timeout=timeout,
+            creationflags=subprocess.CREATE_NO_WINDOW)
+    except Exception:
+        return found
+    try:
+        data = json.loads((out.stdout or "").strip() or "[]")
+    except Exception:
+        return found
+    if isinstance(data, dict):
+        data = [data]
+    for pkg in data:
+        try:
+            # SignatureKind: 3 = Store (serializa como numero no JSON)
+            if str(pkg.get("SignatureKind") or "") not in ("3", "Store"):
+                continue
+            pname = pkg.get("Name") or ""
+            pfn = pkg.get("PackageFamilyName") or ""
+            loc = pkg.get("InstallLocation") or ""
+            if not pname or not pfn or not os.path.isdir(loc):
+                continue
+            n = _norm(pname)
+            if n in XBOX_KNOWN_NAMES:
+                pass  # jogo conhecido: importa direto
+            elif any(k in n for k in XBOX_SKIP_SUBSTR):
+                continue
+            elif n.startswith(XBOX_MS_PREFIXES) and not any(
+                    k in n for k in XBOX_KEEP_SUBSTR):
+                continue
+            man = parse_xbox_manifest(loc)
+            if not man.get("appid"):
+                continue
+            disp = man.get("display", "")
+            name = ""
+            if disp and not disp.lower().startswith("ms-resource:"):
+                name = disp
+            if not name and disp:
+                try:
+                    pri = os.path.join(loc, "resources.pri")
+                    name = resolve_ms_resource(disp, pri)
+                except Exception:
+                    name = ""
+            if not name:
+                name = XBOX_KNOWN_NAMES.get(n, "") or prettify_pkg_name(pname)
+            if not name:
+                continue
+            found.append({"platform": "xbox", "id": pfn, "name": name,
+                          "location": loc, "pfn": pfn,
+                          "appid": man.get("appid", "App"),
+                          "logos": man.get("logos") or []})
+        except Exception:
+            continue
+    return found
+
+
+def _safe_icon_basename(name):
+    """Nome seguro p/ arquivo de capa (remove <>:\"/\\|?*)."""
+    s = (name or "jogo").strip()
+    s = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", s)
+    s = s.strip(" .")
+    return s or "jogo"
+
+
+def extract_exe_icon(exe_path, dest_png, timeout=20):
+    """Extrai o icone original do .exe e salva como PNG. True se ok."""
+    try:
+        if not exe_path or not os.path.isfile(exe_path):
+            return False
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(dest_png)), exist_ok=True)
+        except Exception:
+            pass
+        exe_abs = os.path.abspath(exe_path)
+        dest_abs = os.path.abspath(dest_png)
+        # Aspas simples dobradas p/ PowerShell
+        exe_ps = exe_abs.replace("'", "''")
+        dest_ps = dest_abs.replace("'", "''")
+        ps = (
+            "Add-Type -AssemblyName System.Drawing; "
+            "$icon=[System.Drawing.Icon]::ExtractAssociatedIcon('%s'); "
+            "if($icon -eq $null){exit 1}; "
+            "$bmp=$icon.ToBitmap(); "
+            "$bmp.Save('%s',[System.Drawing.Imaging.ImageFormat]::Png)"
+            % (exe_ps, dest_ps)
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            if not (os.path.isfile(dest_abs) and os.path.getsize(dest_abs) > 0):
+                return False
+        except Exception:
+            return False
+        # Icones de .exe costumam sair 32x32: amplia p/ 128 p/ preencher
+        # o card (80px) sem ficar minúsculo na busca visual.
+        try:
+            from PIL import Image as _PILImage
+            im = _PILImage.open(dest_abs)
+            try:
+                try:
+                    if im.mode not in ("RGBA", "LA"):
+                        im = im.convert("RGBA")
+                except Exception:
+                    pass
+                w, h = im.size
+                if max(w, h) < 96:
+                    resample = getattr(_PILImage, "LANCZOS", getattr(_PILImage, "BILINEAR", 1))
+                    big = im.resize((128, 128), resample)
+                    try:
+                        im.close()
+                    except Exception:
+                        pass
+                    big.save(dest_abs, "PNG")
+                    try:
+                        big.close()
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        im.close()
+                    except Exception:
+                        pass
+            except Exception:
+                try:
+                    im.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
 
 
 # ===================== DATABASE =====================
@@ -684,10 +1291,18 @@ def open_in_nexus_browser(url, title="Nexus", pad_label=""):
         scheme = ""
     if scheme not in ("http", "https"):
         return None  # WebView2 nao aceita outros esquemas -> navegador externo
+    # Propaga o perfil configurado (disco D) p/ o processo filho
+    try:
+        child_env = dict(os.environ)
+        child_env["NEXUS_PROFILE_DIR"] = nexus_profile_dir()
+        child_env["WEBVIEW2_USER_DATA_FOLDER"] = nexus_profile_dir()
+    except Exception:
+        child_env = None
     if os.path.exists(NEXUS_BROWSER_EXE):
         try:
             return subprocess.Popen(
                 [NEXUS_BROWSER_EXE, url, title, pad_label or ""],
+                env=child_env,
                 creationflags=subprocess.CREATE_NO_WINDOW)
         except Exception:
             return None
@@ -699,6 +1314,7 @@ def open_in_nexus_browser(url, title="Nexus", pad_label=""):
     try:
         return subprocess.Popen(
             [exe, NEXUS_BROWSER_FILE, url, title, pad_label or ""],
+            env=child_env,
             creationflags=subprocess.CREATE_NO_WINDOW)
     except Exception:
         return None
@@ -2083,10 +2699,40 @@ TRANSLATIONS = {
         "tab_all": "Todos",
         "tab_games": "Jogos",
         "games_title": "Meus Jogos",
-        "games_empty": "Nenhum jogo ainda.\nClique em Abrir Pasta e coloque cada jogo numa pasta.",
+        "games_empty": "Nenhum jogo ainda.\nClique em Abrir Pasta e coloque cada jogo numa pasta,\nou em Adicionar .exe para criar um atalho sem mover o jogo.",
         "games_open": "Abrir Pasta",
+        "games_add_exe": "Adicionar .exe",
         "games_refresh": "Atualizar",
         "games_noexe": "Nenhum executavel encontrado nesta pasta.",
+        "games_exe_missing": "O .exe deste atalho nao existe mais.",
+        "games_exists": "Ja existe um jogo com esse nome.",
+        "games_name_title": "Nome do jogo",
+        "games_name_prompt": "Nome para exibir no Nexus:",
+        "games_invalid": "Escolha um arquivo .exe valido.",
+        "games_open_folder": "Abrir pasta do jogo",
+        "games_open_exe_folder": "Abrir local do .exe",
+        "games_remove_link": "Remover atalho",
+        "games_reload_icon": "Recarregar icone do .exe",
+        "games_search_cover": "Buscar capa na internet",
+        "games_cover_found": "capa encontrada na Steam!",
+        "games_cover_notfound": "Nao achei na Steam (sem internet ou jogo fora da Steam). Mantive a capa atual.",
+        "games_rename": "Renomear",
+        "games_rename_title": "Renomear jogo",
+        "game_play": "\u25B6 Jogar",
+        "games_detect": "Detectar",
+        "games_detecting": "Procurando jogos instalados (Steam, Epic, Xbox)...",
+        "games_detected": "%d novos, %d removidos.",
+        "games_remove_detected": "Remover",
+        "games_restore_ignored": "Restaurar jogos ignorados",
+        "view_cards": "Cards",
+        "view_grid": "Grade",
+        "view_list": "Lista",
+        "view_details": "Detalhes",
+        "view_col_name": "Nome",
+        "view_col_type": "Tipo",
+        "view_col_detail": "Detalhe",
+        "view_type_folder": "Pasta",
+        "view_type_link": "Atalho",
         "sidebar_history": "Historico",
         "sidebar_favorites": "Favoritos",
         "sidebar_settings": "Configuracoes",
@@ -2246,10 +2892,40 @@ TRANSLATIONS = {
         "tab_all": "All",
         "tab_games": "Games",
         "games_title": "My Games",
-        "games_empty": "No games yet.\nClick Open Folder and put each game in its own folder.",
+        "games_empty": "No games yet.\nClick Open Folder and put each game in its own folder,\nor Add .exe to create a shortcut without moving the game.",
         "games_open": "Open Folder",
+        "games_add_exe": "Add .exe",
         "games_refresh": "Refresh",
         "games_noexe": "No executable found in this folder.",
+        "games_exe_missing": "The .exe for this shortcut no longer exists.",
+        "games_exists": "A game with this name already exists.",
+        "games_name_title": "Game name",
+        "games_name_prompt": "Name to show in Nexus:",
+        "games_invalid": "Choose a valid .exe file.",
+        "games_open_folder": "Open game folder",
+        "games_open_exe_folder": "Open .exe location",
+        "games_remove_link": "Remove shortcut",
+        "games_reload_icon": "Reload icon from .exe",
+        "games_search_cover": "Search cover online",
+        "games_cover_found": "cover found on Steam!",
+        "games_cover_notfound": "Not found on Steam (offline or non-Steam game). Kept current cover.",
+        "games_rename": "Rename",
+        "games_rename_title": "Rename game",
+        "game_play": "\u25B6 Play",
+        "games_detect": "Detect",
+        "games_detecting": "Looking for installed games (Steam, Epic, Xbox)...",
+        "games_detected": "%d new, %d removed.",
+        "games_remove_detected": "Remove",
+        "games_restore_ignored": "Restore ignored games",
+        "view_cards": "Cards",
+        "view_grid": "Grid",
+        "view_list": "List",
+        "view_details": "Details",
+        "view_col_name": "Name",
+        "view_col_type": "Type",
+        "view_col_detail": "Detail",
+        "view_type_folder": "Folder",
+        "view_type_link": "Shortcut",
         "sidebar_history": "History",
         "sidebar_favorites": "Favorites",
         "sidebar_settings": "Settings",
@@ -2895,8 +3571,6 @@ class OpenTargetDialog:
         self._close()
 
 
-        self._close()
-
 
 # ===================== GAME CARD DIALOG =====================
 class GameCardDialog:
@@ -3016,7 +3690,8 @@ class GameCardDialog:
         self.options = []
         self.focus_idx = 0
         try:
-            folder = self.app.game_folder(name) or ""
+            _tipo, _loc = self.app.item_details(name)
+            folder = _loc or self.app.game_folder(name) or ""
             tk.Label(self.body, text=f"{t('games_folder', lang)} {folder}",
                      font=("Segoe UI", 10), fg=Config.TEXT_SECONDARY,
                      bg=Config.BG_SIDEBAR, wraplength=self.win_w - 60,
@@ -3114,15 +3789,24 @@ class GameCardDialog:
 
     def _edit_open_folder(self):
         try:
-            folder = self.app.game_folder(self.name)
-            if folder:
-                os.startfile(folder)
+            self.app.open_game_location(self.name)
         except Exception:
             pass
 
     def _edit_delete(self):
         name = self.name
         lang = self.app.lang
+        try:
+            if self.app.game_is_platform(name):
+                self.app.remove_platform_game(name)
+                self._close()
+                return
+            if self.app.game_is_external(name):
+                self.app.remove_external_game(name)
+                self._close()
+                return
+        except Exception:
+            pass
 
         def _yes(menu):
             try:
@@ -3210,6 +3894,10 @@ class GameCardDialog:
             self.win.destroy()
         except Exception:
             pass
+
+
+# ===================== NEXUS TEXT DIALOG =====================
+
 
 
 # ===================== NEXUS TEXT DIALOG =====================
@@ -4483,25 +5171,52 @@ class BigPictureApp:
             key = filepath + str(size)
             if key in self.photo_cache:
                 return self.photo_cache[key]
+            try:
+                box = (int(size), int(size))
+            except Exception:
+                box = tuple(size)  # (largura, altura) p/ capas de jogo
             pil_img = Image.open(filepath)
-            pil_img.thumbnail((size, size), Image.BILINEAR)  # 2x mais rapido; igual em 80px
+            pil_img.thumbnail(box, Image.BILINEAR)  # 2x mais rapido; igual em 80px
             photo = ImageTk.PhotoImage(pil_img)
             self.photo_cache[key] = photo
             return photo
         except:
             return None
 
-    def get_logo(self, name):
-        gf = self.game_folder(name)
-        if gf:
-            cover = find_game_cover(gf)
-            if cover:
-                return self.load_photo(cover)
+    def get_logo(self, name, size=None):
+        # Capas de jogo usam o tamanho do card; streamings usam 80x80
+        try:
+            big = bool(self.game_is_external(name) or self.game_folder(name)
+                       or self.game_is_platform(name))
+        except Exception:
+            big = False
+        cover_size = size or (GAME_COVER_SIZE if big else Config.LOGO_SIZE)
+        # 1) Logo trocado manualmente (vale p/ streamings, pastas e atalhos)
         custom = self.settings.get("custom_streamings", {})
         if name in custom and "image" in custom[name]:
             img_path = custom[name]["image"]
             if img_path and os.path.exists(img_path):
-                return self.load_photo(img_path)
+                return self.load_photo(img_path, size=cover_size)
+        # 2) Capa do atalho externo (.exe em qualquer pasta)
+        try:
+            ext_cover = (self.settings.get("external_games") or {}).get(name, {}).get("cover", "")
+            if ext_cover and os.path.exists(ext_cover):
+                return self.load_photo(ext_cover, size=cover_size)
+        except Exception:
+            pass
+        # 2b) Capa do jogo de plataforma (Steam/Epic/Xbox)
+        try:
+            plat_cover = (self.settings.get("platform_games") or {}).get(name, {}).get("cover", "")
+            if plat_cover and os.path.exists(plat_cover):
+                return self.load_photo(plat_cover, size=cover_size)
+        except Exception:
+            pass
+        # 3) Capa dentro da pasta do jogo (games/Nome/)
+        gf = self.game_folder(name)
+        if gf:
+            cover = find_game_cover(gf)
+            if cover:
+                return self.load_photo(cover, size=cover_size)
         try:
             hit = self.logo_path_cache.get(name)
             if hit and os.path.exists(hit):
@@ -4788,6 +5503,7 @@ class BigPictureApp:
             (t("settings_language", self.lang), self.open_language_picker, "\U0001F310"),
             (t("sidebar_keyboard", self.lang), self.open_keyboard_sidebar, "\u2328"),
             (t("settings_clear_cache", self.lang), self.confirm_clear_browser_profile, "\U0001F9F9"),
+            (t("games_restore_ignored", self.lang), self.restore_ignored_platform, "\u267B"),
             (t("update_check", self.lang), self.check_updates_manual, "\u2193"),
         ]
 
@@ -5270,18 +5986,32 @@ class BigPictureApp:
         self.update_tab_highlight()
 
         if tab == "favorites":
-            self.render_section("Meus Favoritos", self.settings.get("favorites", []))
+            names = self.settings.get("favorites", [])
+            if names:
+                self.render_view_bar(tab)
+                self.render_names(tab, "Meus Favoritos", names)
         elif tab == "movies":
-            self.render_category("Filmes")
+            names = [n for n, i in self.get_all_services().items() if i.get("category") == "Filmes"]
+            if names:
+                self.render_view_bar(tab)
+                self.render_names(tab, "Filmes", names)
         elif tab == "music":
-            self.render_category("Musica")
+            names = [n for n, i in self.get_all_services().items() if i.get("category") == "Musica"]
+            if names:
+                self.render_view_bar(tab)
+                self.render_names(tab, "Musica", names)
         elif tab == "videos":
-            self.render_category("Videos")
+            names = [n for n, i in self.get_all_services().items() if i.get("category") == "Videos"]
+            if names:
+                self.render_view_bar(tab)
+                self.render_names(tab, "Videos", names)
         elif tab == "games":
             self.render_games()
         else:
             all_names = list(self.get_all_services().keys())
-            self.render_grid("Todos os Streamings", all_names)
+            if all_names:
+                self.render_view_bar(tab)
+                self.render_names(tab, "Todos os Streamings", all_names)
 
         self.update_all_focus()
 
@@ -5290,9 +6020,224 @@ class BigPictureApp:
         items = [n for n, info in all_s.items() if info.get("category") == category]
         self.render_section(category, items)
 
+    # ===================== VIEW MODES (Explorer) =====================
+    def get_view_mode(self, tab):
+        """Modo de exibicao ativo da aba (salvo em view_modes)."""
+        try:
+            saved = (self.settings.get("view_modes") or {}).get(tab, "")
+            if saved in VIEW_MODES:
+                return saved
+        except Exception:
+            pass
+        return view_mode_default(tab)
+
+    def set_view_mode(self, tab, mode):
+        if mode not in VIEW_MODES:
+            return
+        try:
+            modes = dict(self.settings.get("view_modes") or {})
+            modes[tab] = mode
+            self.settings["view_modes"] = modes
+            save_settings(self.settings)
+        except Exception:
+            pass
+        self.refresh_ui()
+
+    def render_view_bar(self, tab):
+        """Botoes Cards | Grade | Lista | Detalhes no topo da aba."""
+        cur = self.get_view_mode(tab)
+        bar = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
+        bar.pack(fill="x", padx=30, pady=(20, 0))
+        tk.Label(bar, text="\U0001F441", font=("Segoe UI", 13),
+                 fg=Config.TEXT_SECONDARY, bg=Config.BG_PRIMARY).pack(side="left", padx=(0, 8))
+        for mode in VIEW_MODES:
+            active = (mode == cur)
+            tk.Button(bar, text="%s %s" % (VIEW_MODE_ICONS.get(mode, ""), t("view_" + mode, self.lang)),
+                      font=("Segoe UI", 11, "bold" if active else "normal"),
+                      bg=(Config.ACCENT if active else Config.BG_CARD),
+                      fg=("white" if active else Config.TEXT_SECONDARY),
+                      activebackground=Config.ACCENT_GLOW, activeforeground="white",
+                      relief="flat", cursor="hand2", bd=0, padx=12, pady=5,
+                      command=lambda m=mode: self.set_view_mode(tab, m)).pack(side="left", padx=(0, 6))
+        return bar
+
+    def render_names(self, tab, title, names):
+        """Titulo + itens no modo de exibicao ativo da aba."""
+        mode = self.get_view_mode(tab)
+        if mode == "grid":
+            self.render_grid(title, names)
+        elif mode in ("list", "details"):
+            self.render_list(title, names, details=(mode == "details"))
+        else:
+            self.render_section(title, names)
+
+    def item_details(self, name):
+        """(tipo, detalhe) de cada item p/ o modo Detalhes."""
+        try:
+            if self.game_is_platform(name):
+                data = self.game_platform_data(name)
+                label = PLATFORM_LABEL.get(data.get("platform", ""), "")
+                return (label, data.get("location", ""))
+            if self.game_is_external(name):
+                exe = (self.settings.get("external_games") or {}).get(name, {}).get("exe", "")
+                return (t("view_type_link", self.lang),
+                        os.path.dirname(exe) if exe else "")
+            if self.game_folder(name):
+                return (t("view_type_folder", self.lang), self.game_folder(name))
+        except Exception:
+            pass
+        try:
+            info = self.get_all_services().get(name, {})
+            try:
+                host = urllib.parse.urlparse(info.get("url", "")).netloc or info.get("url", "")
+            except Exception:
+                host = info.get("url", "")
+            return (info.get("category", ""), host)
+        except Exception:
+            pass
+        return ("", "")
+
+    def render_list(self, title, names, details=False):
+        """Lista (1 coluna) ou Detalhes (colunas Nome/Tipo/Detalhe)."""
+        if not names:
+            return
+        section = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
+        section.pack(fill="x", padx=30, pady=(20, 5))
+        title_lbl = tk.Label(section, text=title, font=("Segoe UI", 20, "bold"),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_PRIMARY)
+        title_lbl.pack(anchor="w")
+        line = tk.Frame(section, bg=Config.ACCENT, height=3, width=120)
+        line.pack(anchor="w", pady=(5, 15))
+        if details:
+            hdr = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
+            hdr.pack(fill="x", padx=30, pady=(0, 2))
+            tk.Label(hdr, text=t("view_col_name", self.lang), font=("Segoe UI", 10, "bold"),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_PRIMARY,
+                     width=34, anchor="w").pack(side="left")
+            tk.Label(hdr, text=t("view_col_type", self.lang), font=("Segoe UI", 10, "bold"),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_PRIMARY,
+                     width=12, anchor="w").pack(side="left", padx=(10, 0))
+            tk.Label(hdr, text=t("view_col_detail", self.lang), font=("Segoe UI", 10, "bold"),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_PRIMARY,
+                     anchor="w").pack(side="left", padx=(10, 0), fill="x", expand=True)
+        list_frame = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
+        list_frame.pack(fill="x", padx=30, pady=(0, 10))
+        sec_widgets = []
+        for i, name in enumerate(names):
+            row = self.create_list_row(list_frame, name, details)
+            row.pack(fill="x", pady=2)
+            sec_widgets.append(row)
+            self.card_index[row] = (len(self.sections), i)
+        self.sections.append({
+            "title_widget": title_lbl,
+            "line_widget": line,
+            "canvas": None,
+            "inner_frame": list_frame,
+            "left_btn": None,
+            "right_btn": None,
+            "names": list(names),
+            "widgets": sec_widgets,
+            "scroll_offset": 0,
+            "visible_count": 1,
+        })
+
+    def create_list_row(self, parent, name, details=False):
+        """Linha compacta: miniatura + nome (+ tipo/detalhe)."""
+        info = self.get_all_services().get(name, {})
+        if not info and (self.game_folder(name) or self.game_is_external(name)
+                         or self.game_is_platform(name)):
+            info = {"icon": "\U0001F3AE", "category": "Games"}
+        icon = info.get("icon", "\U0001F4F0")
+        tipo, detalhe = self.item_details(name)
+        star = "\u2B50 " if name in self.settings.get("favorites", []) else ""
+
+        row = tk.Frame(parent, bg=Config.BG_CARD, relief="flat",
+                       highlightbackground=Config.BORDER, highlightthickness=1,
+                       cursor="hand2", height=52)
+        row.pack_propagate(False)
+
+        mini = self.get_logo(name, size=40)
+        if mini:
+            thumb = tk.Label(row, image=mini, bg=Config.BG_CARD, cursor="hand2", width=48)
+            thumb.image = mini
+        else:
+            thumb = tk.Label(row, text=icon, font=("Segoe UI Emoji", 20),
+                             bg=Config.BG_CARD, fg="white", cursor="hand2", width=3)
+        thumb.pack(side="left", padx=(8, 4), pady=4)
+
+        name_lbl = tk.Label(row, text=star + name, font=("Segoe UI", 12, "bold"),
+                            fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD, cursor="hand2",
+                            width=32, anchor="w")
+        name_lbl.pack(side="left", padx=(4, 0))
+        if details:
+            tk.Label(row, text=tipo, font=("Segoe UI", 11),
+                     fg=Config.ACCENT, bg=Config.BG_CARD, cursor="hand2",
+                     width=12, anchor="w").pack(side="left", padx=(10, 0))
+            tk.Label(row, text=detalhe, font=("Segoe UI", 10),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_CARD, cursor="hand2",
+                     anchor="w").pack(side="left", padx=(10, 8), fill="x", expand=True)
+        else:
+            tk.Label(row, text=tipo, font=("Segoe UI", 10),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_CARD, cursor="hand2",
+                     anchor="w").pack(side="left", padx=(10, 8))
+
+        def on_click(e, n=name):
+            self.on_card_click(n)
+
+        def on_ctx(e, n=name):
+            self.show_context_menu(e, n)
+
+        def on_enter(e, c=row):
+            c.configure(bg=Config.BG_CARD_HOVER, highlightbackground=Config.ACCENT, highlightthickness=2)
+            self.sync_focus_to_card(c)
+
+        def on_leave(e, c=row):
+            c.configure(bg=Config.BG_CARD, highlightbackground=Config.BORDER, highlightthickness=1)
+
+        for w in (row, thumb, name_lbl):
+            w.bind("<Button-1>", on_click)
+            w.bind("<Button-3>", on_ctx)
+            w.bind("<Enter>", on_enter)
+            w.bind("<Leave>", on_leave)
+        return row
+
     def game_folder(self, name):
         p = os.path.join(GAMES_DIR, name)
         return p if os.path.isdir(p) else None
+
+    def game_is_external(self, name):
+        try:
+            return name in (self.settings.get("external_games") or {})
+        except Exception:
+            return False
+
+    def game_is_platform(self, name):
+        """Jogo detectado de plataforma (Steam/Epic/Xbox)."""
+        try:
+            return name in (self.settings.get("platform_games") or {})
+        except Exception:
+            return False
+
+    def game_platform_data(self, name):
+        try:
+            return dict((self.settings.get("platform_games") or {}).get(name, {}))
+        except Exception:
+            return {}
+
+    def game_exe_for(self, name):
+        """Caminho do .exe do jogo (pasta interna ou atalho externo) ou None."""
+        if self.game_is_external(name):
+            try:
+                exe = (self.settings.get("external_games") or {}).get(name, {}).get("exe", "")
+            except Exception:
+                exe = ""
+            if exe and os.path.isfile(exe):
+                return exe
+            return None
+        folder = self.game_folder(name)
+        if not folder:
+            return None
+        return find_game_exe(folder)
 
     def scan_games(self):
         try:
@@ -5302,9 +6247,25 @@ class BigPictureApp:
         try:
             entries = sorted(os.listdir(GAMES_DIR))
         except Exception:
-            return []
-        return [e for e in entries
-                if os.path.isdir(os.path.join(GAMES_DIR, e))]
+            entries = []
+        folders = [e for e in entries
+                   if os.path.isdir(os.path.join(GAMES_DIR, e))]
+        try:
+            externals = sorted((self.settings.get("external_games") or {}).keys())
+        except Exception:
+            externals = []
+        try:
+            plats = sorted((self.settings.get("platform_games") or {}).keys())
+        except Exception:
+            plats = []
+        # Mantem pastas + atalhos + plataformas (sem duplicar nomes)
+        seen = set(folders)
+        merged = list(folders)
+        for n in list(externals) + list(plats):
+            if n not in seen:
+                merged.append(n)
+                seen.add(n)
+        return sorted(merged, key=str.lower)
 
     def open_games_folder(self):
         try:
@@ -5313,8 +6274,625 @@ class BigPictureApp:
         except Exception:
             pass
 
+    def add_external_game(self):
+        """Opcao 2: procura o .exe em qualquer pasta e cria atalho no Nexus."""
+        try:
+            exe = filedialog.askopenfilename(
+                title=t("games_add_exe", self.lang),
+                filetypes=[("Executavel", "*.exe"), ("Todas", "*.*")])
+        except Exception:
+            return
+        if not exe:
+            return
+        if not exe.lower().endswith(".exe") or not os.path.isfile(exe):
+            self.show_info_message(t("msg_warning", self.lang),
+                                   t("games_invalid", self.lang))
+            return
+        default = os.path.splitext(os.path.basename(exe))[0]
+        try:
+            name = simpledialog.askstring(t("games_name_title", self.lang),
+                                          t("games_name_prompt", self.lang),
+                                          initialvalue=default,
+                                          parent=self.root)
+        except Exception:
+            name = default
+        if name is None:
+            return
+        name = (name or "").strip()
+        if not name:
+            return
+        if name in self.scan_games() or name in self.get_all_services():
+            self.show_info_message(t("msg_warning", self.lang),
+                                   t("games_exists", self.lang))
+            return
+        # Capa: tenta a oficial da Steam pelo nome; cai p/ o icone do .exe
+        cover = ""
+        try:
+            jpg = os.path.join(IMAGES_DIR, "%s_logo.jpg" % _safe_icon_basename(name))
+            if download_game_cover(name, jpg):
+                cover = jpg
+        except Exception:
+            cover = ""
+        if not cover:
+            try:
+                dest = os.path.join(IMAGES_DIR, "%s_logo.png" % _safe_icon_basename(name))
+                if extract_exe_icon(os.path.abspath(exe), dest):
+                    cover = dest
+            except Exception:
+                cover = ""
+        try:
+            ext = dict(self.settings.get("external_games") or {})
+            data = {"exe": os.path.abspath(exe)}
+            if cover:
+                data["cover"] = cover
+            ext[name] = data
+            self.settings["external_games"] = ext
+            save_settings(self.settings)
+        except Exception:
+            return
+        self.refresh_ui()
+
+    def reextract_external_icon(self, name):
+        """Recarrega a capa a partir do icone original do .exe."""
+        try:
+            exe = (self.settings.get("external_games") or {}).get(name, {}).get("exe", "")
+        except Exception:
+            exe = ""
+        if not exe or not os.path.isfile(exe):
+            self.show_info_message(name, t("games_exe_missing", self.lang))
+            return
+        try:
+            dest = os.path.join(IMAGES_DIR, "%s_logo.png" % _safe_icon_basename(name))
+            ok = extract_exe_icon(os.path.abspath(exe), dest)
+        except Exception:
+            ok = False
+        if not ok:
+            return
+        try:
+            ext = dict(self.settings.get("external_games") or {})
+            data = dict(ext.get(name, {}))
+            data["cover"] = dest
+            ext[name] = data
+            self.settings["external_games"] = ext
+            save_settings(self.settings)
+            try:
+                self.logo_path_cache.pop(name, None)
+                self.photo_cache.pop(dest + str(GAME_COVER_SIZE), None)
+                self.photo_cache.pop(dest + str(Config.LOGO_SIZE), None)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        self.refresh_ui()
+
+    def search_game_cover_online(self, name):
+        """Busca a capa oficial na Steam (vale p/ pasta, atalho e plataforma).
+
+        Plataforma Steam usa o appid direto (sem busca). Pasta games/Nome
+        salva como cover.jpg dentro da pasta. Sem internet ou fora da
+        Steam: mantem a capa atual.
+        """
+        dest = ""
+        is_folder = False
+        try:
+            folder = self.game_folder(name)
+            if folder:
+                dest = os.path.join(folder, "cover.jpg")
+                is_folder = True
+            else:
+                dest = os.path.join(IMAGES_DIR, "%s_logo.jpg" % _safe_icon_basename(name))
+        except Exception:
+            return
+        try:
+            if self.game_is_platform(name):
+                data0 = self.game_platform_data(name)
+                if data0.get("platform") == "steam" and data0.get("id"):
+                    ok = download_steam_cover_by_appid(data0["id"], dest)
+                    found = name if ok else None
+                else:
+                    found = download_game_cover(name, dest)
+            else:
+                found = download_game_cover(name, dest)
+        except Exception:
+            found = None
+        if not found:
+            self.show_info_message(name, t("games_cover_notfound", self.lang))
+            try:
+                if os.path.isfile(dest) and os.path.getsize(dest) == 0:
+                    os.remove(dest)
+            except Exception:
+                pass
+            return
+        try:
+            if not is_folder:
+                if self.game_is_platform(name):
+                    plat = dict(self.settings.get("platform_games") or {})
+                    data = dict(plat.get(name, {}))
+                    data["cover"] = dest
+                    plat[name] = data
+                    self.settings["platform_games"] = plat
+                else:
+                    ext = dict(self.settings.get("external_games") or {})
+                    data = dict(ext.get(name, {}))
+                    data["cover"] = dest
+                    ext[name] = data
+                    self.settings["external_games"] = ext
+                save_settings(self.settings)
+            try:
+                self.logo_path_cache.pop(name, None)
+                self.photo_cache.pop(dest + str(GAME_COVER_SIZE), None)
+                self.photo_cache.pop(dest + str(Config.LOGO_SIZE), None)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        self.refresh_ui()
+        self.show_info_message(t("msg_success", self.lang),
+                               '"%s" %s' % (found, t("games_cover_found", self.lang)))
+
+    def rename_game(self, name):
+        """Renomeia o jogo (atalho .exe, plataforma ou pasta em games/)."""
+        try:
+            new = simpledialog.askstring(t("games_rename_title", self.lang),
+                                         t("games_name_prompt", self.lang),
+                                         initialvalue=name,
+                                         parent=self.root)
+        except Exception:
+            return
+        if new is None:
+            return
+        new = (new or "").strip()
+        if not new or new == name:
+            return
+        if new in self.scan_games() or new in self.get_all_services():
+            self.show_info_message(t("msg_warning", self.lang),
+                                   t("games_exists", self.lang))
+            return
+        try:
+            if self.game_is_platform(name):
+                # Seguro: a deteccao casa por plataforma:id, nao pelo nome
+                plat = dict(self.settings.get("platform_games") or {})
+                data = dict(plat.pop(name, {}))
+                try:
+                    cover = (data.get("cover") or "")
+                    if cover:
+                        abs_cover = os.path.abspath(cover)
+                        if abs_cover.lower().startswith(os.path.abspath(IMAGES_DIR).lower()):
+                            ext2 = os.path.splitext(abs_cover)[1].lower() or ".jpg"
+                            dest = os.path.join(IMAGES_DIR, "%s_logo%s"
+                                                % (_safe_icon_basename(new), ext2))
+                            if not os.path.exists(dest) and os.path.isfile(abs_cover):
+                                os.rename(abs_cover, dest)
+                                data["cover"] = dest
+                except Exception:
+                    pass
+                plat[new] = data
+                self.settings["platform_games"] = plat
+            elif self.game_is_external(name):
+                ext = dict(self.settings.get("external_games") or {})
+                data = dict(ext.pop(name, {}))
+                # Renomeia o arquivo da capa junto (evita orfao)
+                try:
+                    cover = (data.get("cover") or "")
+                    if cover:
+                        abs_cover = os.path.abspath(cover)
+                        if abs_cover.lower().startswith(os.path.abspath(IMAGES_DIR).lower()):
+                            ext2 = os.path.splitext(abs_cover)[1].lower() or ".jpg"
+                            dest = os.path.join(IMAGES_DIR, "%s_logo%s"
+                                                % (_safe_icon_basename(new), ext2))
+                            if not os.path.exists(dest) and os.path.isfile(abs_cover):
+                                os.rename(abs_cover, dest)
+                                data["cover"] = dest
+                except Exception:
+                    pass
+                ext[new] = data
+                self.settings["external_games"] = ext
+            else:
+                old_folder = self.game_folder(name)
+                if not old_folder:
+                    return
+                new_folder = os.path.join(GAMES_DIR, new)
+                if os.path.exists(new_folder):
+                    self.show_info_message(t("msg_warning", self.lang),
+                                           t("games_exists", self.lang))
+                    return
+                os.rename(old_folder, new_folder)
+                # Renomeia capas Trocar Logo que carregam o nome antigo
+                try:
+                    for key in ("custom_streamings",):
+                        custom = dict(self.settings.get(key) or {})
+                        if name in custom and isinstance(custom[name], dict):
+                            custom[new] = custom.pop(name)
+                            self.settings[key] = custom
+                except Exception:
+                    pass
+            # Migra referencias com o nome antigo
+            try:
+                favs = self.settings.get("favorites", [])
+                if name in favs:
+                    self.settings["favorites"] = [new if f == name else f for f in favs]
+                colors = self.settings.get("card_colors", {})
+                if name in colors:
+                    colors[new] = colors.pop(name)
+                    self.settings["card_colors"] = colors
+            except Exception:
+                pass
+            save_settings(self.settings)
+            try:
+                self.logo_path_cache.pop(name, None)
+            except Exception:
+                pass
+        except Exception:
+            return
+        self.refresh_ui()
+
+    def remove_external_game(self, name):
+        def _yes(menu):
+            try:
+                ext = dict(self.settings.get("external_games") or {})
+                old_cover = ""
+                if name in ext:
+                    try:
+                        old_cover = (ext.get(name) or {}).get("cover", "")
+                    except Exception:
+                        old_cover = ""
+                    del ext[name]
+                    self.settings["external_games"] = ext
+                favs = self.settings.get("favorites", [])
+                if name in favs:
+                    favs.remove(name)
+                    self.settings["favorites"] = favs
+                save_settings(self.settings)
+                # Limpa o PNG do icone orfao (so dentro de streaming_images)
+                try:
+                    if old_cover:
+                        abs_cover = os.path.abspath(old_cover)
+                        if abs_cover.lower().startswith(os.path.abspath(IMAGES_DIR).lower()):
+                            if os.path.isfile(abs_cover):
+                                os.remove(abs_cover)
+                except Exception:
+                    pass
+                try:
+                    self.logo_path_cache.pop(name, None)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                menu.close()
+            except Exception:
+                pass
+            self.refresh_ui()
+
+        menu = NexusMenuWindow(self, t("delete_confirm", self.lang), [],
+                               subtitle=f"{t('delete_question', self.lang)} '{name}'?",
+                               icon="\U0001F5D1", width=460)
+        menu.set_options([(t("games_remove_link", self.lang),
+                           lambda: _yes(menu)),
+                          (t("sidebar_close", self.lang), menu.close)])
+
+    def remove_platform_game(self, name):
+        """Remove jogo detectado e ignora em futuras deteccoes."""
+        def _yes(menu):
+            try:
+                plat = dict(self.settings.get("platform_games") or {})
+                old_cover = ""
+                key = ""
+                if name in plat:
+                    try:
+                        data = plat.get(name) or {}
+                        old_cover = data.get("cover", "")
+                        key = platform_key(data.get("platform", ""), data.get("id", ""))
+                    except Exception:
+                        old_cover, key = "", ""
+                    del plat[name]
+                    self.settings["platform_games"] = plat
+                if key:
+                    ign = list(self.settings.get("platform_ignored") or [])
+                    if key not in ign:
+                        ign.append(key)
+                    self.settings["platform_ignored"] = ign
+                favs = self.settings.get("favorites", [])
+                if name in favs:
+                    favs.remove(name)
+                    self.settings["favorites"] = favs
+                save_settings(self.settings)
+                try:
+                    if old_cover:
+                        abs_cover = os.path.abspath(old_cover)
+                        if abs_cover.lower().startswith(os.path.abspath(IMAGES_DIR).lower()):
+                            if os.path.isfile(abs_cover):
+                                os.remove(abs_cover)
+                except Exception:
+                    pass
+                try:
+                    self.logo_path_cache.pop(name, None)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                menu.close()
+            except Exception:
+                pass
+            self.refresh_ui()
+
+        menu = NexusMenuWindow(self, t("delete_confirm", self.lang), [],
+                               subtitle=f"{t('delete_question', self.lang)} '{name}'?",
+                               icon="\U0001F5D1", width=460)
+        menu.set_options([(t("games_remove_detected", self.lang),
+                           lambda: _yes(menu)),
+                          (t("sidebar_close", self.lang), menu.close)])
+
+    def restore_ignored_platform(self):
+        """Volta a oferecer jogos ignorados e roda a deteccao de novo."""
+        try:
+            self.settings["platform_ignored"] = []
+            save_settings(self.settings)
+        except Exception:
+            pass
+        try:
+            self.close_sidebar()
+        except Exception:
+            pass
+        self.detect_platform_games()
+
+    def detect_platform_games(self):
+        """Detecta instalados (Steam/Epic/Xbox) em 2o plano e importa."""
+        if getattr(self, "_detecting", False):
+            return
+        self._detecting = True
+        try:
+            self.show_info_message(t("games_detect", self.lang),
+                                   t("games_detecting", self.lang))
+        except Exception:
+            pass
+
+        def _cover_for(g, dest):
+            plat = g.get("platform", "")
+            try:
+                if plat == "steam":
+                    return bool(download_steam_cover_by_appid(g.get("id", ""), dest))
+                if plat == "xbox":
+                    src = find_xbox_logo(g.get("location", ""), g.get("logos") or [])
+                    if src and os.path.isfile(src):
+                        try:
+                            from PIL import Image as _Img
+                            im = _Img.open(src)
+                            im.load()
+                            im.save(dest)
+                            try:
+                                im.close()
+                            except Exception:
+                                pass
+                            return True
+                        except Exception:
+                            try:
+                                copy2(src, dest)
+                                return True
+                            except Exception:
+                                return False
+                    return False
+                # Epic: busca na Steam pelo nome; cai p/ icone do .exe
+                if download_game_cover(g.get("name", ""), dest):
+                    return True
+                exe = g.get("exe", "")
+                if exe and os.path.isfile(exe):
+                    return bool(extract_exe_icon(exe, dest))
+            except Exception:
+                pass
+            return False
+
+        def _work():
+            found = []
+            for scanner in (scan_steam_games, scan_epic_games, scan_xbox_games):
+                try:
+                    found += scanner()
+                except Exception:
+                    continue
+            # Capas ainda no worker (rede/disco) p/ nao travar a UI
+            try:
+                os.makedirs(IMAGES_DIR, exist_ok=True)
+            except Exception:
+                pass
+            for g in found:
+                try:
+                    dest = os.path.join(IMAGES_DIR, "%s_logo.jpg"
+                                        % _safe_icon_basename(g.get("name", "jogo")))
+                    g["_cover_dest"] = dest
+                    if _cover_for(g, dest):
+                        g["_cover"] = dest
+                except Exception:
+                    continue
+            try:
+                self.root.after(0, self._finish_detect, found)
+            except Exception:
+                self._detecting = False
+
+        try:
+            threading.Thread(target=_work, daemon=True).start()
+        except Exception:
+            self._detecting = False
+
+    def _finish_detect(self, found):
+        self._detecting = False
+        try:
+            ignored = set(self.settings.get("platform_ignored") or [])
+            cur = dict(self.settings.get("platform_games") or {})
+            seen_keys = set()
+            added, updated = [], []
+            for g in found or []:
+                key = platform_key(g.get("platform", ""), g.get("id", ""))
+                seen_keys.add(key)
+                if key in ignored:
+                    continue
+                same = None
+                for n, d in cur.items():
+                    try:
+                        if ((d.get("platform") == g.get("platform"))
+                                and str(d.get("id")) == str(g.get("id"))):
+                            same = n
+                            break
+                    except Exception:
+                        continue
+                if same is not None:
+                    try:
+                        data = dict(cur[same])
+                        for f in ("location", "exe", "args", "pfn", "appid"):
+                            if g.get(f):
+                                data[f] = g[f]
+                        cur[same] = data
+                        updated.append(same)
+                    except Exception:
+                        pass
+                    continue
+                name, base, i = g.get("name", "Jogo"), g.get("name", "Jogo"), 2
+                try:
+                    while (name in self.scan_games()
+                           or name in self.get_all_services()):
+                        name = "%s (%d)" % (base, i)
+                        i += 1
+                except Exception:
+                    pass
+                data = {"platform": g.get("platform", ""),
+                        "id": g.get("id", ""),
+                        "location": g.get("location", ""),
+                        "exe": g.get("exe", ""),
+                        "args": g.get("args", ""),
+                        "pfn": g.get("pfn", ""),
+                        "appid": g.get("appid", "")}
+                if g.get("_cover") and os.path.isfile(g["_cover"]):
+                    data["cover"] = g["_cover"]
+                cur[name] = data
+                added.append(name)
+            removed = []
+            for n in list(cur):
+                try:
+                    k = platform_key((cur[n] or {}).get("platform", ""),
+                                     (cur[n] or {}).get("id", ""))
+                except Exception:
+                    continue
+                if k not in seen_keys:
+                    try:
+                        cov = (cur[n] or {}).get("cover", "")
+                        if cov:
+                            ac = os.path.abspath(cov)
+                            if ac.lower().startswith(os.path.abspath(IMAGES_DIR).lower()):
+                                if os.path.isfile(ac):
+                                    os.remove(ac)
+                    except Exception:
+                        pass
+                    try:
+                        favs = self.settings.get("favorites", [])
+                        if n in favs:
+                            favs.remove(n)
+                    except Exception:
+                        pass
+                    try:
+                        self.logo_path_cache.pop(n, None)
+                    except Exception:
+                        pass
+                    del cur[n]
+                    removed.append(n)
+            self.settings["platform_games"] = cur
+            save_settings(self.settings)
+            self.refresh_ui()
+            try:
+                msg = t("games_detected", self.lang) % (len(added), len(removed))
+                detail = ", ".join(added[:8]) if added else ""
+                self.show_info_message(t("msg_success", self.lang),
+                                       msg + (("\n" + detail) if detail else ""))
+            except Exception:
+                pass
+        except Exception:
+            try:
+                self.refresh_ui()
+            except Exception:
+                pass
+
+    def open_game_location(self, name):
+        """Abre no Explorer a pasta do jogo (interno/plataforma) ou do .exe."""
+        try:
+            if self.game_is_platform(name):
+                loc = self.game_platform_data(name).get("location", "")
+                if loc and os.path.exists(loc):
+                    os.startfile(loc)
+                return
+            if self.game_is_external(name):
+                exe = (self.settings.get("external_games") or {}).get(name, {}).get("exe", "")
+                if exe and os.path.exists(exe):
+                    try:
+                        subprocess.Popen(["explorer", "/select,", os.path.abspath(exe)])
+                        return
+                    except Exception:
+                        os.startfile(os.path.dirname(os.path.abspath(exe)))
+                        return
+                return
+            folder = self.game_folder(name)
+            if folder:
+                os.startfile(folder)
+        except Exception:
+            pass
+
+    def backfill_missing_game_icons(self, names):
+        """Para atalhos antigos sem capa: extrai o icone em 2o plano e atualiza."""
+        try:
+            todo = []
+            for n in names or []:
+                try:
+                    if not self.game_is_external(n):
+                        continue
+                    data = (self.settings.get("external_games") or {}).get(n, {})
+                    cover = (data or {}).get("cover", "")
+                    exe = (data or {}).get("exe", "")
+                    if cover and os.path.isfile(cover):
+                        continue
+                    if not exe or not os.path.isfile(exe):
+                        continue
+                    todo.append((n, os.path.abspath(exe),
+                                 os.path.join(IMAGES_DIR, "%s_logo.png" % _safe_icon_basename(n))))
+                except Exception:
+                    continue
+            if not todo:
+                return
+        except Exception:
+            return
+
+        def _work():
+            changed = False
+            for n, exe, dest in todo:
+                try:
+                    if extract_exe_icon(exe, dest):
+                        ext = dict(self.settings.get("external_games") or {})
+                        data = dict(ext.get(n, {}))
+                        data["cover"] = dest
+                        # exe pode ter mudado de letra? mantem o atual se valido
+                        if not data.get("exe"):
+                            data["exe"] = exe
+                        ext[n] = data
+                        self.settings["external_games"] = ext
+                        changed = True
+                except Exception:
+                    continue
+            if changed:
+                try:
+                    save_settings(self.settings)
+                except Exception:
+                    pass
+                try:
+                    self.root.after(0, self.refresh_ui)
+                except Exception:
+                    pass
+
+        try:
+            threading.Thread(target=_work, daemon=True).start()
+        except Exception:
+            pass
+
     def render_games(self):
         names = self.scan_games()
+        self.backfill_missing_game_icons(names)
+        mode = self.get_view_mode("games")
         try:
             favs = set(self.settings.get("favorites", []))
         except Exception:
@@ -5328,6 +6906,13 @@ class BigPictureApp:
                   activebackground=Config.ACCENT_GLOW, activeforeground="white",
                   relief="flat", cursor="hand2", bd=0, padx=20, pady=8,
                   command=self.open_games_folder).pack(side="left", padx=(0, 10))
+        tk.Button(bar, text=f"\u2795 {t('games_add_exe', self.lang)}",
+                  font=("Segoe UI", 13, "bold"),
+                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                  activebackground=Config.BG_CARD_HOVER,
+                  activeforeground=Config.TEXT_PRIMARY,
+                  relief="flat", cursor="hand2", bd=0, padx=20, pady=8,
+                  command=self.add_external_game).pack(side="left", padx=(0, 10))
         tk.Button(bar, text=f"\u21BB {t('games_refresh', self.lang)}",
                   font=("Segoe UI", 13),
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
@@ -5335,8 +6920,32 @@ class BigPictureApp:
                   activeforeground=Config.TEXT_PRIMARY,
                   relief="flat", cursor="hand2", bd=0, padx=20, pady=8,
                   command=lambda: self.switch_tab("games")).pack(side="left")
+        tk.Button(bar, text=f"\U0001F50D {t('games_detect', self.lang)}",
+                  font=("Segoe UI", 13),
+                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                  activebackground=Config.BG_CARD_HOVER,
+                  activeforeground=Config.TEXT_PRIMARY,
+                  relief="flat", cursor="hand2", bd=0, padx=20, pady=8,
+                  command=self.detect_platform_games).pack(side="left", padx=(10, 0))
+        view_box = tk.Frame(bar, bg=Config.BG_PRIMARY)
+        view_box.pack(side="right")
+        for m in VIEW_MODES:
+            active = (m == mode)
+            tk.Button(view_box, text="%s %s" % (VIEW_MODE_ICONS.get(m, ""), t("view_" + m, self.lang)),
+                      font=("Segoe UI", 10, "bold" if active else "normal"),
+                      bg=(Config.ACCENT if active else Config.BG_CARD),
+                      fg=("white" if active else Config.TEXT_SECONDARY),
+                      activebackground=Config.ACCENT_GLOW, activeforeground="white",
+                      relief="flat", cursor="hand2", bd=0, padx=10, pady=5,
+                      command=lambda m=m: self.set_view_mode("games", m)).pack(side="left", padx=(6, 0))
         if names:
-            self.render_section(f"\U0001F3AE {t('games_title', self.lang)}", names)
+            title = f"\U0001F3AE {t('games_title', self.lang)}"
+            if mode == "grid":
+                self.render_grid(title, names)
+            elif mode in ("list", "details"):
+                self.render_list(title, names, details=(mode == "details"))
+            else:
+                self.render_section(title, names)
         else:
             tk.Label(self.scroll_frame, text=t("games_empty", self.lang),
                      font=("Segoe UI", 18), fg=Config.TEXT_SECONDARY,
@@ -5344,6 +6953,26 @@ class BigPictureApp:
                      wraplength=900).pack(expand=True, pady=100)
 
     def launch_game(self, name):
+        if self.game_is_platform(name):
+            try:
+                if self.launch_platform(self.game_platform_data(name)):
+                    self.db.add_history(name)
+                else:
+                    self.show_info_message(name, t("games_noexe", self.lang))
+            except Exception:
+                self.show_info_message(name, t("games_noexe", self.lang))
+            return
+        if self.game_is_external(name):
+            exe = self.game_exe_for(name)
+            if not exe:
+                self.show_info_message(name, t("games_exe_missing", self.lang))
+                return
+            try:
+                subprocess.Popen([exe], cwd=os.path.dirname(exe) or None)
+                self.db.add_history(name)
+            except Exception:
+                self.show_info_message(name, t("games_exe_missing", self.lang))
+            return
         folder = self.game_folder(name)
         if not folder:
             return
@@ -5356,6 +6985,51 @@ class BigPictureApp:
             self.db.add_history(name)
         except Exception:
             self.show_info_message(name, t("games_noexe", self.lang))
+
+    def launch_platform(self, data):
+        """Abre jogo de plataforma (Steam/Epic/Xbox). True se disparou."""
+        plat = (data or {}).get("platform", "")
+        if plat == "steam":
+            try:
+                os.startfile("steam://rungameid/%s" % data.get("id", ""))
+                return True
+            except Exception:
+                pass
+            try:
+                exe = find_game_exe(data.get("location", ""))
+                if exe:
+                    subprocess.Popen([exe], cwd=os.path.dirname(exe))
+                    return True
+            except Exception:
+                pass
+            return False
+        if plat == "epic":
+            exe = (data or {}).get("exe", "")
+            if exe and os.path.isfile(exe):
+                try:
+                    import shlex as _shlex
+                    args = _shlex.split(data.get("args", "") or "", posix=False)
+                except Exception:
+                    args = []
+                try:
+                    subprocess.Popen([exe] + args, cwd=os.path.dirname(exe))
+                    return True
+                except Exception:
+                    return False
+            try:
+                os.startfile("com.epicgames.launcher://apps/%s?action=launch&silent=true"
+                             % data.get("id", ""))
+                return True
+            except Exception:
+                return False
+        if plat == "xbox":
+            try:
+                launch_uwp(data.get("pfn", ""),
+                            data.get("appid", "") or "App")
+                return True
+            except Exception:
+                return False
+        return False
 
     def render_section(self, title, names):
         if not names:
@@ -5502,7 +7176,8 @@ class BigPictureApp:
 
     def create_card(self, parent, name):
         info = self.get_all_services().get(name, {})
-        if not info and self.game_folder(name):
+        if not info and (self.game_folder(name) or self.game_is_external(name)
+                         or self.game_is_platform(name)):
             info = {"icon": "\U0001F3AE", "category": "Games"}
         icon = info.get("icon", "\U0001F4F0")
         url = info.get("url", "#")
@@ -5682,11 +7357,42 @@ class BigPictureApp:
         self.open_dialog = GameCardDialog(self, name)
 
     def set_game_cover(self, name, src_path):
-        folder = self.game_folder(name)
-        if not folder or not src_path or not os.path.isfile(src_path):
+        if not src_path or not os.path.isfile(src_path):
             return False
         ext = os.path.splitext(src_path)[1].lower()
         if ext not in GAME_IMG_EXTS:
+            return False
+        # Atalho/plataforma: capa vai p/ streaming_images + registro
+        if self.game_is_external(name) or self.game_is_platform(name):
+            try:
+                dest = os.path.join(IMAGES_DIR, "%s_logo%s"
+                                    % (_safe_icon_basename(name), ext))
+                copy2(src_path, dest)
+            except Exception:
+                return False
+            try:
+                if self.game_is_platform(name):
+                    plat = dict(self.settings.get("platform_games") or {})
+                    data = dict(plat.get(name, {}))
+                    data["cover"] = dest
+                    plat[name] = data
+                    self.settings["platform_games"] = plat
+                else:
+                    extg = dict(self.settings.get("external_games") or {})
+                    data = dict(extg.get(name, {}))
+                    data["cover"] = dest
+                    extg[name] = data
+                    self.settings["external_games"] = extg
+                save_settings(self.settings)
+                try:
+                    self.logo_path_cache.pop(name, None)
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                return False
+        folder = self.game_folder(name)
+        if not folder:
             return False
         try:
             for f in os.listdir(folder):
@@ -6197,6 +7903,48 @@ class BigPictureApp:
 
     # ===================== CONTEXT MENU =====================
     def show_context_menu(self, event, name):
+        # Menu proprio da aba Jogos (pastas, atalhos .exe e plataformas)
+        if self.current_tab == "games" or self.game_is_external(name) or self.game_folder(name) or self.game_is_platform(name):
+            menu = tk.Menu(self.root, tearoff=0, bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                            activebackground=Config.ACCENT, activeforeground="white",
+                            font=("Segoe UI", 12), bd=0)
+            menu.add_command(label=f"\u25B6 {t('ctx_open', self.lang)}", command=lambda: self.on_card_click(name))
+            if name in self.settings.get("favorites", []):
+                menu.add_command(label=f"\u2716 {t('ctx_remove_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
+            else:
+                menu.add_command(label=f"\u2B50 {t('ctx_add_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
+            menu.add_separator()
+            menu.add_command(label=f"\U0001F5BC {t('ctx_change_logo', self.lang)}", command=lambda: self.change_logo(name))
+            menu.add_separator()
+            if self.game_is_platform(name):
+                menu.add_command(label=f"\U0001F50D {t('games_search_cover', self.lang)}",
+                                 command=lambda: self.search_game_cover_online(name))
+                menu.add_command(label=f"\u270F {t('games_rename', self.lang)}",
+                                 command=lambda: self.rename_game(name))
+                menu.add_command(label=f"\U0001F4C1 {t('games_open_folder', self.lang)}",
+                                 command=lambda: self.open_game_location(name))
+                menu.add_command(label=f"\U0001F5D1 {t('games_remove_detected', self.lang)}",
+                                 command=lambda: self.remove_platform_game(name))
+            elif self.game_is_external(name):
+                menu.add_command(label=f"\U0001F50D {t('games_search_cover', self.lang)}",
+                                 command=lambda: self.search_game_cover_online(name))
+                menu.add_command(label=f"\u270F {t('games_rename', self.lang)}",
+                                 command=lambda: self.rename_game(name))
+                menu.add_command(label=f"\U0001F504 {t('games_reload_icon', self.lang)}",
+                                 command=lambda: self.reextract_external_icon(name))
+                menu.add_command(label=f"\U0001F4C2 {t('games_open_exe_folder', self.lang)}",
+                                 command=lambda: self.open_game_location(name))
+                menu.add_command(label=f"\U0001F5D1 {t('games_remove_link', self.lang)}",
+                                 command=lambda: self.remove_external_game(name))
+            else:
+                menu.add_command(label=f"\U0001F50D {t('games_search_cover', self.lang)}",
+                                 command=lambda: self.search_game_cover_online(name))
+                menu.add_command(label=f"\u270F {t('games_rename', self.lang)}",
+                                 command=lambda: self.rename_game(name))
+                menu.add_command(label=f"\U0001F4C1 {t('games_open_folder', self.lang)}",
+                                 command=lambda: self.open_game_location(name))
+            menu.tk_popup(event.x_root, event.y_root)
+            return
         menu = tk.Menu(self.root, tearoff=0, bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                         activebackground=Config.ACCENT, activeforeground="white",
                         font=("Segoe UI", 12), bd=0)
@@ -6266,14 +8014,36 @@ class BigPictureApp:
                 copy2(filepath, dest)
             except:
                 dest = filepath
-            custom = self.settings.get("custom_streamings", {})
-            if name not in custom:
-                custom[name] = {}
-            custom[name]["image"] = dest
-            self.settings["custom_streamings"] = custom
+            # Atalho/plataforma: guarda a capa no registro do jogo
+            if self.game_is_external(name):
+                try:
+                    extg = dict(self.settings.get("external_games") or {})
+                    data = dict(extg.get(name, {}))
+                    data["cover"] = dest
+                    extg[name] = data
+                    self.settings["external_games"] = extg
+                except Exception:
+                    pass
+            elif self.game_is_platform(name):
+                try:
+                    plat = dict(self.settings.get("platform_games") or {})
+                    data = dict(plat.get(name, {}))
+                    data["cover"] = dest
+                    plat[name] = data
+                    self.settings["platform_games"] = plat
+                except Exception:
+                    pass
+            else:
+                custom = self.settings.get("custom_streamings", {})
+                if name not in custom:
+                    custom[name] = {}
+                custom[name]["image"] = dest
+                self.settings["custom_streamings"] = custom
             try:
                 self.logo_path_cache.pop(name, None)
+                self.photo_cache.pop(dest + str(GAME_COVER_SIZE), None)
                 self.photo_cache.pop(dest + str(Config.LOGO_SIZE), None)
+                self.photo_cache.pop(dest + "40", None)
             except Exception:
                 pass
             save_settings(self.settings)

@@ -33,7 +33,8 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **3 perfis de botoes**: slot 1 sempre o padrao; slots 2-3 salvos com o nome que quiser (mapeamento manual por clique + pressao, compativel com qq controle)
 - **Hub em fullscreen**: abre em tela cheia sem bordas (F11 alterna); controles com deteccao automatica e area de teste ao vivo em Configuracoes > Controles
 - **Instalacao automatica**: botao App baixa e instala sozinho via winget/Store quando o app nao esta instalado
-- **Aba Jogos**: cada pasta em `games/` vira um card que abre o jogo (capa + executavel detectados sozinhos)
+- **Aba Jogos**: 3 formas - (1) botao Detectar puxa instalados da Steam, Epic e Xbox sozinho (sem login); (2) cada pasta em `games/` vira um card; (3) Adicionar .exe cria atalho sem mover o jogo. Capas oficiais automaticas, 4 modos de exibicao e pop-up com botao Jogar
+- **Modos de exibicao**: todas as abas tem Cards, Grade, Lista e Detalhes estilo Windows Explorer (lembrado por aba)
 - **Atualizacao automatica**: o Nexus avisa e se atualiza sozinho pela aba Configuracoes ou na abertura
 - **Resolucoes**: Tela cheia, 1920x1080, 1400x900, 1280x720, Janela
 - **Temas**: 8 cores de destaque disponiveis

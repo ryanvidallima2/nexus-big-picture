@@ -26,6 +26,36 @@ APP_ID = "NexusStreamingHub.BigPicture.2"
 
 
 def nexus_profile_dir():
+    # 1) Override p/ tirar do C pequeno: env (passado pelo Nexus) vence
+    try:
+        env = (os.environ.get("NEXUS_PROFILE_DIR") or "").strip()
+        if env:
+            d = os.path.abspath(os.path.expandvars(env))
+            try:
+                os.makedirs(d, exist_ok=True)
+            except Exception:
+                pass
+            return d
+    except Exception:
+        pass
+    # 2) settings.json do Nexus (mesma pasta deste arquivo)
+    try:
+        base = os.path.dirname(os.path.realpath(__file__))
+        sf = os.path.join(base, "settings.json")
+        if os.path.isfile(sf):
+            import json as _json
+            with open(sf, "r", encoding="utf-8") as f:
+                custom = (_json.load(f).get("browser_profile_dir") or "").strip()
+            if custom:
+                d = os.path.abspath(os.path.expandvars(custom))
+                try:
+                    os.makedirs(d, exist_ok=True)
+                except Exception:
+                    pass
+                return d
+    except Exception:
+        pass
+    # 3) Legado no C
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     d = os.path.join(base, "Nexus", "browser_profile")
     try:

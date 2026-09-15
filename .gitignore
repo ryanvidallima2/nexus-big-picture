@@ -23,6 +23,17 @@ browser_profile/
 # Pasta de jogos (binarios e arquivos de cada maquina - nunca commitar)
 games/
 
+# Capas pessoais de jogos baixadas pelo app (Steam/icone/Xbox de cada maquina).
+# As 32 logos padrao dos streamings JA estao rastreadas e continuam no git;
+# a regra abaixo so esconde as capas novas que cada um baixar na sua maquina.
+streaming_images/*_logo.jpg
+streaming_images/*_logo.jpeg
+streaming_images/*_logo.png
+streaming_images/*_logo.webp
+streaming_images/*_logo.gif
+streaming_images/*_logo.bmp
+streaming_images/*_logo.ico
+
 # Build do executavel (PyInstaller)
 dist/
 build/
