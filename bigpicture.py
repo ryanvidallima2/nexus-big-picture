@@ -1707,7 +1707,7 @@ _NAV_TICK_WAV = {}
 
 
 def _nav_tick_wav(vol=10):
-    """Blip curto e suave (sine 720Hz, 45ms, decaimento rapido).
+    """Pop grave e curto (sine 330Hz, 60ms, decaimento suave).
     Gerado em memoria por volume (0-100): sem arquivo, sem clique."""
     try:
         vol = max(0, min(100, int(vol)))
@@ -1718,13 +1718,13 @@ def _nav_tick_wav(vol=10):
     import math
     import struct
     rate = 22050
-    n = rate * 45 // 1000
+    n = rate * 60 // 1000
     amp = 0.5 * (vol / 100.0)
     frames = bytearray()
     for i in range(n):
         t = i / rate
-        env = math.exp(-t * 90.0)
-        s = math.sin(2.0 * math.pi * 720.0 * t) * env * amp
+        env = math.exp(-t * 70.0)
+        s = math.sin(2.0 * math.pi * 330.0 * t) * env * amp
         frames += struct.pack("<h", int(s * 32767))
     head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
             struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
