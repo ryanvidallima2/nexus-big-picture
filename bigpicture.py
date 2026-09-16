@@ -84,7 +84,8 @@ def ver_tuple(v):
 
 
 def fetch_latest_release(timeout=15):
-    """Ultima release no GitHub {tag, zip, notes, date} ou None (sem internet)."""
+    """Ultima release no GitHub {tag, zip, notes, date, changes} ou None.
+    changes = 1a linha dos commits desde a versao atual (o que mudou)."""
     try:
         req = urllib.request.Request(
             UPDATE_URL,
@@ -99,11 +100,56 @@ def fetch_latest_release(timeout=15):
             if url.lower().endswith(".zip"):
                 zip_url = url
                 break
-        return {"tag": tag, "zip": zip_url,
+        info = {"tag": tag, "zip": zip_url,
                 "notes": str(data.get("body", "") or "")[:600],
-                "date": str(data.get("published_at", "") or "")[:10]}
+                "date": str(data.get("published_at", "") or "")[:10],
+                "changes": _fetch_changes_since(tag, timeout=timeout)}
+        return info
     except Exception:
         return None
+
+
+def _fetch_changes_since(tag, timeout=15):
+    """Primeiras linhas dos commits entre a versao atual e a tag (resumo
+    do que mudou p/ o card). Falhou = lista vazia (card usa as notas)."""
+    out = []
+    try:
+        if not tag:
+            return out
+        try:
+            if ver_tuple(tag) <= ver_tuple(APP_VERSION):
+                return out
+        except Exception:
+            return out
+        base = ("v" + APP_VERSION) if tag.startswith("v") else APP_VERSION
+        url = ("https://api.github.com/repos/" + GITHUB_REPO +
+               "/compare/%s...%s" % (base, tag))
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "NexusBigPicture",
+                          "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        total = 0
+        try:
+            total = int(data.get("total_commits", 0))
+        except Exception:
+            total = 0
+        for cm in (data.get("commits", []) or [])[:6]:
+            try:
+                msg = (((cm or {}).get("commit") or {}).get("message")
+                       or "").strip().split("\n")[0].strip()
+            except Exception:
+                msg = ""
+            if not msg or msg.lower().startswith("merge "):
+                continue
+            out.append(msg[:100])
+            if len(out) >= 5:
+                break
+        if total > len(out) and out:
+            out.append("+%d" % (total - len(out)))
+    except Exception:
+        return []
+    return out
 
 
 def legacy_profile_dir():
@@ -3011,6 +3057,7 @@ TRANSLATIONS = {
         "notif_nexus": "Do Nexus",
         "notif_apps": "Seus apps",
         "notif_upd_avail": "Nova versão %s disponível",
+        "notif_whatsnew": "O que mudou:",
         "notif_upd_cur": "Tudo em dia (v%s)",
         "notif_upd_btn": "Ver atualização",
         "notif_check": "Verificar",
@@ -3214,6 +3261,7 @@ TRANSLATIONS = {
         "notif_nexus": "From Nexus",
         "notif_apps": "Your apps",
         "notif_upd_avail": "New version %s available",
+        "notif_whatsnew": "What's new:",
         "notif_upd_cur": "Up to date (v%s)",
         "notif_upd_btn": "View update",
         "notif_check": "Check",
@@ -8876,10 +8924,20 @@ class BigPictureApp:
                 info = self._latest_release or {}
                 notes = (info.get("notes") or "").strip()
                 date = (info.get("date") or "").strip()
+                changes = [c for c in (info.get("changes") or []) if c][:6]
             except Exception:
-                notes, date = "", ""
-            # O card diz O QUE foi atualizado: data + notas da release.
-            sub = ((date + "\n") if date else "") + notes
+                notes, date, changes = "", "", []
+            # O card diz O QUE foi atualizado: resumo dos commits
+            # ("Simbolos no ?123", ...) ou as notas da release.
+            parts = []
+            if date:
+                parts.append(date)
+            if changes:
+                parts.append(t("notif_whatsnew", lang))
+                parts.extend("\u2022 " + c for c in changes)
+            elif notes:
+                parts.append(notes)
+            sub = "\n".join(parts)
             self._notif_card(self.notif_panel, t("notif_upd_avail", lang) % tag,
                              sub, "#e94560",
                              on_click=lambda: self._notif_go_update())
@@ -9353,8 +9411,12 @@ class BigPictureApp:
     def offer_update(self, info):
         if getattr(sys, "frozen", False):
             subtitle = t("update_found", self.lang) % (info["tag"], APP_VERSION)
+            changes = [c for c in (info.get("changes") or []) if c][:6]
             notes = (info.get("notes") or "").strip()
-            if notes:
+            if changes:
+                subtitle += ("\n\n" + t("notif_whatsnew", self.lang) + "\n"
+                             + "\n".join("\u2022 " + c for c in changes))
+            elif notes:
                 subtitle += "\n\n" + notes[:300]
             menu = NexusMenuWindow(self, t("update_title", self.lang), [],
                                    subtitle=subtitle, icon="\u2193", width=520)
