@@ -1703,36 +1703,41 @@ try:
 except Exception:
     _winsound = None
 
-_NAV_TICK_WAV = None
+_NAV_TICK_WAV = {}
 
 
-def _nav_tick_wav():
+def _nav_tick_wav(vol=80):
     """Blip curto e suave (sine 720Hz, 45ms, decaimento rapido).
-    Gerado em memoria: sem arquivo, sem clique no inicio/fim."""
-    global _NAV_TICK_WAV
-    if _NAV_TICK_WAV is None:
-        import math
-        import struct
-        rate = 22050
-        n = rate * 45 // 1000
-        frames = bytearray()
-        for i in range(n):
-            t = i / rate
-            env = math.exp(-t * 90.0)
-            s = math.sin(2.0 * math.pi * 720.0 * t) * env * 0.3
-            frames += struct.pack("<h", int(s * 32767))
-        head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
-                struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
-                b"data" + struct.pack("<I", len(frames)))
-        _NAV_TICK_WAV = head + bytes(frames)
-    return _NAV_TICK_WAV
+    Gerado em memoria por volume (0-100): sem arquivo, sem clique."""
+    try:
+        vol = max(0, min(100, int(vol)))
+    except Exception:
+        vol = 80
+    if vol in _NAV_TICK_WAV:
+        return _NAV_TICK_WAV[vol]
+    import math
+    import struct
+    rate = 22050
+    n = rate * 45 // 1000
+    amp = 0.5 * (vol / 100.0)
+    frames = bytearray()
+    for i in range(n):
+        t = i / rate
+        env = math.exp(-t * 90.0)
+        s = math.sin(2.0 * math.pi * 720.0 * t) * env * amp
+        frames += struct.pack("<h", int(s * 32767))
+    head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
+            b"data" + struct.pack("<I", len(frames)))
+    _NAV_TICK_WAV[vol] = head + bytes(frames)
+    return _NAV_TICK_WAV[vol]
 
 
-def _play_nav_tick():
+def _play_nav_tick(vol=80):
     try:
         if _winsound is None:
             return
-        _winsound.PlaySound(_nav_tick_wav(),
+        _winsound.PlaySound(_nav_tick_wav(vol),
                             _winsound.SND_MEMORY | _winsound.SND_ASYNC)
     except Exception:
         pass
@@ -2977,6 +2982,7 @@ TRANSLATIONS = {
         "settings_theme": "Trocar Tema",
         "settings_resolution": "Resolucao",
         "settings_gamepad": "Controles",
+        "settings_sound": "Som",
         "settings_language": "Idioma",
         "settings_clear_cache": "Limpar logins e cache",
         "cache_confirm": "Apagar logins, cookies e senhas salvos no navegador do Nexus? (%.1f MB)",
@@ -3100,6 +3106,13 @@ TRANSLATIONS = {
         "notif_upd_cur": "Tudo em dia (v%s)",
         "notif_upd_btn": "Ver atualização",
         "notif_check": "Verificar",
+        "snd_title": "Som",
+        "snd_volume": "Volume",
+        "snd_nav": "Navegação",
+        "snd_on": "ligado",
+        "snd_off": "desligado",
+        "snd_test": "Testar",
+        "snd_close": "Fechar",
         "pad_a_click_left": "Clique esquerdo",
         "pad_a_click_right": "Clique direito",
         "pad_a_enter": "Enter",
@@ -3179,6 +3192,7 @@ TRANSLATIONS = {
         "settings_theme": "Change Theme",
         "settings_resolution": "Resolution",
         "settings_gamepad": "Controllers",
+        "settings_sound": "Sound",
         "settings_language": "Language",
         "settings_clear_cache": "Clear logins and cache",
         "cache_confirm": "Delete saved logins, cookies and passwords in the Nexus browser? (%.1f MB)",
@@ -3302,6 +3316,13 @@ TRANSLATIONS = {
         "notif_upd_cur": "Up to date (v%s)",
         "notif_upd_btn": "View update",
         "notif_check": "Check",
+        "snd_title": "Sound",
+        "snd_volume": "Volume",
+        "snd_nav": "Navigation",
+        "snd_on": "on",
+        "snd_off": "off",
+        "snd_test": "Test",
+        "snd_close": "Close",
         "pad_a_click_left": "Left click",
         "pad_a_click_right": "Right click",
         "pad_a_enter": "Enter",
@@ -5722,6 +5743,243 @@ class NexusMenuWindow:
             pass
 
 
+# ===================== SOUND SETTINGS WINDOW =====================
+class SoundSettingsWindow(NexusMenuWindow):
+    """Som do app: barra 0-100, liga/desliga navegacao, testar.
+    Mouse (arrastar/clicar) e controle (cima/baixo foca, esq/dir volume,
+    A confirma, B fecha). Reusa o roteamento do NexusMenuWindow."""
+
+    def __init__(self, app):
+        NexusMenuWindow.__init__(self, app, t("snd_title", app.lang), [],
+                                 icon="\U0001F50A", width=480)
+        self.items = ["minus", "plus", "nav", "test", "close"]
+        self._prog = False
+        try:
+            for w in self.body.winfo_children():
+                w.destroy()
+        except Exception:
+            pass
+        vol = self._get_vol()
+        row = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+        row.pack(fill="x", padx=40, pady=(6, 2))
+        tk.Label(row, text=t("snd_volume", app.lang),
+                 font=("Segoe UI", 14, "bold"),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR).pack(side="left")
+        self.vol_lbl = tk.Label(row, text=str(vol),
+                                font=("Segoe UI", 14, "bold"),
+                                fg=Config.ACCENT, bg=Config.BG_SIDEBAR)
+        self.vol_lbl.pack(side="right")
+        srow = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+        srow.pack(fill="x", padx=40, pady=2)
+        self.minus_btn = tk.Button(srow, text="\u2212",
+                                   font=("Segoe UI", 14, "bold"),
+                                   relief="flat", bd=0, cursor="hand2",
+                                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                   activebackground=Config.BG_CARD_HOVER,
+                                   padx=14, pady=2,
+                                   command=lambda: self._vol_step(-5))
+        self.minus_btn.pack(side="left")
+        self.scale = tk.Scale(srow, from_=0, to=100, orient="horizontal",
+                              showvalue=False, length=220,
+                              bg=Config.BG_SIDEBAR, fg=Config.TEXT_PRIMARY,
+                              troughcolor=Config.BG_CARD,
+                              activebackground=Config.ACCENT,
+                              highlightthickness=0, bd=0,
+                              command=self._on_scale)
+        self.scale.set(vol)
+        self.scale.pack(side="left", padx=8, expand=True, fill="x")
+        try:
+            self.scale.bind("<ButtonRelease-1>",
+                            lambda e: self._save_and_tick())
+        except Exception:
+            pass
+        self.plus_btn = tk.Button(srow, text="+",
+                                  font=("Segoe UI", 14, "bold"),
+                                  relief="flat", bd=0, cursor="hand2",
+                                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                  activebackground=Config.BG_CARD_HOVER,
+                                  padx=14, pady=2,
+                                  command=lambda: self._vol_step(5))
+        self.plus_btn.pack(side="left")
+        self.nav_btn = tk.Button(self.body, font=("Segoe UI", 14, "bold"),
+                                 relief="flat", bd=0, cursor="hand2",
+                                 anchor="w", padx=18,
+                                 command=self._toggle_nav)
+        self.nav_btn.pack(fill="x", padx=40, pady=6)
+        self.test_btn = tk.Button(self.body,
+                                  text="\U0001F50A " + t("snd_test", app.lang),
+                                  font=("Segoe UI", 14, "bold"),
+                                  relief="flat", bd=0, cursor="hand2",
+                                  anchor="w", padx=18,
+                                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                  activebackground=Config.BG_CARD_HOVER,
+                                  command=self._test)
+        self.test_btn.pack(fill="x", padx=40, pady=3)
+        self.close_btn = tk.Button(self.body, text=t("snd_close", app.lang),
+                                   font=("Segoe UI", 14, "bold"),
+                                   relief="flat", bd=0, cursor="hand2",
+                                   anchor="w", padx=18,
+                                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                   activebackground=Config.BG_CARD_HOVER,
+                                   command=self.close)
+        self.close_btn.pack(fill="x", padx=40, pady=3)
+        self.btns = [self.minus_btn, self.plus_btn, self.nav_btn,
+                     self.test_btn, self.close_btn]
+        for i, b in enumerate(self.btns):
+            try:
+                b.bind("<Enter>", lambda e, idx=i: self.set_focus(idx))
+                b.configure(highlightthickness=3)
+            except Exception:
+                pass
+        try:
+            self.win.geometry(f"{self.win_w}x470+{self.win_x}+{self.win_y}")
+        except Exception:
+            pass
+        self._paint_nav()
+        self._paint()
+
+    def _get_vol(self):
+        try:
+            return max(0, min(100, int(self.app.settings.get("sound_volume", 80))))
+        except Exception:
+            return 80
+
+    def _set_volume(self, vol, tick=True):
+        try:
+            vol = max(0, min(100, int(vol)))
+        except Exception:
+            return
+        try:
+            if isinstance(self.app.settings, dict):
+                self.app.settings["sound_volume"] = vol
+                save_settings(self.app.settings)
+        except Exception:
+            pass
+        try:
+            self._prog = True
+            self.scale.set(vol)
+        except Exception:
+            pass
+        finally:
+            try:
+                self._prog = False
+            except Exception:
+                pass
+        try:
+            self.vol_lbl.config(text=str(vol))
+        except Exception:
+            pass
+        if tick:
+            try:
+                self.app.play_tick()
+            except Exception:
+                pass
+
+    def _vol_step(self, d):
+        self._set_volume(self._get_vol() + d)
+
+    def _on_scale(self, val):
+        if self._prog:
+            return
+        try:
+            self._set_volume(int(float(val)), tick=False)
+        except Exception:
+            pass
+
+    def _save_and_tick(self):
+        try:
+            self._set_volume(int(float(self.scale.get())), tick=True)
+        except Exception:
+            pass
+
+    def _toggle_nav(self):
+        try:
+            cur = True
+            if isinstance(self.app.settings, dict):
+                cur = bool(self.app.settings.get("nav_sound", True))
+                self.app.settings["nav_sound"] = (not cur)
+                save_settings(self.app.settings)
+            self._paint_nav()
+            if not cur:
+                self.app.play_tick()
+        except Exception:
+            pass
+
+    def _paint_nav(self):
+        try:
+            on = True
+            if isinstance(self.app.settings, dict):
+                on = bool(self.app.settings.get("nav_sound", True))
+            mark = "\u2713 " if on else ""
+            state = t("snd_on", self.app.lang) if on else t("snd_off", self.app.lang)
+            self.nav_btn.configure(text="%s%s: %s" % (
+                mark, t("snd_nav", self.app.lang), state))
+        except Exception:
+            pass
+
+    def _test(self):
+        try:
+            self.app.play_tick()
+        except Exception:
+            pass
+
+    def set_focus(self, idx):
+        if self.closed or not self.btns:
+            return
+        self.focus_idx = idx % len(self.btns)
+        self._paint()
+
+    def _paint(self):
+        for i, b in enumerate(self.btns):
+            try:
+                if i == self.focus_idx:
+                    b.configure(highlightbackground="white",
+                                highlightcolor="white",
+                                bg=Config.ACCENT, fg="white")
+                else:
+                    b.configure(highlightbackground=Config.BORDER,
+                                highlightcolor=Config.BORDER,
+                                bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY)
+            except Exception:
+                pass
+
+    def on_hat(self, hat):
+        if self.closed:
+            return
+        if hat == (0, 1):
+            self.set_focus(self.focus_idx - 1)
+        elif hat == (0, -1):
+            self.set_focus(self.focus_idx + 1)
+        elif hat == (-1, 0):
+            self._vol_step(-5)
+        elif hat == (1, 0):
+            self._vol_step(5)
+
+    def move(self, dh, dv):
+        if dv != 0:
+            self.set_focus(self.focus_idx + dv)
+        elif dh != 0:
+            self._vol_step(5 if dh > 0 else -5)
+
+    def confirm(self):
+        if self.closed:
+            return
+        try:
+            item = self.items[self.focus_idx % len(self.items)]
+        except Exception:
+            return
+        if item == "minus":
+            self._vol_step(-5)
+        elif item == "plus":
+            self._vol_step(5)
+        elif item == "nav":
+            self._toggle_nav()
+        elif item == "test":
+            self._test()
+        elif item == "close":
+            self.close()
+
+
 # ===================== MAIN APP =====================
 class BigPictureApp:
     def __init__(self, root):
@@ -6187,6 +6445,7 @@ class BigPictureApp:
             (t("settings_theme", self.lang), self.open_theme_picker, "\U0001F3A8"),
             (t("settings_resolution", self.lang), self.open_resolution, "\U0001F5A9"),
             (t("settings_gamepad", self.lang), self.show_gamepad_info, "\U0001F3AE"),
+            (t("settings_sound", self.lang), self.open_sound_settings, "\U0001F50A"),
             (t("settings_language", self.lang), self.open_language_picker, "\U0001F310"),
             (t("sidebar_keyboard", self.lang), self.open_keyboard_sidebar, "\u2328"),
             (t("settings_clear_cache", self.lang), self.confirm_clear_browser_profile, "\U0001F9F9"),
@@ -6323,15 +6582,23 @@ class BigPictureApp:
         return "break"
 
     def play_tick(self):
-        """Blip curto ao trocar de selecao (async; nav_sound desliga)."""
+        """Blip curto ao trocar de selecao (async; volume 0-100,
+        nav_sound desliga)."""
         try:
-            if isinstance(self.settings, dict) and not self.settings.get(
-                    "nav_sound", True):
+            vol = 80
+            sonar = True
+            if isinstance(self.settings, dict):
+                try:
+                    vol = int(self.settings.get("sound_volume", 80))
+                except Exception:
+                    vol = 80
+                sonar = bool(self.settings.get("nav_sound", True))
+            if not sonar or vol <= 0:
                 return
         except Exception:
-            pass
+            vol = 80
         try:
-            _play_nav_tick()
+            _play_nav_tick(vol)
         except Exception:
             pass
 
@@ -8121,10 +8388,14 @@ class BigPictureApp:
                 col = col - sec.get("scroll_offset", 0)
             if col < 0:
                 return
+            old = (self.nav_level, self.focus_mgr.focused_row,
+                   self.focus_mgr.focused_col)
             self.nav_level = "items"
             self.focus_mgr.focused_row = row
             self.focus_mgr.focused_col = col
             self.update_all_focus()
+            if old != ("items", row, col):
+                self.play_tick()
         except Exception:
             pass
 
@@ -9302,6 +9573,10 @@ class BigPictureApp:
                 win.close()
         except Exception:
             pass
+
+    def open_sound_settings(self):
+        self.close_sidebar()
+        SoundSettingsWindow(self)
 
     # ===================== LANGUAGE =====================
     def open_language_picker(self):
