@@ -1698,6 +1698,46 @@ def type_text(root, text):
             pass
 
 
+try:
+    import winsound as _winsound
+except Exception:
+    _winsound = None
+
+_NAV_TICK_WAV = None
+
+
+def _nav_tick_wav():
+    """Blip curto e suave (sine 720Hz, 45ms, decaimento rapido).
+    Gerado em memoria: sem arquivo, sem clique no inicio/fim."""
+    global _NAV_TICK_WAV
+    if _NAV_TICK_WAV is None:
+        import math
+        import struct
+        rate = 22050
+        n = rate * 45 // 1000
+        frames = bytearray()
+        for i in range(n):
+            t = i / rate
+            env = math.exp(-t * 90.0)
+            s = math.sin(2.0 * math.pi * 720.0 * t) * env * 0.3
+            frames += struct.pack("<h", int(s * 32767))
+        head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
+                struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
+                b"data" + struct.pack("<I", len(frames)))
+        _NAV_TICK_WAV = head + bytes(frames)
+    return _NAV_TICK_WAV
+
+
+def _play_nav_tick():
+    try:
+        if _winsound is None:
+            return
+        _winsound.PlaySound(_nav_tick_wav(),
+                            _winsound.SND_MEMORY | _winsound.SND_ASYNC)
+    except Exception:
+        pass
+
+
 def ctrl_tab(prev=False):
     """Troca de aba no app em foco (Ctrl+Tab / Ctrl+Shift+Tab)."""
     try:
@@ -3055,13 +3095,11 @@ TRANSLATIONS = {
         "pad_a_notif": "Notificações",
         "notif_title": "Notificações",
         "notif_nexus": "Do Nexus",
-        "notif_apps": "Seus apps",
         "notif_upd_avail": "Nova versão %s disponível",
         "notif_whatsnew": "O que mudou:",
         "notif_upd_cur": "Tudo em dia (v%s)",
         "notif_upd_btn": "Ver atualização",
         "notif_check": "Verificar",
-        "notif_no_apps": "Abra um streaming ou jogo e ele aparece aqui.",
         "pad_a_click_left": "Clique esquerdo",
         "pad_a_click_right": "Clique direito",
         "pad_a_enter": "Enter",
@@ -3259,13 +3297,11 @@ TRANSLATIONS = {
         "pad_a_notif": "Notifications",
         "notif_title": "Notifications",
         "notif_nexus": "From Nexus",
-        "notif_apps": "Your apps",
         "notif_upd_avail": "New version %s available",
         "notif_whatsnew": "What's new:",
         "notif_upd_cur": "Up to date (v%s)",
         "notif_upd_btn": "View update",
         "notif_check": "Check",
-        "notif_no_apps": "Open a streaming or game and it shows up here.",
         "pad_a_click_left": "Left click",
         "pad_a_click_right": "Right click",
         "pad_a_enter": "Enter",
@@ -6286,6 +6322,19 @@ class BigPictureApp:
             pass
         return "break"
 
+    def play_tick(self):
+        """Blip curto ao trocar de selecao (async; nav_sound desliga)."""
+        try:
+            if isinstance(self.settings, dict) and not self.settings.get(
+                    "nav_sound", True):
+                return
+        except Exception:
+            pass
+        try:
+            _play_nav_tick()
+        except Exception:
+            pass
+
     def _nav(self, direction):
         if self.sidebar_visible:
             if direction == "up":
@@ -6295,24 +6344,32 @@ class BigPictureApp:
             else:
                 return
             if new_idx == self.sidebar_menu_index:
-                return  # no limite: para, sem update/scroll
+                return  # no limite: para, sem update/scroll/som
             self.sidebar_menu_index = new_idx
             self.update_sidebar_focus()
+            self.play_tick()
             return
         if self.nav_level == "form":
             if direction in ("up", "left"):
                 self._form_move(-1)
             elif direction in ("down", "right"):
                 self._form_move(1)
+            else:
+                return
+            self.play_tick()
             return
         if direction == "up":
-            self._dpad_up()
+            if self._dpad_up():
+                self.play_tick()
         elif direction == "down":
-            self._dpad_down()
+            if self._dpad_down():
+                self.play_tick()
         elif direction == "left":
-            self._dpad_left()
+            if self._dpad_left():
+                self.play_tick()
         elif direction == "right":
-            self._dpad_right()
+            if self._dpad_right():
+                self.play_tick()
 
     def _dpad_up(self):
         # Eixo vertical: troca de carrossel (linha). Nunca seleciona titulos/abas.
@@ -6611,6 +6668,7 @@ class BigPictureApp:
 
     def switch_tab(self, tab):
         tabs = TABS
+        changed = (tab != self.current_tab)
         self.current_tab = tab
         self.focus_mgr.reset()
         self.nav_level = "tabs"
@@ -6619,6 +6677,8 @@ class BigPictureApp:
         if tab in tabs:
             self.focus_tab = tabs.index(tab)
         self.render_tab(tab)
+        if changed:
+            self.play_tick()
 
     def _reg_form(self, widget, kind, action=None):
         try:
@@ -7994,9 +8054,12 @@ class BigPictureApp:
     def sync_focus_to_tab(self, idx):
         """Mouse sobre a aba vira o foco oficial (confirmar segue a seta)."""
         try:
+            changed = (idx != self.focus_tab)
             self.nav_level = "tabs"
             self.focus_tab = idx
             self.update_all_focus()
+            if changed:
+                self.play_tick()
         except Exception:
             pass
 
@@ -8850,8 +8913,10 @@ class BigPictureApp:
             if tag and tag != seen and tag != self.settings.get("update_seen", ""):
                 self.notif_badge.config(text="1")
                 self.notif_badge.place(relx=0.7, rely=0.12)
+                self.notif_btn.configure(fg="#e94560")
             else:
                 self.notif_badge.place_forget()
+                self.notif_btn.configure(fg=Config.TEXT_SECONDARY)
         except Exception:
             pass
 
@@ -8862,6 +8927,7 @@ class BigPictureApp:
                 self.settings["notif_seen_update"] = tag
                 save_settings(self.settings)
             self.notif_badge.place_forget()
+            self.notif_btn.configure(fg=Config.TEXT_SECONDARY)
         except Exception:
             pass
 
@@ -8951,33 +9017,6 @@ class BigPictureApp:
                   relief="flat", cursor="hand2", padx=12, pady=4,
                   command=self._notif_manual_check).pack(anchor="e", padx=16, pady=(2, 0))
 
-        # ---- Seus apps: abertos recentemente ----
-        self._notif_section(self.notif_panel, t("notif_apps", lang))
-        try:
-            recent = self.db.get_recent_history(5)
-        except Exception:
-            recent = []
-        if not recent:
-            tk.Label(self.notif_panel, text=t("notif_no_apps", lang),
-                     font=("Segoe UI", 11), fg=Config.TEXT_SECONDARY,
-                     bg=Config.BG_SIDEBAR, anchor="w", justify="left",
-                     wraplength=self.NOTIF_WIDTH - 40).pack(fill="x", padx=16, pady=4)
-        for row in recent:
-            try:
-                svc = row.get("service", "")
-                title = row.get("title", "") or "Home"
-                ts = (row.get("time", "") or "")[5:16]
-                icon = (STREAMINGS_DB.get(svc) or {}).get("icon", "")
-                color = (STREAMINGS_DB.get(svc) or {}).get("color", "") or Config.ACCENT
-                sub = title if title != "Home" else ts
-                if title != "Home" and ts:
-                    sub = f"{title} \u2022 {ts}"
-                self._notif_card(self.notif_panel, f"{icon} {svc}".strip(), sub,
-                                 color,
-                                 on_click=lambda s=svc: self._notif_open_app(s))
-            except Exception:
-                pass
-
     def _notif_go_update(self):
         info = self._latest_release
         self.close_notif_panel()
@@ -8987,13 +9026,6 @@ class BigPictureApp:
     def _notif_manual_check(self):
         threading.Thread(target=self._update_check_thread,
                          args=(False,), daemon=True).start()
-
-    def _notif_open_app(self, service):
-        self.close_notif_panel()
-        try:
-            self.ask_open_target(service)
-        except Exception:
-            pass
 
     def show_gamepad_info(self):
         self.close_sidebar()
