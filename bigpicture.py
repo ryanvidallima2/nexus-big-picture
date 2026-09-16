@@ -1706,7 +1706,7 @@ except Exception:
 _NAV_TICK_WAV = {}
 
 
-def _nav_tick_wav(vol=80):
+def _nav_tick_wav(vol=10):
     """Blip curto e suave (sine 720Hz, 45ms, decaimento rapido).
     Gerado em memoria por volume (0-100): sem arquivo, sem clique."""
     try:
@@ -1733,7 +1733,7 @@ def _nav_tick_wav(vol=80):
     return _NAV_TICK_WAV[vol]
 
 
-def _play_nav_tick(vol=80):
+def _play_nav_tick(vol=10):
     """Toca o blip. Retorna (ok, erro): o dialogo de Som mostra o erro.
     Thread + PlaySound bloqueante: SND_ASYNC da memoria falha em alguns
     drivers ('Cannot play asynchronously from memory') e era engolido."""
@@ -5888,7 +5888,7 @@ class SoundSettingsWindow(NexusMenuWindow):
 
     def _get_vol(self):
         try:
-            return max(0, min(100, int(self.app.settings.get("sound_volume", 80))))
+            return max(0, min(100, int(self.app.settings.get("sound_volume", 10))))
         except Exception:
             return 80
 
@@ -6641,22 +6641,22 @@ class BigPictureApp:
 
     def play_tick(self):
         """Blip curto ao trocar de selecao (async; volume 0-100,
-        nav_sound desliga). Retorna (ok, erro) p/ diagnostico."""
+        nav_sound desliga; padrao 10). Retorna (ok, erro) p/ diagnostico."""
         try:
-            vol = 80
+            vol = 10
             sonar = True
             if isinstance(self.settings, dict):
                 try:
-                    vol = int(self.settings.get("sound_volume", 80))
+                    vol = int(self.settings.get("sound_volume", 10))
                 except Exception:
-                    vol = 80
+                    vol = 10
                 sonar = bool(self.settings.get("nav_sound", True))
             if not sonar:
                 return False, "navegacao desligada"
             if vol <= 0:
                 return False, "volume 0"
         except Exception:
-            vol = 80
+            vol = 10
         try:
             return _play_nav_tick(vol)
         except Exception as e:
