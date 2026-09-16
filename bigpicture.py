@@ -7020,13 +7020,13 @@ class BigPictureApp:
                             font=("Segoe UI", 13), bg=Config.BG_SIDEBAR,
                             fg=Config.TEXT_SECONDARY, activebackground=Config.ACCENT,
                             activeforeground="white", relief="flat", anchor="w",
-                            cursor="hand2", bd=0, padx=20, pady=10,
-                            command=self.render_add_streaming)
+                             cursor="hand2", bd=0, padx=20, pady=10,
+                             command=self.open_adicionar)
         add_btn.pack(fill="x", padx=15, pady=2)
         add_btn.bind("<Enter>", lambda e, b=add_btn: b.configure(bg=Config.BG_CARD_HOVER, fg=Config.TEXT_PRIMARY))
         add_btn.bind("<Leave>", lambda e, b=add_btn: b.configure(bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY))
         self.sidebar_btns.append(add_btn)
-        self.sidebar_items.append((t("sidebar_add", self.lang), self.render_add_streaming))
+        self.sidebar_items.append((t("sidebar_add", self.lang), self.open_adicionar))
 
         close_btn = tk.Button(self.sidebar_scroll_frame,
                               text=f"  \u2715  {t('sidebar_close', self.lang)}",
