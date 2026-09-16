@@ -4200,20 +4200,53 @@ class NexusKeyboard:
     confirmar tecla. Tecla de verdade onde o foco estiver (Nexus e browser).
     Sem grab: o foco pode ficar no campo de login do site."""
 
-    ROWS = [
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-        ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
-        ["A", "S", "D", "F", "G", "H", "J", "K", "L", "\u232B"],
-        ["\u21E7", "Z", "X", "C", "V", "B", "N", "M", ",", "."],
-        ["@", "-", "_", "/", ":"],
+    # Geometria baseline 691px (ref. visual estilo Gboard): tudo escala
+    # por scale = largura_janela / 691. Tecla ~61x51 (aspecto ~1,2:1),
+    # gap horizontal ~7, vertical ~13, lateral ~7-8. Sem border-radius
+    # (botao nativo do tkinter e retangular).
+    KB_BASE_W = 691.0
+    KB_KEY_W = 61.0
+    KB_KEY_H = 51.0
+    KB_GAP_X = 7.0
+    KB_GAP_Y = 13.0
+    KB_SIDE = 8.0
+    KB_HOME_INDENT = 31.0
+    KB_SHIFT_FLEX = (1.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.5)
+    KB_ACTION_FLEX = (1.8, 0.5, 5.8, 0.8, 1.4)
+
+    # Cada fileira: (teclas, flex|None, estilo)
+    # estilo None = ocupa tudo; "home" = indentada p/ direita sem esticar;
+    # "fixed" = teclas tamanho baseline centralizadas.
+    ROWS_ALPHA = [
+        (["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], None, None),
+        (["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"], None, None),
+        (["A", "S", "D", "F", "G", "H", "J", "K", "L"], None, "home"),
+        (["\u21E7", "Z", "X", "C", "V", "B", "N", "M", "\u232B"],
+         list(KB_SHIFT_FLEX), None),
     ]
 
     ROWS_NUM = [
-        ["1", "2", "3"],
-        ["4", "5", "6"],
-        ["7", "8", "9"],
-        [".", "0", "\u232B"],
+        (["1", "2", "3"], None, "fixed"),
+        (["4", "5", "6"], None, "fixed"),
+        (["7", "8", "9"], None, "fixed"),
+        ([".", "0", "\u232B"], None, "fixed"),
     ]
+
+    ROWS_EMOJI = [
+        (["\U0001F600", "\U0001F601", "\U0001F602", "\U0001F923", "\U0001F60A",
+          "\U0001F60D", "\U0001F60E", "\U0001F914", "\U0001F605", "\U0001F62D"],
+         None, None),
+        (["\U0001F44D", "\U0001F44E", "\U0001F44F", "\U0001F64F", "\u2764",
+          "\U0001F525", "\U0001F389", "\u2B50", "\u2705", "\u274C"],
+         None, None),
+        (["\U0001F3AE", "\U0001F3B5", "\U0001F4F7", "\U0001F355", "\u26BD",
+          "\U0001F697", "\u2708", "\U0001F319", "\u2600", "\U0001F381"],
+         None, None),
+    ]
+
+    # Fileira de acao (sempre visivel): ?123 alterna simbolos, emoji
+    # alterna emojis, espaco em branco (sem idioma), . e ✓ fecha.
+    ACTION_ROW = (["?123", "emoji", " ", ".", "ok"], list(KB_ACTION_FLEX), None)
 
     def __init__(self, app, entry=None, numeric=False):
         self.app = app
@@ -4222,8 +4255,11 @@ class NexusKeyboard:
         self.born = time.time()
         self.shift = False
         self.numeric = bool(numeric)
+        self.emoji = False
         self.cur = [0, 0]
         self.cells = []
+        self.row_frames = []
+        self.top_btns = []
         self.bottom_btns = []
         self.docked = False
         self.float_geom = None
@@ -4303,56 +4339,49 @@ class NexusKeyboard:
             pass
         _apply_dark_title(win, "kbd")
 
-        self.title_lbl = tk.Label(win, text=f"\u2328 {t('kb_title', lang)}",
-                                  font=("Segoe UI", 16, "bold"), fg=Config.ACCENT,
+        # TopArea slim: titulo + ancorar + fechar (mouse e controle).
+        # No dock o titulo some mas os botoes ficam (p/ desancorar).
+        self.toparea = tk.Frame(win, bg=Config.BG_SIDEBAR)
+        self.toparea.pack(fill="x", padx=8, pady=(6, 2))
+        self.top_title = tk.Label(self.toparea, text=f"\u2328 {t('kb_title', lang)}",
+                                  font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
                                   bg=Config.BG_SIDEBAR)
-        self.title_lbl.pack(pady=(12, 6))
-        self.hint_lbl = tk.Label(win, text=t("kb_hint", lang), font=("Segoe UI", 11),
-                                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR)
-        self.hint_lbl.pack(pady=(0, 6))
+        self.top_title.pack(side="left")
+        dock_btn = tk.Button(self.toparea, text="\u2B07", font=("Segoe UI", 11, "bold"),
+                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                             relief="flat", bd=0, cursor="hand2",
+                             padx=10, pady=2, command=self.toggle_dock)
+        dock_btn.pack(side="right", padx=4)
+        self.top_btns.append(("dock", dock_btn))
+        close_btn = tk.Button(self.toparea, text="\u2715", font=("Segoe UI", 11, "bold"),
+                              bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                              relief="flat", bd=0, cursor="hand2",
+                              padx=10, pady=2, command=self.close)
+        close_btn.pack(side="right", padx=4)
+        self.top_btns.append(("close", close_btn))
+        for i, (_bid, _b) in enumerate(self.top_btns):
+            _b.bind("<Enter>", lambda e, idx=i: self.set_top(idx))
 
         self.grid_frame = tk.Frame(win, bg=Config.BG_SIDEBAR)
-        self.grid_frame.pack()
+        self.grid_frame.pack(fill="x")
         self._build_keys()
-
-        bottom = tk.Frame(win, bg=Config.BG_SIDEBAR)
-        bottom.pack(pady=(8, 10))
-        self.bottom_frame = bottom
-        self.mode_btn = tk.Button(bottom, text="123", font=("Segoe UI", 13, "bold"),
-                                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                                  relief="flat", bd=0, cursor="hand2",
-                                  padx=24, pady=6, command=self.toggle_mode)
-        self.mode_btn.pack(side="left", padx=8)
-        self.bottom_btns.append(("mode", self.mode_btn))
-        space_btn = tk.Button(bottom, text=t("kb_space", lang), font=("Segoe UI", 13, "bold"),
-                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
-                  bd=0, cursor="hand2", padx=60, pady=6,
-                  command=lambda: self.press_key(" "))
-        space_btn.pack(side="left", padx=8)
-        self.bottom_btns.append(("space", space_btn))
-        dock_btn = tk.Button(bottom, text="\u2B07", font=("Segoe UI", 13, "bold"),
-                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
-                  bd=0, cursor="hand2", padx=16, pady=6,
-                  command=self.toggle_dock)
-        dock_btn.pack(side="left", padx=8)
-        self.bottom_btns.append(("dock", dock_btn))
-        ok_btn = tk.Button(bottom, text=t("kb_ok", lang), font=("Segoe UI", 13, "bold"),
-                  bg=Config.ACCENT, fg="white", relief="flat",
-                  bd=0, cursor="hand2", padx=40, pady=6,
-                  command=self.close)
-        ok_btn.pack(side="left", padx=8)
-        self.bottom_btns.append(("ok", ok_btn))
-        for i, (_bid, _b) in enumerate(self.bottom_btns):
-            _b.bind("<Enter>", lambda e, idx=i: self.set_bottom(idx))
+        self._layout_geometry()
+        self._size_to_content()
 
         self._paint()
-        self._paint_mode_btn()
         win.bind("<Escape>", lambda e: self.close())
         win.protocol("WM_DELETE_WINDOW", self.close)
         app.kb_window = self
 
     def _rows(self):
-        return self.ROWS_NUM if self.numeric else self.ROWS
+        if self.emoji:
+            rows = list(self.ROWS_EMOJI)
+        elif self.numeric:
+            rows = list(self.ROWS_NUM)
+        else:
+            rows = list(self.ROWS_ALPHA)
+        rows.append(self.ACTION_ROW)
+        return rows
 
     def toggle_dock(self):
         self.set_docked(not self.docked)
@@ -4407,94 +4436,104 @@ class NexusKeyboard:
         except Exception:
             pass
 
-    def _dock_scale(self):
-        # Escala uniforme pela altura real: mesma proporcao da v1, so menor.
+    def _layout_geometry(self):
+        """Geometria pela escala W/691: largura exata por flex (uniform),
+        fonte pela altura. Gaps via padx/pady das teclas."""
         try:
             self.win.update_idletasks()
-            h = self.win.winfo_height()
-            if h < 50:
-                return 1.0
+            W = max(200, self.win.winfo_width())
         except Exception:
-            return 1.0
-        return h / 430.0
-
-    def _fit_dock_keys(self):
-        """Dimensiona as teclas p/ ocupar a barra fina: fonte pela altura
-        disponivel e largura em chars p/ preencher a coluna (texto intacto)."""
+            return
+        scale = W / self.KB_BASE_W
+        gapx = max(2, int(round(self.KB_GAP_X * scale)))
         try:
-            self.win.update_idletasks()
-            W = self.win.winfo_width()
-            H = self.win.winfo_height()
-            nrows = max(1, len(self.cells))
-            maxcols = max([len(r) for r in self.cells] or [1])
-            avail_h = max(60, H - 90)  # grade: total menos barra inferior+margens
-            row_h = avail_h / nrows
-            font = max(8, min(28, int((row_h - 2) / 1.8)))
-            col_w = max(60, W - 40) / maxcols
-            char_w = max(1.0, 0.73 * font)
-            key_w = max(2, min(int(200 / char_w), int((col_w - 16) / char_w)))
-            for row in self.cells:
-                for _key, b in row:
-                    try:
-                        b.configure(font=("Segoe UI", font, "bold"), width=key_w)
-                        b.grid_configure(padx=4, pady=1)
-                    except Exception:
-                        pass
-            for _bid, b in self.bottom_btns:
+            top_h = (self.toparea.winfo_reqheight()
+                     if self.toparea.winfo_ismapped() else 0)
+        except Exception:
+            top_h = 0
+        if self.docked:
+            try:
+                H = max(80, self.win.winfo_height())
+            except Exception:
+                H = 140
+            avail = max(60, H - top_h - 12)
+            row_h = avail / max(1, len(self.cells))
+            gapy = max(2, min(int(round(self.KB_GAP_Y * scale)),
+                              int(row_h * 0.18)))
+            key_h = max(12, row_h - gapy)
+            font = max(8, min(20, int(key_h * 0.32)))
+        else:
+            gapy = max(4, int(round(self.KB_GAP_Y * scale)))
+            key_h = self.KB_KEY_H * scale
+            font = max(10, min(22, int(key_h * 0.30)))
+        padx = max(1, gapx // 2)
+        pady = max(1, gapy // 2)
+        side = max(2, int(round(self.KB_SIDE * scale)))
+        for rf in getattr(self, "row_frames", []):
+            style = getattr(rf, "_kb_style", None)
+            try:
+                if style == "home":
+                    ind = int(round(self.KB_HOME_INDENT * scale))
+                    rf.pack_configure(padx=(ind, ind))
+                elif style == "fixed":
+                    # Teclas tamanho baseline centralizadas
+                    need = 3 * self.KB_KEY_W * scale + 2 * gapx
+                    pad = max(side, int((W - need) / 2))
+                    rf.pack_configure(padx=(pad, pad))
+                else:
+                    rf.pack_configure(padx=(side, side))
+            except Exception:
+                pass
+        for row in self.cells:
+            for _key, b in row:
                 try:
-                    b.configure(font=("Segoe UI", max(9, min(20, font)), "bold"))
+                    b.configure(font=("Segoe UI", font, "bold"))
+                    b.grid_configure(padx=padx, pady=pady)
                 except Exception:
                     pass
-            # So colunas existentes recebem peso (coluna vazia com peso
-            # deslocaria o conteudo). Gaps distribuidos por igual.
-            for c in range(maxcols):
-                self.grid_frame.grid_columnconfigure(c, weight=1)
-            for r in range(nrows):
-                self.grid_frame.grid_rowconfigure(r, weight=1)
-            self.grid_frame.pack_configure(fill="both", expand=True)
+        for _bid, b in self.top_btns:
+            try:
+                b.configure(font=("Segoe UI", max(8, min(13, font - 2)), "bold"))
+            except Exception:
+                pass
+        self._paint()
+
+    def _size_to_content(self):
+        """Flutuante: altura justa ao conteudo (ancorado embaixo)."""
+        if self.closed or self.docked:
+            return
+        try:
+            self.win.update_idletasks()
+            need = self.win.winfo_reqheight()
+            W = self.win.winfo_width()
+            x = self.win.winfo_x()
+            try:
+                yb = self.win.winfo_y() + self.win.winfo_height()
+            except Exception:
+                yb = None
+            h = max(120, min(700, need + 8))
+            if yb is None:
+                self.win.geometry(f"{W}x{h}")
+            else:
+                self.win.geometry(f"{W}x{h}+{x}+{max(0, yb - h)}")
         except Exception:
             pass
 
     def _apply_compact(self, on):
         try:
             if on:
-                self.title_lbl.pack_forget()
-                self.hint_lbl.pack_forget()
+                self.top_title.pack_forget()
             else:
-                self.title_lbl.pack(pady=(12, 6))
-                self.hint_lbl.pack(pady=(0, 6))
+                self.top_title.pack(side="left")
         except Exception:
             pass
-        if on:
-            self._fit_dock_keys()
-        else:
-            wide = 8 if self.numeric else 4
-            grid_font = 16 if self.numeric else 14
-            for row in self.cells:
-                for _key, b in row:
-                    try:
-                        b.configure(font=("Segoe UI", grid_font, "bold"), width=wide)
-                        b.grid_configure(padx=4, pady=4)
-                    except Exception:
-                        pass
-            for _bid, b in self.bottom_btns:
-                try:
-                    b.configure(font=("Segoe UI", 13, "bold"))
-                except Exception:
-                    pass
+        self._layout_geometry()
+        if not on:
+            self._size_to_content()
             try:
-                for c in range(10):
-                    self.grid_frame.grid_columnconfigure(c, weight=0)
-                for r in range(len(self.cells)):
-                    self.grid_frame.grid_rowconfigure(r, weight=0)
-                self.grid_frame.pack_configure(fill="none", expand=False)
+                self.dock_bottom()
             except Exception:
                 pass
-        try:
-            self.bottom_frame.pack_configure(pady=(2, 4) if on else (8, 10))
-        except Exception:
-            pass
-        self._paint()
 
     def dock_bottom(self):
         """Reancora na base da area util (barra de tarefas descontada)."""
@@ -4532,47 +4571,82 @@ class NexusKeyboard:
         except Exception:
             pass
         self.cells = []
-        rows = self._rows()
-        for r, keys in enumerate(rows):
+        self.row_frames = []
+        for r, (keys, flex, style) in enumerate(self._rows()):
+            rf = tk.Frame(self.grid_frame, bg=Config.BG_SIDEBAR)
+            rf.pack(fill="x")
+            rf._kb_style = style
+            self.row_frames.append(rf)
+            n = len(keys)
+            flexes = list(flex) if flex else [1.0] * n
             row_cells = []
             for c, key in enumerate(keys):
-                wide = 8 if self.numeric else 4
-                b = tk.Button(self.grid_frame, font=("Segoe UI", 16 if self.numeric else 14, "bold"),
-                              relief="flat", bd=0, cursor="hand2",
-                              width=wide, height=1,
+                b = tk.Button(rf, relief="flat", bd=0, cursor="hand2",
+                              width=1, height=1,
                               command=lambda rr=r, cc=c: self._click(rr, cc))
-                b.grid(row=r, column=c, padx=4, pady=4)
+                b.grid(row=0, column=c, sticky="nsew")
+                try:
+                    rf.grid_columnconfigure(c, weight=max(1, int(flexes[c] * 10)),
+                                            uniform="kb")
+                except Exception:
+                    pass
                 b.bind("<Enter>", lambda e, rr=r, cc=c: self.set_cursor(rr, cc))
                 row_cells.append((key, b))
             self.cells.append(row_cells)
         self.cur = [0, 0]
-        self._paint()
+        self._layout_geometry()
 
     def toggle_mode(self):
         if self.closed:
             return
         try:
-            was_bottom = self.cur[0] >= len(self.cells)
-            was_c = self.cur[1] if was_bottom else 0
+            was_top = self.cur[0] < 0
+            was_c = self.cur[1] if was_top else 0
         except Exception:
-            was_bottom, was_c = False, 0
+            was_top, was_c = False, 0
         self.numeric = not self.numeric
+        self.emoji = False
         self.shift = False
         self._build_keys()
-        if was_bottom:
-            self.cur = [len(self.cells), min(was_c, len(self.bottom_btns) - 1)]
-        if self.docked:
-            self._apply_compact(True)
+        if was_top:
+            self.cur = [-1, min(was_c, len(self.top_btns) - 1)]
+        self._apply_compact(self.docked)
         self._paint()
-        self._paint_mode_btn()
+
+    def toggle_emoji(self):
+        if self.closed:
+            return
+        try:
+            was_top = self.cur[0] < 0
+            was_c = self.cur[1] if was_top else 0
+        except Exception:
+            was_top, was_c = False, 0
+        self.emoji = not self.emoji
+        if self.emoji:
+            self.numeric = False
+        self.shift = False
+        self._build_keys()
+        if was_top:
+            self.cur = [-1, min(was_c, len(self.top_btns) - 1)]
+        self._apply_compact(self.docked)
+        self._paint()
 
     def _paint_mode_btn(self):
+        # Legado: o rotulo ?123/ABC agora sai do _disp via _paint.
         try:
-            self.mode_btn.configure(text="ABC" if self.numeric else "123")
+            self._paint()
         except Exception:
             pass
 
     def _disp(self, key):
+        if key == "?123":
+            return "ABC" if self.numeric else "?123"
+        if key == "emoji":
+            return "\U0001F642"
+        if key == " ":
+            return ""
+        if key == "ok":
+            return "\u2713"
         if len(key) == 1 and key.isalpha():
             return key.upper() if self.shift else key.lower()
         if key == "\u21E7":
@@ -4592,9 +4666,9 @@ class NexusKeyboard:
                     b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                                 highlightbackground=Config.BORDER,
                                 highlightthickness=1)
-        for i, (_bid, b) in enumerate(self.bottom_btns):
+        for i, (_bid, b) in enumerate(self.top_btns):
             try:
-                if self.cur == [len(self.cells), i]:
+                if self.cur == [-1, i]:
                     b.configure(bg=Config.ACCENT, fg="white",
                                 highlightbackground="white",
                                 highlightthickness=3)
@@ -4609,55 +4683,54 @@ class NexusKeyboard:
         if self.closed:
             return
         rows = len(self.cells)
-        nb = len(self.bottom_btns)
-        if r >= rows:
-            r = rows
-            c = max(0, min(c, nb - 1)) if nb else 0
+        nt = len(self.top_btns)
+        if r < 0:
+            r = -1
+            c = max(0, min(c, nt - 1)) if nt else 0
         else:
             r = max(0, min(r, rows - 1))
             c = max(0, min(c, len(self.cells[r]) - 1))
         self.cur = [r, c]
         self._paint()
 
-    def set_bottom(self, idx):
-        if self.closed or not self.bottom_btns:
+    def set_top(self, idx):
+        if self.closed or not self.top_btns:
             return
-        self.cur = [len(self.cells), max(0, min(idx, len(self.bottom_btns) - 1))]
+        self.cur = [-1, max(0, min(idx, len(self.top_btns) - 1))]
         self._paint()
 
     def on_hat(self, hat):
         if self.closed:
             return
         rows = len(self.cells)
-        nb = len(self.bottom_btns)
+        nt = len(self.top_btns)
         r, c = self.cur
-        if r < rows:
-            if hat == (0, 1):
-                r = (r - 1) % rows
-            elif hat == (0, -1):
-                if r == rows - 1 and nb:
-                    r, c = rows, min(c, nb - 1)
-                else:
-                    r = (r + 1) % rows
-            elif hat == (-1, 0):
-                c = (c - 1) % len(self.cells[r])
-            elif hat == (1, 0):
-                c = (c + 1) % len(self.cells[r])
-            else:
-                return
-        else:
-            if not nb:
+        if r < 0:
+            if not nt:
                 return
             if hat == (0, 1):
                 r, c = rows - 1, min(c, len(self.cells[rows - 1]) - 1)
             elif hat == (0, -1):
-                r, c = 0, 0
+                r, c = 0, min(c, len(self.cells[0]) - 1)
             elif hat == (-1, 0):
-                c = (c - 1) % nb
+                c = (c - 1) % nt
             elif hat == (1, 0):
-                c = (c + 1) % nb
+                c = (c + 1) % nt
             else:
                 return
+        elif hat == (0, 1):
+            if r == 0 and nt:
+                r, c = -1, min(c, nt - 1)
+            else:
+                r = (r - 1) % rows
+        elif hat == (0, -1):
+            r = (r + 1) % rows
+        elif hat == (-1, 0):
+            c = (c - 1) % len(self.cells[r])
+        elif hat == (1, 0):
+            c = (c + 1) % len(self.cells[r])
+        else:
+            return
         self.cur = [r, c]
         self._paint()
 
@@ -4669,18 +4742,14 @@ class NexusKeyboard:
         if self.closed:
             return
         r, c = self.cur
-        if r >= len(self.cells):
+        if r < 0:
             try:
-                bid = self.bottom_btns[c][0]
+                bid = self.top_btns[c][0]
             except Exception:
                 return
-            if bid == "mode":
-                self.toggle_mode()
-            elif bid == "space":
-                self.press_key(" ")
-            elif bid == "dock":
+            if bid == "dock":
                 self.toggle_dock()
-            elif bid == "ok":
+            elif bid == "close":
                 self.close()
             return
         try:
@@ -4691,6 +4760,15 @@ class NexusKeyboard:
 
     def press_key(self, key):
         if self.closed:
+            return
+        if key == "?123":
+            self.toggle_mode()
+            return
+        if key == "emoji":
+            self.toggle_emoji()
+            return
+        if key == "ok":
+            self.close()
             return
         if key == "\u21E7":
             self.shift = not self.shift
