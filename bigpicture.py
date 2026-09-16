@@ -1698,6 +1698,95 @@ def type_text(root, text):
             pass
 
 
+try:
+    import winsound as _winsound
+except Exception:
+    _winsound = None
+
+_NAV_TICK_WAV = {}
+
+
+def _nav_tick_wav(vol=10):
+    """Pop grave e curto (sine 330Hz, 60ms, decaimento suave).
+    Gerado em memoria por volume (0-100): sem arquivo, sem clique."""
+    try:
+        vol = max(0, min(100, int(vol)))
+    except Exception:
+        vol = 80
+    if vol in _NAV_TICK_WAV:
+        return _NAV_TICK_WAV[vol]
+    import math
+    import struct
+    rate = 22050
+    n = rate * 60 // 1000
+    amp = 0.5 * (vol / 100.0)
+    frames = bytearray()
+    for i in range(n):
+        t = i / rate
+        env = math.exp(-t * 70.0)
+        s = math.sin(2.0 * math.pi * 330.0 * t) * env * amp
+        frames += struct.pack("<h", int(s * 32767))
+    head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
+            b"data" + struct.pack("<I", len(frames)))
+    _NAV_TICK_WAV[vol] = head + bytes(frames)
+    return _NAV_TICK_WAV[vol]
+
+
+def _play_nav_tick(vol=10):
+    """Toca o blip. Retorna (ok, erro): o dialogo de Som mostra o erro.
+    Thread + PlaySound bloqueante: SND_ASYNC da memoria falha em alguns
+    drivers ('Cannot play asynchronously from memory') e era engolido."""
+    try:
+        if _winsound is None:
+            return False, "winsound indisponivel"
+        data = _nav_tick_wav(vol)
+    except Exception as e:
+        return False, str(e)[:120]
+    try:
+        threading.Thread(target=_winsound.PlaySound, args=(data, _winsound.SND_MEMORY),
+                         daemon=True).start()
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+def _play_test_tone():
+    """Tom de diagnostico em thread (mesmo motivo acima)."""
+    try:
+        if _winsound is None:
+            return False, "winsound indisponivel"
+        data = _nav_test_wav()
+    except Exception as e:
+        return False, str(e)[:120]
+    try:
+        threading.Thread(target=_winsound.PlaySound, args=(data, _winsound.SND_MEMORY),
+                         daemon=True).start()
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+def _nav_test_wav():
+    """Tom de teste: 2 notas (660 + 880Hz), 400ms, alto. P/ diagnostico."""
+    import math
+    import struct
+    rate = 22050
+    notes = [(660.0, 200), (880.0, 200)]
+    frames = bytearray()
+    for freq, ms in notes:
+        n = rate * ms // 1000
+        for i in range(n):
+            t = i / rate
+            env = min(1.0, t * 60.0) * math.exp(-t * 6.0)
+            s = math.sin(2.0 * math.pi * freq * t) * env * 0.6
+            frames += struct.pack("<h", int(s * 32767))
+    head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
+            b"data" + struct.pack("<I", len(frames)))
+    return head + bytes(frames)
+
+
 def ctrl_tab(prev=False):
     """Troca de aba no app em foco (Ctrl+Tab / Ctrl+Shift+Tab)."""
     try:
@@ -2433,6 +2522,12 @@ class GamepadManager:
                                 pw.move_focus(1)
                             else:
                                 pw.sens_or_move(hat)
+                        elif getattr(self.app, "theme_visible", False):
+                            self.app.theme_move(hat)
+                        elif (getattr(self.app, "sidepanel", None) is not None
+                                and self.app.sidepanel.visible
+                                and self.app.nav_level != "form"):
+                            self.app.sidepanel.on_hat(hat)
                         elif hat == (0, 1):
                             self.app._nav("up")
                             self.app.warp_to_focus()
@@ -2483,6 +2578,12 @@ class GamepadManager:
                         self.app.cancel_pad_capture()
                     else:
                         self.app.finish_pad_capture(logical)
+                elif getattr(self.app, "theme_visible", False):
+                    self.app.theme_press(logical)
+                elif (getattr(self.app, "sidepanel", None) is not None
+                        and self.app.sidepanel.visible
+                        and self.app.nav_level != "form"):
+                    self.app.sidepanel.press(logical)
                 else:
                     pw = self.app.pad_window
                     if _modal_alive(pw):
@@ -2937,6 +3038,14 @@ TRANSLATIONS = {
         "settings_theme": "Trocar Tema",
         "settings_resolution": "Resolucao",
         "settings_gamepad": "Controles",
+        "settings_controls": "Controles",
+        "settings_system": "Sistema",
+        "pad_remap": "Remapear botões",
+        "kb_open": "Abrir teclado virtual",
+        "ctrl_pad_sec": "Controle",
+        "ctrl_kb_sec": "Teclado virtual",
+        "pad_connected": "Conectado: %s",
+        "settings_sound": "Som",
         "settings_language": "Idioma",
         "settings_clear_cache": "Limpar logins e cache",
         "cache_confirm": "Apagar logins, cookies e senhas salvos no navegador do Nexus? (%.1f MB)",
@@ -2954,7 +3063,6 @@ TRANSLATIONS = {
         "update_error": "Nao foi possivel verificar (sem internet?).",
         "update_latest": "Nexus ja esta atualizado!",
         "update_git": "Nova versao %s no GitHub. Rode git pull.",
-        "sidebar_keyboard": "Teclado virtual",
         "kb_title": "Teclado",
         "kb_hint": "Analogico/setas movem \u2022 confirmar tecla \u2022 B fecha",
         "kb_space": "espaco",
@@ -3055,13 +3163,18 @@ TRANSLATIONS = {
         "pad_a_notif": "Notificações",
         "notif_title": "Notificações",
         "notif_nexus": "Do Nexus",
-        "notif_apps": "Seus apps",
         "notif_upd_avail": "Nova versão %s disponível",
         "notif_whatsnew": "O que mudou:",
         "notif_upd_cur": "Tudo em dia (v%s)",
         "notif_upd_btn": "Ver atualização",
         "notif_check": "Verificar",
-        "notif_no_apps": "Abra um streaming ou jogo e ele aparece aqui.",
+        "snd_title": "Som",
+        "snd_volume": "Volume",
+        "snd_nav": "Navegação",
+        "snd_on": "ligado",
+        "snd_off": "desligado",
+        "snd_test": "Testar",
+        "snd_close": "Fechar",
         "pad_a_click_left": "Clique esquerdo",
         "pad_a_click_right": "Clique direito",
         "pad_a_enter": "Enter",
@@ -3141,6 +3254,14 @@ TRANSLATIONS = {
         "settings_theme": "Change Theme",
         "settings_resolution": "Resolution",
         "settings_gamepad": "Controllers",
+        "settings_controls": "Controls",
+        "settings_system": "System",
+        "pad_remap": "Remap buttons",
+        "kb_open": "Open virtual keyboard",
+        "ctrl_pad_sec": "Gamepad",
+        "ctrl_kb_sec": "Virtual keyboard",
+        "pad_connected": "Connected: %s",
+        "settings_sound": "Sound",
         "settings_language": "Language",
         "settings_clear_cache": "Clear logins and cache",
         "cache_confirm": "Delete saved logins, cookies and passwords in the Nexus browser? (%.1f MB)",
@@ -3158,7 +3279,6 @@ TRANSLATIONS = {
         "update_error": "Could not check (offline?).",
         "update_latest": "Nexus is up to date!",
         "update_git": "New version %s on GitHub. Run git pull.",
-        "sidebar_keyboard": "Virtual keyboard",
         "kb_title": "Keyboard",
         "kb_hint": "Stick/arrows move \u2022 confirm types \u2022 B closes",
         "kb_space": "space",
@@ -3259,13 +3379,18 @@ TRANSLATIONS = {
         "pad_a_notif": "Notifications",
         "notif_title": "Notifications",
         "notif_nexus": "From Nexus",
-        "notif_apps": "Your apps",
         "notif_upd_avail": "New version %s available",
         "notif_whatsnew": "What's new:",
         "notif_upd_cur": "Up to date (v%s)",
         "notif_upd_btn": "View update",
         "notif_check": "Check",
-        "notif_no_apps": "Open a streaming or game and it shows up here.",
+        "snd_title": "Sound",
+        "snd_volume": "Volume",
+        "snd_nav": "Navigation",
+        "snd_on": "on",
+        "snd_off": "off",
+        "snd_test": "Test",
+        "snd_close": "Close",
         "pad_a_click_left": "Left click",
         "pad_a_click_right": "Right click",
         "pad_a_enter": "Enter",
@@ -5686,6 +5811,550 @@ class NexusMenuWindow:
             pass
 
 
+# ===================== SOUND SETTINGS WINDOW =====================
+# ===================== SIDE PANEL =====================
+class SidePanel:
+    """Drawer direito generico das Configuracoes (Controles, Idioma,
+    Adicionar, Sistema). Mouse e controle: cima/baixo focam, esq/dir
+    ajustam sliders, A confirma, B fecha."""
+    NAME = "base"
+    TITLE_KEY = ""
+    ICON = "\u25C6"
+    WIDTH = 360
+    IS_FORM = False
+
+    def __init__(self, app):
+        self.app = app
+        self.visible = False
+        self.focus = 0
+        self.frame = None
+        self.body = None
+        self.focusables = []
+
+    # ---------- ciclo ----------
+    def open(self):
+        app = self.app
+        try:
+            old = getattr(app, "sidepanel", None)
+            if old is not None and old is not self:
+                old.close()
+        except Exception:
+            pass
+        for closer in ("close_sidebar", "close_theme_panel", "close_notif_panel"):
+            try:
+                if closer == "close_sidebar":
+                    app.close_sidebar()
+                elif closer == "close_theme_panel":
+                    if getattr(app, "theme_visible", False):
+                        app.close_theme_panel()
+                elif closer == "close_notif_panel":
+                    if getattr(app, "notif_visible", False):
+                        app.close_notif_panel()
+            except Exception:
+                pass
+        app.sidepanel = self
+        self.visible = True
+        self.focus = 0
+        self.build()
+        self.render()
+        self.place()
+        self.paint()
+        try:
+            self.after_open()
+        except Exception:
+            pass
+
+    def close(self):
+        app = self.app
+        self.visible = False
+        try:
+            if self.frame is not None:
+                self.frame.place_forget()
+        except Exception:
+            pass
+        try:
+            if getattr(app, "sidepanel", None) is self:
+                app.sidepanel = None
+        except Exception:
+            pass
+        if self.IS_FORM:
+            try:
+                app.nav_level = "items"
+                app.form_focus = []
+                app.form_idx = 0
+                app.update_all_focus()
+            except Exception:
+                pass
+
+    def reopen(self):
+        if not self.visible:
+            return
+        self.focus = 0
+        self.build()
+        self.render()
+        self.place()
+        self.paint()
+        try:
+            self.after_open()
+        except Exception:
+            pass
+
+    def after_open(self):
+        pass
+
+    # ---------- estrutura ----------
+    def build(self):
+        app = self.app
+        try:
+            if self.frame is not None:
+                self.frame.destroy()
+        except Exception:
+            pass
+        self.focusables = []
+        self.frame = tk.Frame(app.main_frame, bg=Config.BG_SIDEBAR,
+                              width=self.WIDTH)
+        self.frame.pack_propagate(False)
+        head = tk.Frame(self.frame, bg=Config.BG_SIDEBAR)
+        head.pack(fill="x", pady=(20, 4))
+        tk.Label(head, text="%s %s" % (self.ICON, t(self.TITLE_KEY, app.lang)),
+                 font=("Segoe UI", 18, "bold"), fg=Config.TEXT_PRIMARY,
+                 bg=Config.BG_SIDEBAR).pack(side="left", padx=16)
+        tk.Button(head, text="\u2715", font=("Segoe UI", 12),
+                  bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
+                  activebackground="#e94560", activeforeground="white",
+                  relief="flat", cursor="hand2", bd=0, padx=10,
+                  command=self.close).pack(side="right", padx=12)
+        tk.Frame(self.frame, bg=Config.BORDER, height=1).pack(
+            fill="x", padx=16, pady=(4, 6))
+        self.body = tk.Frame(self.frame, bg=Config.BG_SIDEBAR)
+        self.body.pack(fill="both", expand=True)
+
+    def place(self):
+        try:
+            self.frame.place(relx=1.0, y=0, relheight=1, anchor="ne",
+                             width=self.WIDTH)
+            self.frame.lift()
+        except Exception:
+            pass
+
+    def section(self, text):
+        tk.Label(self.body, text=text.upper(), font=("Segoe UI", 11, "bold"),
+                 fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x", padx=16, pady=(12, 2))
+
+    def button(self, text, cmd):
+        b = tk.Button(self.body, text=text, font=("Segoe UI", 13),
+                      fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
+                      activebackground=Config.BG_CARD_HOVER,
+                      activeforeground=Config.TEXT_PRIMARY,
+                      relief="flat", bd=0, cursor="hand2", anchor="w",
+                      padx=18, pady=8, highlightthickness=1,
+                      highlightbackground=Config.BORDER,
+                      command=cmd)
+        b.pack(fill="x", padx=16, pady=3)
+        self.focusables.append({"kind": "button", "widget": b, "cmd": cmd})
+        idx = len(self.focusables) - 1
+        b.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+        return b
+
+    def slider(self, label, vmin, vmax, get, put, step=1):
+        """put(v) salva. Controle esq/dir ajusta (com tick); mouse arrasta."""
+        row = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+        row.pack(fill="x", padx=16, pady=(6, 0))
+        lab = tk.Label(row, text=label, font=("Segoe UI", 13),
+                       fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR)
+        lab.pack(side="left")
+        val = tk.Label(row, font=("Segoe UI", 13, "bold"),
+                       fg=Config.ACCENT, bg=Config.BG_SIDEBAR, width=4)
+        val.pack(side="right")
+        sc = tk.Scale(self.body, from_=vmin, to=vmax, orient="horizontal",
+                      showvalue=False, bg=Config.BG_SIDEBAR,
+                      fg=Config.TEXT_PRIMARY, troughcolor=Config.BG_CARD,
+                      highlightthickness=0, bd=0)
+        sc.pack(fill="x", padx=16)
+        item = {"kind": "slider", "scale": sc, "label": lab, "value": val,
+                "min": vmin, "max": vmax, "step": step,
+                "get": get, "put": put, "prog": False}
+        self.focusables.append(item)
+        idx = len(self.focusables) - 1
+
+        def _drag(v, _it=item):
+            if _it["prog"]:
+                return
+            try:
+                _it["put"](int(float(v)))
+            except Exception:
+                pass
+            self.refresh_slider(_it, tick=False)
+
+        sc.configure(command=_drag)
+        sc.bind("<ButtonRelease-1>",
+                lambda e, _it=item: self.refresh_slider(_it, tick=True))
+        sc.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+        for w in (row, lab, val):
+            try:
+                w.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+            except Exception:
+                pass
+        self.refresh_slider(item, tick=False)
+        return item
+
+    def refresh_slider(self, item, tick=True):
+        try:
+            v = max(item["min"], min(item["max"], int(item["get"]())))
+        except Exception:
+            return
+        try:
+            item["prog"] = True
+            item["scale"].set(v)
+        except Exception:
+            pass
+        finally:
+            try:
+                item["prog"] = False
+            except Exception:
+                pass
+        try:
+            item["value"].config(text=str(v))
+        except Exception:
+            pass
+        if tick:
+            try:
+                self.app.play_tick()
+            except Exception:
+                pass
+
+    def adjust(self, d):
+        if not self.focusables:
+            return
+        item = self.focusables[self.focus % len(self.focusables)]
+        if item.get("kind") != "slider":
+            return
+        try:
+            cur = int(item["get"]())
+        except Exception:
+            return
+        try:
+            item["put"](max(item["min"], min(item["max"],
+                                             cur + d * item["step"])))
+        except Exception:
+            return
+        self.refresh_slider(item, tick=True)
+
+    # ---------- navegacao ----------
+    def set_focus(self, idx):
+        if not self.visible or not self.focusables:
+            return
+        new = idx % len(self.focusables)
+        if new != self.focus:
+            self.focus = new
+            self.paint()
+            try:
+                self.app.play_tick()
+            except Exception:
+                pass
+
+    def paint(self):
+        for i, item in enumerate(self.focusables):
+            try:
+                if item.get("kind") == "slider":
+                    item["label"].configure(
+                        fg=Config.ACCENT if i == self.focus else Config.TEXT_PRIMARY)
+                else:
+                    b = item["widget"]
+                    if i == self.focus:
+                        b.configure(bg=Config.ACCENT, fg="white",
+                                    highlightbackground="white",
+                                    highlightthickness=3)
+                    else:
+                        b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                    highlightbackground=Config.BORDER,
+                                    highlightthickness=1)
+            except Exception:
+                pass
+
+    def on_hat(self, hat):
+        if not self.visible or not self.focusables:
+            return
+        if hat == (0, 1):
+            self.set_focus(self.focus - 1)
+        elif hat == (0, -1):
+            self.set_focus(self.focus + 1)
+        elif hat == (-1, 0):
+            self.adjust(-1)
+        elif hat == (1, 0):
+            self.adjust(1)
+
+    def press(self, logical):
+        if not self.visible:
+            return
+        if logical == "east":
+            self.close()
+            return
+        if logical != "south" or not self.focusables:
+            return
+        item = self.focusables[self.focus % len(self.focusables)]
+        if item.get("kind") == "button":
+            try:
+                item["cmd"]()
+            except Exception:
+                pass
+
+
+class ControlesPanel(SidePanel):
+    NAME = "controles"
+    TITLE_KEY = "settings_controls"
+    ICON = "\U0001F3AE"
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        self.section("\U0001F3AE " + t("ctrl_pad_sec", lang))
+        try:
+            gp = app.gamepad
+            name = gp.device_label() if (gp is not None and gp.joystick) else ""
+        except Exception:
+            name = ""
+        tk.Label(self.body,
+                 text=(t("pad_connected", lang) % name) if name else t("pad_none", lang),
+                 font=("Segoe UI", 12), fg=Config.TEXT_SECONDARY,
+                 bg=Config.BG_SIDEBAR, anchor="w", justify="left",
+                 wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=(0, 4))
+        self.button(t("pad_remap", lang),
+                    lambda: app.show_gamepad_info())
+        self.slider(t("pad_sens", lang), 4, 30,
+                    lambda: int(app.pad_sensitivity()),
+                    lambda v: self._save_pad("pad_sensitivity", v))
+        self.slider(t("pad_scroll", lang), 2, 20,
+                    lambda: int(app.pad_scroll()),
+                    lambda v: self._save_pad("pad_scroll", v))
+        self.slider(t("pad_deadzone", lang), 5, 40,
+                    lambda: self._get_dead(),
+                    lambda v: self._save_pad("pad_deadzone", v))
+        self.section("\u2328 " + t("ctrl_kb_sec", lang))
+        self.button(t("kb_open", lang),
+                    lambda: app.open_keyboard())
+
+    def _get_dead(self):
+        try:
+            return min(40, max(5, int(self.app.settings.get("pad_deadzone", 22))))
+        except Exception:
+            return 22
+
+    def _save_pad(self, key, val):
+        try:
+            if isinstance(self.app.settings, dict):
+                self.app.settings[key] = int(val)
+                save_settings(self.app.settings)
+        except Exception:
+            pass
+
+
+class IdiomaPanel(SidePanel):
+    NAME = "idioma"
+    TITLE_KEY = "settings_language"
+    ICON = "\U0001F310"
+
+    def render(self):
+        app = self.app
+        for code, label in (("pt-br", "\U0001F1E7\U0001F1F7  Portugues (BR)"),
+                            ("en", "\U0001F1EC\U0001F1E7  English")):
+            mark = "\u2713 " if code == app.lang else ""
+            self.button(mark + label, lambda c=code: app.set_language(c))
+
+
+class SistemaPanel(SidePanel):
+    NAME = "sistema"
+    TITLE_KEY = "settings_system"
+    ICON = "\u2699"
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        self.button("\U0001F5A9  " + t("settings_resolution", lang),
+                    lambda: app.open_resolution())
+        self.button("\U0001F9F9  " + t("settings_clear_cache", lang),
+                    lambda: app.confirm_clear_browser_profile())
+        self.button("\u267B  " + t("games_restore_ignored", lang),
+                    lambda: app.restore_ignored_platform())
+        self.button("\u2193  " + t("update_check", lang),
+                    lambda: app.check_updates_manual())
+
+
+class AdicionarPanel(SidePanel):
+    NAME = "adicionar"
+    TITLE_KEY = "sidebar_add"
+    ICON = "\U0001F4FA"
+    IS_FORM = True
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        fields = [(t("add_name", lang), "Meu Streaming"),
+                  (t("add_url", lang), "https://"),
+                  (t("add_category", lang), "Filmes"),
+                  (t("add_emoji", lang), "\U0001F4F0"),
+                  (t("add_logo", lang), "")]
+        app.add_entries = {}
+        app.form_focus = []
+        app.form_idx = 0
+        for label, default in fields:
+            tk.Label(self.body, text=label, font=("Segoe UI", 12),
+                     fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR,
+                     anchor="w").pack(fill="x", padx=16, pady=(8, 0))
+            if label == t("add_logo", lang):
+                rowf = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+                rowf.pack(fill="x", padx=16)
+                e = tk.Entry(rowf, font=("Segoe UI", 12),
+                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                             insertbackground=Config.ACCENT, bd=0,
+                             highlightbackground=Config.BORDER,
+                             highlightthickness=1)
+                e.pack(side="left", fill="x", expand=True)
+                bb = tk.Button(rowf, text="...", font=("Segoe UI", 12),
+                               bg=Config.ACCENT, fg="white",
+                               relief="flat", cursor="hand2", padx=10,
+                               command=lambda ent=e: app.browse_image(ent))
+                bb.pack(side="left", padx=(8, 0))
+                app.add_entries[label] = e
+                app.bind_keyboard_popup(e, mode="text")
+                app._reg_form(e, "entry")
+                app._reg_form(bb, "button",
+                              lambda ent=e: app.browse_image(ent))
+            else:
+                e = tk.Entry(self.body, font=("Segoe UI", 12),
+                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                             insertbackground=Config.ACCENT, bd=0,
+                             highlightbackground=Config.BORDER,
+                             highlightthickness=1)
+                e.pack(fill="x", padx=16, pady=(0, 2))
+                e.insert(0, default)
+                app.add_entries[label] = e
+                app.bind_keyboard_popup(e)
+                app._reg_form(e, "entry")
+        submit = tk.Button(self.body,
+                           text="%s \u2192" % t("add_submit", lang),
+                           font=("Segoe UI", 14, "bold"),
+                           bg=Config.ACCENT, fg="white",
+                           activebackground=Config.ACCENT_GLOW,
+                           relief="flat", cursor="hand2", pady=8,
+                           command=app.add_new_streaming)
+        submit.pack(fill="x", padx=16, pady=(14, 4))
+        app._reg_form(submit, "button", app.add_new_streaming)
+        back = tk.Button(self.body,
+                         text="\u2190 %s" % t("add_back", lang),
+                         font=("Segoe UI", 12),
+                         bg=Config.BG_CARD, fg=Config.TEXT_SECONDARY,
+                         relief="flat", cursor="hand2", pady=6,
+                         command=self._back)
+        back.pack(fill="x", padx=16, pady=(0, 10))
+        app._reg_form(back, "button", self._back)
+
+    def _back(self):
+        self.close()
+        try:
+            self.app.switch_tab(self.app.current_tab)
+        except Exception:
+            pass
+
+    def after_open(self):
+        try:
+            self.app.nav_level = "form"
+            self.app.form_idx = 0
+            self.app._paint_form()
+        except Exception:
+            pass
+
+
+class SomPanel(SidePanel):
+    NAME = "som"
+    TITLE_KEY = "settings_sound"
+    ICON = "\U0001F50A"
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        self.vol_item = self.slider(t("snd_volume", lang), 0, 100,
+                                    lambda: self._get_vol(),
+                                    lambda v: self._set_volume(v, tick=False),
+                                    step=5)
+        self.nav_btn = self.button("", self._toggle_nav)
+        self._paint_nav()
+        self.button("\U0001F50A " + t("snd_test", lang), self._test)
+        self.status_lbl = tk.Label(self.body, text="", font=("Segoe UI", 10),
+                                   fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                                   wraplength=self.WIDTH - 40, justify="center")
+        self.status_lbl.pack(fill="x", padx=16, pady=(6, 2))
+
+    def _get_vol(self):
+        try:
+            return max(0, min(100, int(self.app.settings.get("sound_volume", 10))))
+        except Exception:
+            return 10
+
+    def _set_volume(self, vol, tick=True):
+        try:
+            vol = max(0, min(100, int(vol)))
+        except Exception:
+            return
+        try:
+            if isinstance(self.app.settings, dict):
+                self.app.settings["sound_volume"] = vol
+                save_settings(self.app.settings)
+        except Exception:
+            pass
+        try:
+            self.refresh_slider(self.vol_item, tick=False)
+        except Exception:
+            pass
+        if tick:
+            try:
+                self.app.play_tick()
+            except Exception:
+                pass
+
+    def _toggle_nav(self):
+        try:
+            cur = True
+            if isinstance(self.app.settings, dict):
+                cur = bool(self.app.settings.get("nav_sound", True))
+                self.app.settings["nav_sound"] = (not cur)
+                save_settings(self.app.settings)
+            self._paint_nav()
+            if not cur:
+                self.app.play_tick()
+        except Exception:
+            pass
+
+    def _paint_nav(self):
+        try:
+            on = True
+            if isinstance(self.app.settings, dict):
+                on = bool(self.app.settings.get("nav_sound", True))
+            mark = "\u2713 " if on else ""
+            state = t("snd_on", self.app.lang) if on else t("snd_off", self.app.lang)
+            self.nav_btn.configure(text="%s%s: %s" % (
+                mark, t("snd_nav", self.app.lang), state))
+        except Exception:
+            pass
+
+    def _test(self):
+        try:
+            ok, err = self.app.play_tick()
+            msg = ("Blip ok (vol %d)" % self._get_vol()) if ok else ("Blip: %s" % (err or "falhou"))
+        except Exception as e:
+            msg = "Erro: %s" % str(e)[:100]
+        try:
+            ok2, err2 = _play_test_tone()
+            msg += " + tom de teste" if ok2 else (" | tom: %s" % (err2 or "falhou"))
+        except Exception as e:
+            msg += " | tom: %s" % str(e)[:80]
+        try:
+            self.status_lbl.config(text=msg)
+        except Exception:
+            pass
+
+
 # ===================== MAIN APP =====================
 class BigPictureApp:
     def __init__(self, root):
@@ -5724,6 +6393,9 @@ class BigPictureApp:
         self.sidebar_menu_index = 0
         self.notif_visible = False
         self._latest_release = None
+        self.theme_visible = False
+        self.theme_focus = 0
+        self.sidepanel = None
         self.focus_tab = 0
         self.focus_mgr = FocusManager()
         self.nav_level = "tabs"
@@ -5944,6 +6616,17 @@ class BigPictureApp:
         self.build_sidebar()
         self.build_qa_overlay()
         self.build_notif_panel()
+        self.build_theme_panel()
+        if self.theme_visible:
+            # Aplicar tema reconstrui a UI: reabre o painel onde estava.
+            self.render_theme_panel()
+            self._show_theme_panel()
+        try:
+            sp = getattr(self, "sidepanel", None)
+            if sp is not None and getattr(sp, "visible", False):
+                sp.reopen()
+        except Exception:
+            pass
 
         self.render_tab(self.current_tab)
 
@@ -6149,13 +6832,11 @@ class BigPictureApp:
 
         settings_items = [
             (t("settings_theme", self.lang), self.open_theme_picker, "\U0001F3A8"),
-            (t("settings_resolution", self.lang), self.open_resolution, "\U0001F5A9"),
-            (t("settings_gamepad", self.lang), self.show_gamepad_info, "\U0001F3AE"),
-            (t("settings_language", self.lang), self.open_language_picker, "\U0001F310"),
-            (t("sidebar_keyboard", self.lang), self.open_keyboard_sidebar, "\u2328"),
-            (t("settings_clear_cache", self.lang), self.confirm_clear_browser_profile, "\U0001F9F9"),
-            (t("games_restore_ignored", self.lang), self.restore_ignored_platform, "\u267B"),
-            (t("update_check", self.lang), self.check_updates_manual, "\u2193"),
+            (t("settings_controls", self.lang), self.open_controles, "\U0001F3AE"),
+            (t("settings_sound", self.lang), self.open_som, "\U0001F50A"),
+            (t("settings_language", self.lang), self.open_idioma, "\U0001F310"),
+            (t("sidebar_add", self.lang), self.open_adicionar, "\U0001F4FA"),
+            (t("settings_system", self.lang), self.open_sistema, "\u2699"),
         ]
 
         for text, cmd, icon in settings_items:
@@ -6178,13 +6859,13 @@ class BigPictureApp:
                             font=("Segoe UI", 13), bg=Config.BG_SIDEBAR,
                             fg=Config.TEXT_SECONDARY, activebackground=Config.ACCENT,
                             activeforeground="white", relief="flat", anchor="w",
-                            cursor="hand2", bd=0, padx=20, pady=10,
-                            command=self.render_add_streaming)
+                             cursor="hand2", bd=0, padx=20, pady=10,
+                             command=self.open_adicionar)
         add_btn.pack(fill="x", padx=15, pady=2)
         add_btn.bind("<Enter>", lambda e, b=add_btn: b.configure(bg=Config.BG_CARD_HOVER, fg=Config.TEXT_PRIMARY))
         add_btn.bind("<Leave>", lambda e, b=add_btn: b.configure(bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY))
         self.sidebar_btns.append(add_btn)
-        self.sidebar_items.append((t("sidebar_add", self.lang), self.render_add_streaming))
+        self.sidebar_items.append((t("sidebar_add", self.lang), self.open_adicionar))
 
         close_btn = tk.Button(self.sidebar_scroll_frame,
                               text=f"  \u2715  {t('sidebar_close', self.lang)}",
@@ -6286,6 +6967,29 @@ class BigPictureApp:
             pass
         return "break"
 
+    def play_tick(self):
+        """Blip curto ao trocar de selecao (async; volume 0-100,
+        nav_sound desliga; padrao 10). Retorna (ok, erro) p/ diagnostico."""
+        try:
+            vol = 10
+            sonar = True
+            if isinstance(self.settings, dict):
+                try:
+                    vol = int(self.settings.get("sound_volume", 10))
+                except Exception:
+                    vol = 10
+                sonar = bool(self.settings.get("nav_sound", True))
+            if not sonar:
+                return False, "navegacao desligada"
+            if vol <= 0:
+                return False, "volume 0"
+        except Exception:
+            vol = 10
+        try:
+            return _play_nav_tick(vol)
+        except Exception as e:
+            return False, str(e)[:120]
+
     def _nav(self, direction):
         if self.sidebar_visible:
             if direction == "up":
@@ -6295,24 +6999,32 @@ class BigPictureApp:
             else:
                 return
             if new_idx == self.sidebar_menu_index:
-                return  # no limite: para, sem update/scroll
+                return  # no limite: para, sem update/scroll/som
             self.sidebar_menu_index = new_idx
             self.update_sidebar_focus()
+            self.play_tick()
             return
         if self.nav_level == "form":
             if direction in ("up", "left"):
                 self._form_move(-1)
             elif direction in ("down", "right"):
                 self._form_move(1)
+            else:
+                return
+            self.play_tick()
             return
         if direction == "up":
-            self._dpad_up()
+            if self._dpad_up():
+                self.play_tick()
         elif direction == "down":
-            self._dpad_down()
+            if self._dpad_down():
+                self.play_tick()
         elif direction == "left":
-            self._dpad_left()
+            if self._dpad_left():
+                self.play_tick()
         elif direction == "right":
-            self._dpad_right()
+            if self._dpad_right():
+                self.play_tick()
 
     def _dpad_up(self):
         # Eixo vertical: troca de carrossel (linha). Nunca seleciona titulos/abas.
@@ -6467,8 +7179,13 @@ class BigPictureApp:
                     self.ask_open_target(name)
 
     def go_back(self):
-        if self.notif_visible:
+        if self.theme_visible:
+            self.close_theme_panel()
+        elif self.notif_visible:
             self.close_notif_panel()
+        elif (getattr(self, "sidepanel", None) is not None
+                and self.sidepanel.visible):
+            self.close_sidepanel()
         elif self.sidebar_visible:
             self.toggle_sidebar()
         elif hasattr(self, 'qa_visible') and self.qa_visible:
@@ -6485,6 +7202,9 @@ class BigPictureApp:
         try:
             if (not self.sidebar_visible
                     and not getattr(self, "notif_visible", False)
+                    and not getattr(self, "theme_visible", False)
+                    and not (getattr(self, "sidepanel", None) is not None
+                             and self.sidepanel.visible)
                     and not getattr(self, "qa_visible", False)
                     and self.nav_level == "tabs"
                     and top_modal(self) is None
@@ -6611,6 +7331,7 @@ class BigPictureApp:
 
     def switch_tab(self, tab):
         tabs = TABS
+        changed = (tab != self.current_tab)
         self.current_tab = tab
         self.focus_mgr.reset()
         self.nav_level = "tabs"
@@ -6619,6 +7340,8 @@ class BigPictureApp:
         if tab in tabs:
             self.focus_tab = tabs.index(tab)
         self.render_tab(tab)
+        if changed:
+            self.play_tick()
 
     def _reg_form(self, widget, kind, action=None):
         try:
@@ -7994,9 +8717,12 @@ class BigPictureApp:
     def sync_focus_to_tab(self, idx):
         """Mouse sobre a aba vira o foco oficial (confirmar segue a seta)."""
         try:
+            changed = (idx != self.focus_tab)
             self.nav_level = "tabs"
             self.focus_tab = idx
             self.update_all_focus()
+            if changed:
+                self.play_tick()
         except Exception:
             pass
 
@@ -8058,10 +8784,14 @@ class BigPictureApp:
                 col = col - sec.get("scroll_offset", 0)
             if col < 0:
                 return
+            old = (self.nav_level, self.focus_mgr.focused_row,
+                   self.focus_mgr.focused_col)
             self.nav_level = "items"
             self.focus_mgr.focused_row = row
             self.focus_mgr.focused_col = col
             self.update_all_focus()
+            if old != ("items", row, col):
+                self.play_tick()
         except Exception:
             pass
 
@@ -8817,6 +9547,7 @@ class BigPictureApp:
     def open_notif_panel(self):
         if self.sidebar_visible:
             self.close_sidebar()
+        self.close_sidepanel()
         self.notif_visible = True
         self.render_notif_panel()
         self.notif_panel.place(relx=1.0, y=0, relheight=1, anchor="ne",
@@ -8850,8 +9581,10 @@ class BigPictureApp:
             if tag and tag != seen and tag != self.settings.get("update_seen", ""):
                 self.notif_badge.config(text="1")
                 self.notif_badge.place(relx=0.7, rely=0.12)
+                self.notif_btn.configure(fg="#e94560")
             else:
                 self.notif_badge.place_forget()
+                self.notif_btn.configure(fg=Config.TEXT_SECONDARY)
         except Exception:
             pass
 
@@ -8862,6 +9595,7 @@ class BigPictureApp:
                 self.settings["notif_seen_update"] = tag
                 save_settings(self.settings)
             self.notif_badge.place_forget()
+            self.notif_btn.configure(fg=Config.TEXT_SECONDARY)
         except Exception:
             pass
 
@@ -8951,33 +9685,6 @@ class BigPictureApp:
                   relief="flat", cursor="hand2", padx=12, pady=4,
                   command=self._notif_manual_check).pack(anchor="e", padx=16, pady=(2, 0))
 
-        # ---- Seus apps: abertos recentemente ----
-        self._notif_section(self.notif_panel, t("notif_apps", lang))
-        try:
-            recent = self.db.get_recent_history(5)
-        except Exception:
-            recent = []
-        if not recent:
-            tk.Label(self.notif_panel, text=t("notif_no_apps", lang),
-                     font=("Segoe UI", 11), fg=Config.TEXT_SECONDARY,
-                     bg=Config.BG_SIDEBAR, anchor="w", justify="left",
-                     wraplength=self.NOTIF_WIDTH - 40).pack(fill="x", padx=16, pady=4)
-        for row in recent:
-            try:
-                svc = row.get("service", "")
-                title = row.get("title", "") or "Home"
-                ts = (row.get("time", "") or "")[5:16]
-                icon = (STREAMINGS_DB.get(svc) or {}).get("icon", "")
-                color = (STREAMINGS_DB.get(svc) or {}).get("color", "") or Config.ACCENT
-                sub = title if title != "Home" else ts
-                if title != "Home" and ts:
-                    sub = f"{title} \u2022 {ts}"
-                self._notif_card(self.notif_panel, f"{icon} {svc}".strip(), sub,
-                                 color,
-                                 on_click=lambda s=svc: self._notif_open_app(s))
-            except Exception:
-                pass
-
     def _notif_go_update(self):
         info = self._latest_release
         self.close_notif_panel()
@@ -8988,13 +9695,6 @@ class BigPictureApp:
         threading.Thread(target=self._update_check_thread,
                          args=(False,), daemon=True).start()
 
-    def _notif_open_app(self, service):
-        self.close_notif_panel()
-        try:
-            self.ask_open_target(service)
-        except Exception:
-            pass
-
     def show_gamepad_info(self):
         self.close_sidebar()
         if _modal_alive(self.pad_window):
@@ -9004,10 +9704,6 @@ class BigPictureApp:
                 pass
             return
         GamepadConfigWindow(self)
-
-    def open_keyboard_sidebar(self):
-        self.close_sidebar()
-        self.open_keyboard()
 
     def open_keyboard(self, entry=None, mode="auto"):
         try:
@@ -9076,86 +9772,6 @@ class BigPictureApp:
             t("cache_cleared", self.lang) if ok else t("cache_in_use", self.lang))
 
     # ===================== ADD STREAMING =====================
-    def render_add_streaming(self):
-        self.close_sidebar()
-        for w in self.scroll_frame.winfo_children():
-            w.destroy()
-        self.all_cards = []
-        self.card_widgets = []
-
-        tk.Label(self.scroll_frame, text=f"\U0001F4FA {t('add_title', self.lang)}",
-                 font=("Segoe UI", 26, "bold"), fg=Config.TEXT_PRIMARY,
-                 bg=Config.BG_PRIMARY).pack(pady=(40, 30))
-
-        form = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
-        form.pack()
-
-        labels = [t("add_name", self.lang), t("add_url", self.lang),
-                  t("add_category", self.lang), t("add_emoji", self.lang),
-                  t("add_logo", self.lang)]
-        defaults = ["Meu Streaming", "https://", "Filmes", "\U0001F4F0", ""]
-        self.add_entries = {}
-        self.form_focus = []
-        self.form_idx = 0
-
-        for i, (label, default) in enumerate(zip(labels, defaults)):
-            tk.Label(form, text=label, font=("Segoe UI", 14),
-                     fg=Config.TEXT_PRIMARY, bg=Config.BG_PRIMARY).grid(
-                row=i, column=0, sticky="w", pady=10, padx=(0, 15))
-            if label == t("add_logo", self.lang):
-                bf = tk.Frame(form, bg=Config.BG_PRIMARY)
-                bf.grid(row=i, column=1, sticky="w")
-                e = tk.Entry(bf, font=("Segoe UI", 12), width=25,
-                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                             insertbackground=Config.ACCENT, bd=0,
-                             highlightbackground=Config.BORDER, highlightthickness=1)
-                e.pack(side="left")
-                browse_btn = tk.Button(bf, text="...", font=("Segoe UI", 12),
-                          bg=Config.ACCENT, fg="white", relief="flat", cursor="hand2",
-                          command=lambda ent=e: self.browse_image(ent), padx=8)
-                browse_btn.pack(side="left", padx=5)
-                self.add_entries[label] = e
-                self.bind_keyboard_popup(e, mode="text")
-                self._reg_form(e, "entry")
-                self._reg_form(browse_btn, "button",
-                               lambda ent=e: self.browse_image(ent))
-            else:
-                e = tk.Entry(form, font=("Segoe UI", 14), width=30,
-                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                             insertbackground=Config.ACCENT, bd=0,
-                             highlightbackground=Config.BORDER, highlightthickness=1)
-                e.grid(row=i, column=1, pady=10)
-                e.insert(0, default)
-                self.add_entries[label] = e
-                self.bind_keyboard_popup(e)
-                tk.Button(form, text="\u2328", font=("Segoe UI", 12),
-                          bg=Config.BG_CARD, fg=Config.TEXT_SECONDARY,
-                          relief="flat", bd=0, cursor="hand2", padx=8,
-                          command=lambda ent=e: self.open_keyboard(ent)).grid(
-                    row=i, column=2, padx=(8, 0))
-                self._reg_form(e, "entry")
-
-        submit_btn = tk.Button(form, text=f"{t('add_submit', self.lang)} \u2192", font=("Segoe UI", 15, "bold"),
-                  bg=Config.ACCENT, fg="white", activebackground=Config.ACCENT_GLOW,
-                  relief="flat", cursor="hand2", command=self.add_new_streaming,
-                  padx=30, pady=10)
-        submit_btn.grid(row=len(labels), column=0, columnspan=2, pady=30)
-        self._reg_form(submit_btn, "button", self.add_new_streaming)
-
-        back_btn = tk.Button(self.scroll_frame, text=f"\u2190 {t('add_back', self.lang)}", font=("Segoe UI", 14),
-                  bg=Config.BG_CARD, fg=Config.TEXT_SECONDARY, relief="flat",
-                  cursor="hand2", command=lambda: self.switch_tab(self.current_tab),
-                  padx=20, pady=8)
-        back_btn.pack(pady=10)
-        self._reg_form(back_btn, "button", lambda: self.switch_tab(self.current_tab))
-
-        self.nav_level = "form"
-        self.form_idx = 0
-        self._paint_form()
-
-        self.nav_level = "form"
-        self._paint_form()
-
     def browse_image(self, entry):
         fp = filedialog.askopenfilename(
             title="Escolher logo",
@@ -9243,22 +9859,152 @@ class BigPictureApp:
             pass
 
     # ===================== THEME =====================
+    THEME_COLORS = [("#7c4dff", "Purple"), ("#e94560", "Red"),
+                    ("#00bcd4", "Cyan"), ("#00c853", "Green"),
+                    ("#ffd600", "Yellow"), ("#ff4081", "Pink"),
+                    ("#ff6d00", "Orange"), ("#c44100", "Steam")]
+    THEME_WIDTH = 360
+    THEME_COLS = 4
+
     def open_theme_picker(self):
+        # Virou painel lateral (antes: dialogo central).
         self.close_sidebar()
-        colors = [("#7c4dff", "Purple"), ("#e94560", "Red"), ("#00bcd4", "Cyan"),
-                  ("#00c853", "Green"), ("#ffd600", "Yellow"), ("#ff4081", "Pink"),
-                  ("#ff6d00", "Orange"), ("#c44100", "Steam")]
-        menu = NexusMenuWindow(self, t("theme_title", self.lang),
-                               [], icon="\U0001F3A8", width=480, cols=4)
-        opts = []
-        for color, label in colors:
-            opts.append((label, lambda col=color: self.apply_theme(col, menu),
-                         {"bg": color,
-                          "fg": "white" if color != "#ffd600" else "black",
-                          "activebackground": color, "width": 8}))
-        opts.append((t("theme_close", self.lang), menu.close,
-                     {"width": 8}))
-        menu.set_options(opts, opt_font=10)
+        self.close_sidepanel()
+        if getattr(self, "notif_visible", False):
+            self.close_notif_panel()
+        self.theme_visible = True
+        self.render_theme_panel()
+        self._show_theme_panel()
+
+    def build_theme_panel(self):
+        self.theme_panel = tk.Frame(self.main_frame, bg=Config.BG_SIDEBAR,
+                                    width=self.THEME_WIDTH)
+        self.theme_panel.pack_propagate(False)
+        self.theme_panel.place_forget()
+        self.theme_swatches = []
+
+    def _show_theme_panel(self):
+        try:
+            self.theme_panel.place(relx=1.0, y=0, relheight=1, anchor="ne",
+                                   width=self.THEME_WIDTH)
+            self.theme_panel.lift()
+        except Exception:
+            pass
+
+    def toggle_theme_panel(self):
+        if self.theme_visible:
+            self.close_theme_panel()
+        else:
+            self.open_theme_picker()
+
+    def close_theme_panel(self):
+        self.theme_visible = False
+        try:
+            self.theme_panel.place_forget()
+        except Exception:
+            pass
+
+    def render_theme_panel(self):
+        try:
+            for w in self.theme_panel.winfo_children():
+                w.destroy()
+        except Exception:
+            return
+        self.theme_swatches = []
+        lang = self.lang
+        head = tk.Frame(self.theme_panel, bg=Config.BG_SIDEBAR)
+        head.pack(fill="x", pady=(20, 4))
+        tk.Label(head, text="\U0001F3A8 " + t("theme_title", lang),
+                 font=("Segoe UI", 18, "bold"),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR).pack(side="left", padx=16)
+        tk.Button(head, text="\u2715", font=("Segoe UI", 12),
+                  bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
+                  activebackground="#e94560", activeforeground="white",
+                  relief="flat", cursor="hand2", bd=0, padx=10,
+                  command=self.close_theme_panel).pack(side="right", padx=12)
+        tk.Frame(self.theme_panel, bg=Config.BORDER, height=1).pack(
+            fill="x", padx=16, pady=(4, 10))
+        grid = tk.Frame(self.theme_panel, bg=Config.BG_SIDEBAR)
+        grid.pack(fill="x", padx=16)
+        cur = Config.ACCENT
+        for i, (color, label) in enumerate(self.THEME_COLORS):
+            cell = tk.Frame(grid, bg=Config.BG_SIDEBAR)
+            cell.grid(row=i // self.THEME_COLS, column=i % self.THEME_COLS,
+                      padx=6, pady=8, sticky="nsew")
+            fg = "black" if color == "#ffd600" else "white"
+            b = tk.Button(cell, text="\u2713" if color == cur else "",
+                          font=("Segoe UI", 16, "bold"),
+                          bg=color, fg=fg, activebackground=color,
+                          activeforeground=fg, relief="flat", bd=0,
+                          cursor="hand2", width=5, height=2,
+                          highlightthickness=1,
+                          highlightbackground=Config.BORDER,
+                          command=lambda col=color: self.apply_theme(col))
+            b.pack()
+            b.bind("<Enter>", lambda e, idx=i: self.theme_set_focus(idx))
+            tk.Label(cell, text=label, font=("Segoe UI", 9),
+                     fg=Config.TEXT_SECONDARY,
+                     bg=Config.BG_SIDEBAR).pack(pady=(4, 0))
+            self.theme_swatches.append(b)
+        for c in range(self.THEME_COLS):
+            grid.grid_columnconfigure(c, weight=1)
+        self.theme_paint()
+
+    def theme_paint(self):
+        for i, b in enumerate(getattr(self, "theme_swatches", [])):
+            try:
+                if i == self.theme_focus:
+                    b.configure(highlightbackground="white",
+                                highlightthickness=3)
+                else:
+                    b.configure(highlightbackground=Config.BORDER,
+                                highlightthickness=1)
+            except Exception:
+                pass
+
+    def theme_set_focus(self, idx):
+        if not getattr(self, "theme_visible", False):
+            return
+        n = len(getattr(self, "theme_swatches", []))
+        if not n:
+            return
+        self.theme_focus = idx % n
+        self.theme_paint()
+
+    def theme_move(self, hat):
+        if not getattr(self, "theme_visible", False):
+            return
+        n = len(getattr(self, "theme_swatches", []))
+        if not n:
+            return
+        cols = self.THEME_COLS
+        i = self.theme_focus
+        if hat == (-1, 0):
+            i = (i - 1) % n
+        elif hat == (1, 0):
+            i = (i + 1) % n
+        elif hat == (0, 1):
+            i = max(0, i - cols)
+        elif hat == (0, -1):
+            i = min(n - 1, i + cols)
+        else:
+            return
+        if i != self.theme_focus:
+            self.theme_focus = i
+            self.theme_paint()
+            self.play_tick()
+
+    def theme_press(self, logical):
+        if not getattr(self, "theme_visible", False):
+            return
+        if logical == "south":
+            try:
+                color = self.THEME_COLORS[self.theme_focus % len(self.THEME_COLORS)][0]
+            except Exception:
+                return
+            self.apply_theme(color)
+        elif logical == "east":
+            self.close_theme_panel()
 
     def apply_theme(self, color, win=None):
         global Config
@@ -9270,6 +10016,30 @@ class BigPictureApp:
                 win.close()
         except Exception:
             pass
+
+    def open_som(self):
+        SomPanel(self).open()
+
+    # ===================== SIDE PANELS =====================
+    def close_sidepanel(self):
+        try:
+            sp = getattr(self, "sidepanel", None)
+            if sp is not None:
+                sp.close()
+        except Exception:
+            pass
+
+    def open_controles(self):
+        ControlesPanel(self).open()
+
+    def open_idioma(self):
+        IdiomaPanel(self).open()
+
+    def open_adicionar(self):
+        AdicionarPanel(self).open()
+
+    def open_sistema(self):
+        SistemaPanel(self).open()
 
     # ===================== LANGUAGE =====================
     def open_language_picker(self):
