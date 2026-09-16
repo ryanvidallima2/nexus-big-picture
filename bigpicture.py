@@ -84,7 +84,7 @@ def ver_tuple(v):
 
 
 def fetch_latest_release(timeout=15):
-    """Ultima release no GitHub {tag, zip, notes} ou None (sem internet)."""
+    """Ultima release no GitHub {tag, zip, notes, date} ou None (sem internet)."""
     try:
         req = urllib.request.Request(
             UPDATE_URL,
@@ -100,7 +100,8 @@ def fetch_latest_release(timeout=15):
                 zip_url = url
                 break
         return {"tag": tag, "zip": zip_url,
-                "notes": str(data.get("body", "") or "")[:600]}
+                "notes": str(data.get("body", "") or "")[:600],
+                "date": str(data.get("published_at", "") or "")[:10]}
     except Exception:
         return None
 
@@ -4226,10 +4227,10 @@ class NexusKeyboard:
     ]
 
     ROWS_NUM = [
-        (["1", "2", "3"], None, "fixed"),
-        (["4", "5", "6"], None, "fixed"),
-        (["7", "8", "9"], None, "fixed"),
-        ([".", "0", "\u232B"], None, "fixed"),
+        (["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], None, None),
+        (["!", "@", "#", "$", "%", "\u00A8", "&", "*", "(", ")"], None, None),
+        (["-", "_", "+", "=", "/", "?", ":", ";", '"', "'"], None, None),
+        (["<", ">", "[", "]", "{", "}", "|", ",", ".", "\u232B"], None, None),
     ]
 
     ROWS_EMOJI = [
@@ -8871,14 +8872,16 @@ class BigPictureApp:
         self._notif_section(self.notif_panel, t("notif_nexus", lang))
         tag = self._notif_newer_tag()
         if tag:
-            notes = ""
             try:
-                notes = ((self._latest_release or {}).get("notes") or "").strip()
+                info = self._latest_release or {}
+                notes = (info.get("notes") or "").strip()
+                date = (info.get("date") or "").strip()
             except Exception:
-                notes = ""
+                notes, date = "", ""
+            # O card diz O QUE foi atualizado: data + notas da release.
+            sub = ((date + "\n") if date else "") + notes
             self._notif_card(self.notif_panel, t("notif_upd_avail", lang) % tag,
-                             notes[:140] if notes else "",
-                             "#e94560",
+                             sub, "#e94560",
                              on_click=lambda: self._notif_go_update())
         else:
             self._notif_card(self.notif_panel, t("notif_upd_cur", lang) % APP_VERSION,
