@@ -4305,8 +4305,8 @@ class NexusKeyboard:
                     rect = (ctypes.c_long * 4)()
                     if ctypes.windll.user32.SystemParametersInfoW(
                             0x0030, 0, rect, 0):
-                        w2 = min(1000, max(640, (rect[2] - rect[0]) - 120))
-                        h2 = 430
+                        w2 = min(800, max(512, (rect[2] - rect[0]) - 120))
+                        h2 = 340
                         x2 = rect[0] + (rect[2] - rect[0] - w2) // 2
                         y2 = rect[3] - h2
                 except Exception:
@@ -4314,16 +4314,16 @@ class NexusKeyboard:
                 if w2 is None:
                     try:
                         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-                        w2 = min(1000, max(640, sw - 120))
-                        h2 = 430
+                        w2 = min(800, max(512, sw - 120))
+                        h2 = 340
                         x2 = (sw - w2) // 2
                         y2 = sh - h2 - 60
                     except Exception:
-                        w2, h2, x2, y2 = 620, 430, 200, 150
+                        w2, h2, x2, y2 = 500, 340, 200, 150
                 w, h, x, y = w2, h2, x2, y2
             else:
-                w = min(1000, max(640, app.root.winfo_width() - 120))
-                h = 430
+                w = min(800, max(512, app.root.winfo_width() - 120))
+                h = 340
                 x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
                 y = app.root.winfo_y() + app.root.winfo_height() - h
         except Exception:
@@ -4413,8 +4413,40 @@ class NexusKeyboard:
             pass
         self._apply_compact(on)
 
+    def _floating_w(self):
+        """Largura do teclado (~20% menor que a v1): mesma nos dois modos,
+        p/ o dock ficar proximo do flutuante."""
+        try:
+            state = ""
+            try:
+                state = self.app.root.state()
+            except Exception:
+                pass
+            if state in ("iconic", "withdrawn"):
+                try:
+                    rect = (ctypes.c_long * 4)()
+                    if ctypes.windll.user32.SystemParametersInfoW(
+                            0x0030, 0, rect, 0):
+                        return min(800, max(512, (rect[2] - rect[0]) - 120))
+                except Exception:
+                    pass
+                try:
+                    return min(800, max(512, self.win.winfo_screenwidth() - 120))
+                except Exception:
+                    return 512
+            return min(800, max(512, self.app.root.winfo_width() - 120))
+        except Exception:
+            return 512
+
     def _place_docked(self):
-        # Uma unica fonte (workarea ou tela-60) p/ largura, altura e posicao.
+        # Dock = flutuante ancorado embaixo e centralizado (nada de faixa
+        # fina esticada): mesma largura, altura ajustada ao conteudo.
+        w = self._floating_w()
+        try:
+            scale = w / self.KB_BASE_W
+            est = int(44 + 5 * (self.KB_KEY_H + self.KB_GAP_Y) * scale + 16)
+        except Exception:
+            est = 340
         try:
             rect = (ctypes.c_long * 4)()
             ok = bool(ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, rect, 0))
@@ -4422,7 +4454,7 @@ class NexusKeyboard:
             ok = False
             rect = None
         if ok:
-            sw, sh, x0, yb = rect[2] - rect[0], rect[3] - rect[1], rect[0], rect[3]
+            sw, x0, yb = rect[2] - rect[0], rect[0], rect[3]
         else:
             try:
                 sw = self.win.winfo_screenwidth()
@@ -4430,15 +4462,15 @@ class NexusKeyboard:
                 x0, yb = 0, sh
             except Exception:
                 return
-        h = max(80, int(sh * 0.2))
         try:
-            self.win.geometry(f"{sw}x{h}+{max(0, x0)}+{max(0, yb - h)}")
+            self.win.geometry(f"{w}x{est}+{max(0, x0 + (sw - w) // 2)}+{max(0, yb - est)}")
         except Exception:
             pass
 
     def _layout_geometry(self):
         """Geometria pela escala W/691: largura exata por flex (uniform),
-        fonte pela altura. Gaps via padx/pady das teclas."""
+        fonte pela altura da tecla. Vale p/ flutuante e dock (mesmo tamanho).
+        Gaps via padx/pady das teclas."""
         try:
             self.win.update_idletasks()
             W = max(200, self.win.winfo_width())
@@ -4446,26 +4478,9 @@ class NexusKeyboard:
             return
         scale = W / self.KB_BASE_W
         gapx = max(2, int(round(self.KB_GAP_X * scale)))
-        try:
-            top_h = (self.toparea.winfo_reqheight()
-                     if self.toparea.winfo_ismapped() else 0)
-        except Exception:
-            top_h = 0
-        if self.docked:
-            try:
-                H = max(80, self.win.winfo_height())
-            except Exception:
-                H = 140
-            avail = max(60, H - top_h - 12)
-            row_h = avail / max(1, len(self.cells))
-            gapy = max(2, min(int(round(self.KB_GAP_Y * scale)),
-                              int(row_h * 0.18)))
-            key_h = max(12, row_h - gapy)
-            font = max(8, min(20, int(key_h * 0.32)))
-        else:
-            gapy = max(4, int(round(self.KB_GAP_Y * scale)))
-            key_h = self.KB_KEY_H * scale
-            font = max(10, min(22, int(key_h * 0.30)))
+        gapy = max(4, int(round(self.KB_GAP_Y * scale)))
+        key_h = self.KB_KEY_H * scale
+        font = max(8, min(22, int(key_h * 0.30)))
         padx = max(1, gapx // 2)
         pady = max(1, gapy // 2)
         side = max(2, int(round(self.KB_SIDE * scale)))
@@ -4499,8 +4514,9 @@ class NexusKeyboard:
         self._paint()
 
     def _size_to_content(self):
-        """Flutuante: altura justa ao conteudo (ancorado embaixo)."""
-        if self.closed or self.docked:
+        """Altura justa ao conteudo (ancorado embaixo). Vale p/ flutuante
+        e dock: o dock e um flutuante fixado na base."""
+        if self.closed:
             return
         try:
             self.win.update_idletasks()
@@ -4528,12 +4544,11 @@ class NexusKeyboard:
         except Exception:
             pass
         self._layout_geometry()
-        if not on:
-            self._size_to_content()
-            try:
-                self.dock_bottom()
-            except Exception:
-                pass
+        self._size_to_content()
+        try:
+            self.dock_bottom()
+        except Exception:
+            pass
 
     def dock_bottom(self):
         """Reancora na base da area util (barra de tarefas descontada)."""
@@ -4544,7 +4559,7 @@ class NexusKeyboard:
             w = self.win.winfo_width()
             h = self.win.winfo_height()
             if w < 50 or h < 50:
-                w, h = 1000, 430
+                w, h = 800, 340
         except Exception:
             return
         placed = False
