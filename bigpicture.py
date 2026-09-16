@@ -2522,6 +2522,8 @@ class GamepadManager:
                                 pw.move_focus(1)
                             else:
                                 pw.sens_or_move(hat)
+                        elif getattr(self.app, "theme_visible", False):
+                            self.app.theme_move(hat)
                         elif hat == (0, 1):
                             self.app._nav("up")
                             self.app.warp_to_focus()
@@ -2572,6 +2574,8 @@ class GamepadManager:
                         self.app.cancel_pad_capture()
                     else:
                         self.app.finish_pad_capture(logical)
+                elif getattr(self.app, "theme_visible", False):
+                    self.app.theme_press(logical)
                 else:
                     pw = self.app.pad_window
                     if _modal_alive(pw):
@@ -6076,6 +6080,8 @@ class BigPictureApp:
         self.sidebar_menu_index = 0
         self.notif_visible = False
         self._latest_release = None
+        self.theme_visible = False
+        self.theme_focus = 0
         self.focus_tab = 0
         self.focus_mgr = FocusManager()
         self.nav_level = "tabs"
@@ -6296,6 +6302,11 @@ class BigPictureApp:
         self.build_sidebar()
         self.build_qa_overlay()
         self.build_notif_panel()
+        self.build_theme_panel()
+        if self.theme_visible:
+            # Aplicar tema reconstrui a UI: reabre o painel onde estava.
+            self.render_theme_panel()
+            self._show_theme_panel()
 
         self.render_tab(self.current_tab)
 
@@ -6851,7 +6862,9 @@ class BigPictureApp:
                     self.ask_open_target(name)
 
     def go_back(self):
-        if self.notif_visible:
+        if self.theme_visible:
+            self.close_theme_panel()
+        elif self.notif_visible:
             self.close_notif_panel()
         elif self.sidebar_visible:
             self.toggle_sidebar()
@@ -6869,6 +6882,7 @@ class BigPictureApp:
         try:
             if (not self.sidebar_visible
                     and not getattr(self, "notif_visible", False)
+                    and not getattr(self, "theme_visible", False)
                     and not getattr(self, "qa_visible", False)
                     and self.nav_level == "tabs"
                     and top_modal(self) is None
@@ -9606,22 +9620,151 @@ class BigPictureApp:
             pass
 
     # ===================== THEME =====================
+    THEME_COLORS = [("#7c4dff", "Purple"), ("#e94560", "Red"),
+                    ("#00bcd4", "Cyan"), ("#00c853", "Green"),
+                    ("#ffd600", "Yellow"), ("#ff4081", "Pink"),
+                    ("#ff6d00", "Orange"), ("#c44100", "Steam")]
+    THEME_WIDTH = 360
+    THEME_COLS = 4
+
     def open_theme_picker(self):
+        # Virou painel lateral (antes: dialogo central).
         self.close_sidebar()
-        colors = [("#7c4dff", "Purple"), ("#e94560", "Red"), ("#00bcd4", "Cyan"),
-                  ("#00c853", "Green"), ("#ffd600", "Yellow"), ("#ff4081", "Pink"),
-                  ("#ff6d00", "Orange"), ("#c44100", "Steam")]
-        menu = NexusMenuWindow(self, t("theme_title", self.lang),
-                               [], icon="\U0001F3A8", width=480, cols=4)
-        opts = []
-        for color, label in colors:
-            opts.append((label, lambda col=color: self.apply_theme(col, menu),
-                         {"bg": color,
-                          "fg": "white" if color != "#ffd600" else "black",
-                          "activebackground": color, "width": 8}))
-        opts.append((t("theme_close", self.lang), menu.close,
-                     {"width": 8}))
-        menu.set_options(opts, opt_font=10)
+        if getattr(self, "notif_visible", False):
+            self.close_notif_panel()
+        self.theme_visible = True
+        self.render_theme_panel()
+        self._show_theme_panel()
+
+    def build_theme_panel(self):
+        self.theme_panel = tk.Frame(self.main_frame, bg=Config.BG_SIDEBAR,
+                                    width=self.THEME_WIDTH)
+        self.theme_panel.pack_propagate(False)
+        self.theme_panel.place_forget()
+        self.theme_swatches = []
+
+    def _show_theme_panel(self):
+        try:
+            self.theme_panel.place(relx=1.0, y=0, relheight=1, anchor="ne",
+                                   width=self.THEME_WIDTH)
+            self.theme_panel.lift()
+        except Exception:
+            pass
+
+    def toggle_theme_panel(self):
+        if self.theme_visible:
+            self.close_theme_panel()
+        else:
+            self.open_theme_picker()
+
+    def close_theme_panel(self):
+        self.theme_visible = False
+        try:
+            self.theme_panel.place_forget()
+        except Exception:
+            pass
+
+    def render_theme_panel(self):
+        try:
+            for w in self.theme_panel.winfo_children():
+                w.destroy()
+        except Exception:
+            return
+        self.theme_swatches = []
+        lang = self.lang
+        head = tk.Frame(self.theme_panel, bg=Config.BG_SIDEBAR)
+        head.pack(fill="x", pady=(20, 4))
+        tk.Label(head, text="\U0001F3A8 " + t("theme_title", lang),
+                 font=("Segoe UI", 18, "bold"),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR).pack(side="left", padx=16)
+        tk.Button(head, text="\u2715", font=("Segoe UI", 12),
+                  bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
+                  activebackground="#e94560", activeforeground="white",
+                  relief="flat", cursor="hand2", bd=0, padx=10,
+                  command=self.close_theme_panel).pack(side="right", padx=12)
+        tk.Frame(self.theme_panel, bg=Config.BORDER, height=1).pack(
+            fill="x", padx=16, pady=(4, 10))
+        grid = tk.Frame(self.theme_panel, bg=Config.BG_SIDEBAR)
+        grid.pack(fill="x", padx=16)
+        cur = Config.ACCENT
+        for i, (color, label) in enumerate(self.THEME_COLORS):
+            cell = tk.Frame(grid, bg=Config.BG_SIDEBAR)
+            cell.grid(row=i // self.THEME_COLS, column=i % self.THEME_COLS,
+                      padx=6, pady=8, sticky="nsew")
+            fg = "black" if color == "#ffd600" else "white"
+            b = tk.Button(cell, text="\u2713" if color == cur else "",
+                          font=("Segoe UI", 16, "bold"),
+                          bg=color, fg=fg, activebackground=color,
+                          activeforeground=fg, relief="flat", bd=0,
+                          cursor="hand2", width=5, height=2,
+                          highlightthickness=1,
+                          highlightbackground=Config.BORDER,
+                          command=lambda col=color: self.apply_theme(col))
+            b.pack()
+            b.bind("<Enter>", lambda e, idx=i: self.theme_set_focus(idx))
+            tk.Label(cell, text=label, font=("Segoe UI", 9),
+                     fg=Config.TEXT_SECONDARY,
+                     bg=Config.BG_SIDEBAR).pack(pady=(4, 0))
+            self.theme_swatches.append(b)
+        for c in range(self.THEME_COLS):
+            grid.grid_columnconfigure(c, weight=1)
+        self.theme_paint()
+
+    def theme_paint(self):
+        for i, b in enumerate(getattr(self, "theme_swatches", [])):
+            try:
+                if i == self.theme_focus:
+                    b.configure(highlightbackground="white",
+                                highlightthickness=3)
+                else:
+                    b.configure(highlightbackground=Config.BORDER,
+                                highlightthickness=1)
+            except Exception:
+                pass
+
+    def theme_set_focus(self, idx):
+        if not getattr(self, "theme_visible", False):
+            return
+        n = len(getattr(self, "theme_swatches", []))
+        if not n:
+            return
+        self.theme_focus = idx % n
+        self.theme_paint()
+
+    def theme_move(self, hat):
+        if not getattr(self, "theme_visible", False):
+            return
+        n = len(getattr(self, "theme_swatches", []))
+        if not n:
+            return
+        cols = self.THEME_COLS
+        i = self.theme_focus
+        if hat == (-1, 0):
+            i = (i - 1) % n
+        elif hat == (1, 0):
+            i = (i + 1) % n
+        elif hat == (0, 1):
+            i = max(0, i - cols)
+        elif hat == (0, -1):
+            i = min(n - 1, i + cols)
+        else:
+            return
+        if i != self.theme_focus:
+            self.theme_focus = i
+            self.theme_paint()
+            self.play_tick()
+
+    def theme_press(self, logical):
+        if not getattr(self, "theme_visible", False):
+            return
+        if logical == "south":
+            try:
+                color = self.THEME_COLORS[self.theme_focus % len(self.THEME_COLORS)][0]
+            except Exception:
+                return
+            self.apply_theme(color)
+        elif logical == "east":
+            self.close_theme_panel()
 
     def apply_theme(self, color, win=None):
         global Config
