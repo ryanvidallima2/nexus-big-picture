@@ -84,7 +84,8 @@ def ver_tuple(v):
 
 
 def fetch_latest_release(timeout=15):
-    """Ultima release no GitHub {tag, zip, notes} ou None (sem internet)."""
+    """Ultima release no GitHub {tag, zip, notes, date, changes} ou None.
+    changes = 1a linha dos commits desde a versao atual (o que mudou)."""
     try:
         req = urllib.request.Request(
             UPDATE_URL,
@@ -99,10 +100,56 @@ def fetch_latest_release(timeout=15):
             if url.lower().endswith(".zip"):
                 zip_url = url
                 break
-        return {"tag": tag, "zip": zip_url,
-                "notes": str(data.get("body", "") or "")[:600]}
+        info = {"tag": tag, "zip": zip_url,
+                "notes": str(data.get("body", "") or "")[:600],
+                "date": str(data.get("published_at", "") or "")[:10],
+                "changes": _fetch_changes_since(tag, timeout=timeout)}
+        return info
     except Exception:
         return None
+
+
+def _fetch_changes_since(tag, timeout=15):
+    """Primeiras linhas dos commits entre a versao atual e a tag (resumo
+    do que mudou p/ o card). Falhou = lista vazia (card usa as notas)."""
+    out = []
+    try:
+        if not tag:
+            return out
+        try:
+            if ver_tuple(tag) <= ver_tuple(APP_VERSION):
+                return out
+        except Exception:
+            return out
+        base = ("v" + APP_VERSION) if tag.startswith("v") else APP_VERSION
+        url = ("https://api.github.com/repos/" + GITHUB_REPO +
+               "/compare/%s...%s" % (base, tag))
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "NexusBigPicture",
+                          "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        total = 0
+        try:
+            total = int(data.get("total_commits", 0))
+        except Exception:
+            total = 0
+        for cm in (data.get("commits", []) or [])[:6]:
+            try:
+                msg = (((cm or {}).get("commit") or {}).get("message")
+                       or "").strip().split("\n")[0].strip()
+            except Exception:
+                msg = ""
+            if not msg or msg.lower().startswith("merge "):
+                continue
+            out.append(msg[:100])
+            if len(out) >= 5:
+                break
+        if total > len(out) and out:
+            out.append("+%d" % (total - len(out)))
+    except Exception:
+        return []
+    return out
 
 
 def legacy_profile_dir():
@@ -1702,6 +1749,88 @@ def stick_response(v, deadzone=0.22):
     return (1.0 if v > 0 else -1.0) * (a - deadzone) / (1.0 - deadzone)
 
 
+_UIA_PS = (
+    "Add-Type -AssemblyName UIAutomationClient; "
+    "$el = [System.Windows.Automation.AutomationElement]::FocusedElement; "
+    "if ($el -eq $null) { 'none' } "
+    "else { $el.Current.ControlType.ProgrammaticName }"
+)
+_UIA_TEXT_TYPES = frozenset(["ControlType.Edit"])
+_EDIT_CLASS_NAMES = frozenset([
+    "edit", "richedit20wpt", "richedit20a", "richedit50w", "richedit50a",
+    "_wwg", "_wwn",
+])
+
+
+def _uia_focused_control():
+    out = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", _UIA_PS],
+        capture_output=True, text=True, timeout=12,
+        creationflags=subprocess.CREATE_NO_WINDOW)
+    lines = (out.stdout or "").strip().splitlines()
+    return lines[-1].strip() if lines else None
+
+
+def _caret_visible():
+    try:
+        u = ctypes.windll.user32
+
+        class _RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                        ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        class _GUITHREADINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_ulong), ("flags", ctypes.c_ulong),
+                        ("hwndActive", ctypes.c_void_p),
+                        ("hwndFocus", ctypes.c_void_p),
+                        ("hwndCapture", ctypes.c_void_p),
+                        ("hwndMenuOwner", ctypes.c_void_p),
+                        ("hwndMoveSize", ctypes.c_void_p),
+                        ("hwndCaret", ctypes.c_void_p),
+                        ("rcCaret", _RECT)]
+
+        try:
+            u.GetGUIThreadInfo.argtypes = [ctypes.c_ulong,
+                                           ctypes.POINTER(_GUITHREADINFO)]
+            u.GetGUIThreadInfo.restype = ctypes.c_bool
+            u.GetClassNameW.argtypes = [ctypes.c_void_p,
+                                        ctypes.c_wchar_p, ctypes.c_int]
+            u.GetClassNameW.restype = ctypes.c_int
+        except Exception:
+            pass
+        info = _GUITHREADINFO()
+        info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+        if not u.GetGUIThreadInfo(0, ctypes.byref(info)):
+            return False
+        if info.hwndCaret:
+            return True
+        if info.hwndFocus:
+            try:
+                buf = ctypes.create_unicode_buffer(128)
+                if u.GetClassNameW(info.hwndFocus, buf, 128) > 0:
+                    if buf.value.lower() in _EDIT_CLASS_NAMES:
+                        return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
+def focused_is_text_field():
+    """True se o foco atual (outro app) esta num campo de texto."""
+    try:
+        name = _uia_focused_control()
+        if name and name != "none":
+            return name in _UIA_TEXT_TYPES
+    except Exception:
+        pass
+    try:
+        return _caret_visible()
+    except Exception:
+        return False
+
+
 # Processos para detectar que o app foi fechado (saida automatica do remoto).
 # So nomes confiaveis: se o processo nunca aparecer, nao ha saida automatica
 # (o usuario sai com Back+Start).
@@ -1804,16 +1933,18 @@ def parse_sdl_mapping(mapping):
 
 # Acao -> botao. Usuario pode trocar em Configuracoes > Gamepad.
 DEFAULT_NEXUS_MAP = {"select": 0, "back": 1, "cards": 2,
-                     "sidebar": 3, "tab_prev": 4, "tab_next": 5}
+                     "sidebar": 3, "tab_prev": 4, "tab_next": 5,
+                     "notif": 7}
 DEFAULT_REMOTE_MAP = {"click_left": 0, "back": 1, "click_right": 2,
                        "fullscreen": 3, "app_tab_prev": 4, "app_tab_next": 5,
                        "space": 8, "enter": 9, "play_pause": 6,
                        "vol_down": "l2", "vol_up": "r2"}
-NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_next"]
+NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_next",
+                      "notif"]
 REMOTE_ACTION_ORDER = ["click_left", "click_right", "enter", "back",
                        "space", "fullscreen", "vol_down", "vol_up",
                        "play_pause", "next_track", "prev_track",
-                       "app_tab_prev", "app_tab_next"]
+                       "app_tab_prev", "app_tab_next", "keyboard"]
 DEFAULT_PAD_SENSITIVITY = 12
 DEFAULT_PAD_SCROLL = 8
 DEFAULT_PAD_DEADZONE = 22
@@ -1877,6 +2008,7 @@ class GamepadManager:
         self.remote_enter_time = 0.0
         self.remote_off = [0.0, 0.0, 0.0, 0.0]
         self.remote_cal = []
+        self.remote_kb_time = 0.0
         if PYGAME_AVAILABLE:
             try:
                 pygame.init()
@@ -2368,6 +2500,8 @@ class GamepadManager:
                             self.app.go_to_cards()
                         elif action == "sidebar":
                             self.app.toggle_sidebar()
+                        elif action == "notif":
+                            self.app.toggle_notif_panel()
                         elif action == "tab_prev":
                             self.app.tab_prev()
                         elif action == "tab_next":
@@ -2390,7 +2524,10 @@ class GamepadManager:
                 if hat not in self.hat_debounce or (now - self.hat_debounce[hat]) > 0.15:
                     self.hat_debounce[hat] = now
                     self.app.using_gamepad = True
-                    if hat == (0, 1):
+                    kb = self.app.kb_window
+                    if _modal_alive(kb):
+                        kb.on_hat(hat)
+                    elif hat == (0, 1):
                         tap_key(VK_UP)
                     elif hat == (0, -1):
                         tap_key(VK_DOWN)
@@ -2466,7 +2603,15 @@ class GamepadManager:
                 self.prev_buttons[btn_id] = True
                 self.app.using_gamepad = True
                 logical = self.logical_for_raw(btn_id)
-                top = top_modal(self.app)
+                kb = self.app.kb_window
+                if _modal_alive(kb) and logical in ("south", "east"):
+                    # Teclado aberto sobre o app: A digita, B fecha
+                    if logical == "south":
+                        kb.press_focused()
+                    else:
+                        kb.close()
+                else:
+                    top = top_modal(self.app)
                 if isinstance(top, NexusKeyboard):
                     if logical == "south":
                         top.press_focused()
@@ -2484,6 +2629,9 @@ class GamepadManager:
                             tap_key(VK_RETURN)  # modo console: A abre o quadro
                         else:
                             mouse_click(right=False)
+                            self._maybe_open_kb_for_focus()
+                    elif action == "keyboard":
+                        self._open_kb_global()
                     elif action == "click_right":
                         mouse_click(right=True)
                     elif action == "enter":
@@ -2509,6 +2657,48 @@ class GamepadManager:
                     elif action == "app_tab_next":
                         self.app.remote_tab(prev=False)
             self._remote_watch_tick()
+        except Exception:
+            pass
+
+    def _maybe_open_kb_for_focus(self):
+        """Apos clique com o controle: se o foco caiu num campo de texto,
+        abre o teclado (com cooldown)."""
+        try:
+            if _modal_alive(self.app.kb_window):
+                return
+            now = time.time()
+            if now - (self.remote_kb_time or 0.0) < 3.0:
+                return
+            self.remote_kb_time = now
+        except Exception:
+            return
+        try:
+            threading.Thread(target=self._focus_check_thread,
+                             daemon=True).start()
+        except Exception:
+            pass
+
+    def _focus_check_thread(self):
+        try:
+            time.sleep(0.45)
+            is_text = focused_is_text_field()
+        except Exception:
+            is_text = False
+        if is_text:
+            try:
+                self.app.root.after(0, self._open_kb_global)
+            except Exception:
+                pass
+
+    def _open_kb_global(self):
+        try:
+            if _modal_alive(self.app.kb_window):
+                try:
+                    self.app.kb_window.win.lift()
+                except Exception:
+                    pass
+                return
+            self.app.open_keyboard(None)
         except Exception:
             pass
 
@@ -2862,6 +3052,16 @@ TRANSLATIONS = {
         "pad_a_sidebar": "Menu lateral",
         "pad_a_tab_prev": "Aba anterior",
         "pad_a_tab_next": "Proxima aba",
+        "pad_a_notif": "Notificações",
+        "notif_title": "Notificações",
+        "notif_nexus": "Do Nexus",
+        "notif_apps": "Seus apps",
+        "notif_upd_avail": "Nova versão %s disponível",
+        "notif_whatsnew": "O que mudou:",
+        "notif_upd_cur": "Tudo em dia (v%s)",
+        "notif_upd_btn": "Ver atualização",
+        "notif_check": "Verificar",
+        "notif_no_apps": "Abra um streaming ou jogo e ele aparece aqui.",
         "pad_a_click_left": "Clique esquerdo",
         "pad_a_click_right": "Clique direito",
         "pad_a_enter": "Enter",
@@ -2869,6 +3069,7 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Tela cheia",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_keyboard": "Teclado",
         "pad_a_play_pause": "Play/pause (midia)",
         "pad_a_next_track": "Proxima faixa",
         "pad_a_prev_track": "Faixa anterior",
@@ -3055,6 +3256,16 @@ TRANSLATIONS = {
         "pad_a_sidebar": "Sidebar",
         "pad_a_tab_prev": "Previous tab",
         "pad_a_tab_next": "Next tab",
+        "pad_a_notif": "Notifications",
+        "notif_title": "Notifications",
+        "notif_nexus": "From Nexus",
+        "notif_apps": "Your apps",
+        "notif_upd_avail": "New version %s available",
+        "notif_whatsnew": "What's new:",
+        "notif_upd_cur": "Up to date (v%s)",
+        "notif_upd_btn": "View update",
+        "notif_check": "Check",
+        "notif_no_apps": "Open a streaming or game and it shows up here.",
         "pad_a_click_left": "Left click",
         "pad_a_click_right": "Right click",
         "pad_a_enter": "Enter",
@@ -3062,6 +3273,7 @@ TRANSLATIONS = {
         "pad_a_fullscreen": "Fullscreen",
         "pad_a_vol_down": "Volume -",
         "pad_a_vol_up": "Volume +",
+        "pad_a_keyboard": "Keyboard",
         "pad_a_play_pause": "Play/pause (media)",
         "pad_a_next_track": "Next track",
         "pad_a_prev_track": "Previous track",
@@ -4037,20 +4249,53 @@ class NexusKeyboard:
     confirmar tecla. Tecla de verdade onde o foco estiver (Nexus e browser).
     Sem grab: o foco pode ficar no campo de login do site."""
 
-    ROWS = [
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-        ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
-        ["A", "S", "D", "F", "G", "H", "J", "K", "L", "\u232B"],
-        ["\u21E7", "Z", "X", "C", "V", "B", "N", "M", ",", "."],
-        ["@", "-", "_", "/", ":"],
+    # Geometria baseline 691px (ref. visual estilo Gboard): tudo escala
+    # por scale = largura_janela / 691. Tecla ~61x51 (aspecto ~1,2:1),
+    # gap horizontal ~7, vertical ~13, lateral ~7-8. Sem border-radius
+    # (botao nativo do tkinter e retangular).
+    KB_BASE_W = 691.0
+    KB_KEY_W = 61.0
+    KB_KEY_H = 51.0
+    KB_GAP_X = 7.0
+    KB_GAP_Y = 13.0
+    KB_SIDE = 8.0
+    KB_HOME_INDENT = 31.0
+    KB_SHIFT_FLEX = (1.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.5)
+    KB_ACTION_FLEX = (1.8, 0.5, 5.8, 0.8, 1.4)
+
+    # Cada fileira: (teclas, flex|None, estilo)
+    # estilo None = ocupa tudo; "home" = indentada p/ direita sem esticar;
+    # "fixed" = teclas tamanho baseline centralizadas.
+    ROWS_ALPHA = [
+        (["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], None, None),
+        (["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"], None, None),
+        (["A", "S", "D", "F", "G", "H", "J", "K", "L"], None, "home"),
+        (["\u21E7", "Z", "X", "C", "V", "B", "N", "M", "\u232B"],
+         list(KB_SHIFT_FLEX), None),
     ]
 
     ROWS_NUM = [
-        ["1", "2", "3"],
-        ["4", "5", "6"],
-        ["7", "8", "9"],
-        [".", "0", "\u232B"],
+        (["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], None, None),
+        (["!", "@", "#", "$", "%", "\u00A8", "&", "*", "(", ")"], None, None),
+        (["-", "_", "+", "=", "/", "?", ":", ";", '"', "'"], None, None),
+        (["<", ">", "[", "]", "{", "}", "|", ",", ".", "\u232B"], None, None),
     ]
+
+    ROWS_EMOJI = [
+        (["\U0001F600", "\U0001F601", "\U0001F602", "\U0001F923", "\U0001F60A",
+          "\U0001F60D", "\U0001F60E", "\U0001F914", "\U0001F605", "\U0001F62D"],
+         None, None),
+        (["\U0001F44D", "\U0001F44E", "\U0001F44F", "\U0001F64F", "\u2764",
+          "\U0001F525", "\U0001F389", "\u2B50", "\u2705", "\u274C"],
+         None, None),
+        (["\U0001F3AE", "\U0001F3B5", "\U0001F4F7", "\U0001F355", "\u26BD",
+          "\U0001F697", "\u2708", "\U0001F319", "\u2600", "\U0001F381"],
+         None, None),
+    ]
+
+    # Fileira de acao (sempre visivel): ?123 alterna simbolos, emoji
+    # alterna emojis, espaco em branco (sem idioma), . e ✓ fecha.
+    ACTION_ROW = (["?123", "emoji", " ", ".", "ok"], list(KB_ACTION_FLEX), None)
 
     def __init__(self, app, entry=None, numeric=False):
         self.app = app
@@ -4059,8 +4304,14 @@ class NexusKeyboard:
         self.born = time.time()
         self.shift = False
         self.numeric = bool(numeric)
+        self.emoji = False
         self.cur = [0, 0]
         self.cells = []
+        self.row_frames = []
+        self.top_btns = []
+        self.bottom_btns = []
+        self.docked = False
+        self.float_geom = None
         try:
             self.target_hwnd = foreground_hwnd()
         except Exception:
@@ -4077,6 +4328,17 @@ class NexusKeyboard:
             win.overrideredirect(True)
         except Exception:
             pass
+        try:
+            # Sempre visivel, inclusive sobre o navegador/app externo
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        if entry is None:
+            # Modo global: nao rouba o foco do campo (o digitado vai p/ ele)
+            try:
+                win.focusmodel("passive")
+            except Exception:
+                pass
         win.update_idletasks()
         try:
             state = ""
@@ -4092,8 +4354,8 @@ class NexusKeyboard:
                     rect = (ctypes.c_long * 4)()
                     if ctypes.windll.user32.SystemParametersInfoW(
                             0x0030, 0, rect, 0):
-                        w2 = min(1000, max(640, (rect[2] - rect[0]) - 120))
-                        h2 = 430
+                        w2 = min(800, max(512, (rect[2] - rect[0]) - 120))
+                        h2 = 340
                         x2 = rect[0] + (rect[2] - rect[0] - w2) // 2
                         y2 = rect[3] - h2
                 except Exception:
@@ -4101,16 +4363,16 @@ class NexusKeyboard:
                 if w2 is None:
                     try:
                         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-                        w2 = min(1000, max(640, sw - 120))
-                        h2 = 430
+                        w2 = min(800, max(512, sw - 120))
+                        h2 = 340
                         x2 = (sw - w2) // 2
                         y2 = sh - h2 - 60
                     except Exception:
-                        w2, h2, x2, y2 = 620, 430, 200, 150
+                        w2, h2, x2, y2 = 500, 340, 200, 150
                 w, h, x, y = w2, h2, x2, y2
             else:
-                w = min(1000, max(640, app.root.winfo_width() - 120))
-                h = 430
+                w = min(800, max(512, app.root.winfo_width() - 120))
+                h = 340
                 x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
                 y = app.root.winfo_y() + app.root.winfo_height() - h
         except Exception:
@@ -4126,44 +4388,216 @@ class NexusKeyboard:
             pass
         _apply_dark_title(win, "kbd")
 
-        tk.Label(win, text=f"\u2328 {t('kb_title', lang)}",
-                 font=("Segoe UI", 16, "bold"), fg=Config.ACCENT,
-                 bg=Config.BG_SIDEBAR).pack(pady=(12, 6))
-        tk.Label(win, text=t("kb_hint", lang), font=("Segoe UI", 11),
-                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR).pack(pady=(0, 6))
+        # TopArea slim: titulo + ancorar + fechar (mouse e controle).
+        # No dock o titulo some mas os botoes ficam (p/ desancorar).
+        self.toparea = tk.Frame(win, bg=Config.BG_SIDEBAR)
+        self.toparea.pack(fill="x", padx=8, pady=(6, 2))
+        self.top_title = tk.Label(self.toparea, text=f"\u2328 {t('kb_title', lang)}",
+                                  font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
+                                  bg=Config.BG_SIDEBAR)
+        self.top_title.pack(side="left")
+        dock_btn = tk.Button(self.toparea, text="\u2B07", font=("Segoe UI", 11, "bold"),
+                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                             relief="flat", bd=0, cursor="hand2",
+                             padx=10, pady=2, command=self.toggle_dock)
+        dock_btn.pack(side="right", padx=4)
+        self.top_btns.append(("dock", dock_btn))
+        close_btn = tk.Button(self.toparea, text="\u2715", font=("Segoe UI", 11, "bold"),
+                              bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                              relief="flat", bd=0, cursor="hand2",
+                              padx=10, pady=2, command=self.close)
+        close_btn.pack(side="right", padx=4)
+        self.top_btns.append(("close", close_btn))
+        for i, (_bid, _b) in enumerate(self.top_btns):
+            _b.bind("<Enter>", lambda e, idx=i: self.set_top(idx))
 
         self.grid_frame = tk.Frame(win, bg=Config.BG_SIDEBAR)
-        self.grid_frame.pack()
+        self.grid_frame.pack(fill="x")
         self._build_keys()
-
-        bottom = tk.Frame(win, bg=Config.BG_SIDEBAR)
-        bottom.pack(pady=(8, 10))
-        self.mode_btn = tk.Button(bottom, text="123", font=("Segoe UI", 13, "bold"),
-                                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                                  relief="flat", bd=0, cursor="hand2",
-                                  padx=24, pady=6, command=self.toggle_mode)
-        self.mode_btn.pack(side="left", padx=8)
-        tk.Button(bottom, text=t("kb_space", lang), font=("Segoe UI", 13, "bold"),
-                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
-                  bd=0, cursor="hand2", padx=60, pady=6,
-                  command=lambda: self.press_key(" ")).pack(side="left", padx=8)
-        tk.Button(bottom, text="\u2B07", font=("Segoe UI", 13, "bold"),
-                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY, relief="flat",
-                  bd=0, cursor="hand2", padx=16, pady=6,
-                  command=self.dock_bottom).pack(side="left", padx=8)
-        tk.Button(bottom, text=t("kb_ok", lang), font=("Segoe UI", 13, "bold"),
-                  bg=Config.ACCENT, fg="white", relief="flat",
-                  bd=0, cursor="hand2", padx=40, pady=6,
-                  command=self.close).pack(side="left", padx=8)
+        self._layout_geometry()
+        self._size_to_content()
 
         self._paint()
-        self._paint_mode_btn()
         win.bind("<Escape>", lambda e: self.close())
         win.protocol("WM_DELETE_WINDOW", self.close)
         app.kb_window = self
 
     def _rows(self):
-        return self.ROWS_NUM if self.numeric else self.ROWS
+        if self.emoji:
+            rows = list(self.ROWS_EMOJI)
+        elif self.numeric:
+            rows = list(self.ROWS_NUM)
+        else:
+            rows = list(self.ROWS_ALPHA)
+        rows.append(self.ACTION_ROW)
+        return rows
+
+    def toggle_dock(self):
+        self.set_docked(not self.docked)
+
+    def set_docked(self, on):
+        if self.closed:
+            return
+        on = bool(on)
+        if on == self.docked:
+            if on:
+                self._place_docked()
+            return
+        self.docked = on
+        if on:
+            try:
+                self.float_geom = self.win.geometry()
+            except Exception:
+                self.float_geom = None
+            self._place_docked()
+        else:
+            try:
+                if self.float_geom:
+                    self.win.geometry(self.float_geom)
+            except Exception:
+                pass
+        try:
+            self.win.update_idletasks()
+        except Exception:
+            pass
+        self._apply_compact(on)
+
+    def _floating_w(self):
+        """Largura do teclado (~20% menor que a v1): mesma nos dois modos,
+        p/ o dock ficar proximo do flutuante."""
+        try:
+            state = ""
+            try:
+                state = self.app.root.state()
+            except Exception:
+                pass
+            if state in ("iconic", "withdrawn"):
+                try:
+                    rect = (ctypes.c_long * 4)()
+                    if ctypes.windll.user32.SystemParametersInfoW(
+                            0x0030, 0, rect, 0):
+                        return min(800, max(512, (rect[2] - rect[0]) - 120))
+                except Exception:
+                    pass
+                try:
+                    return min(800, max(512, self.win.winfo_screenwidth() - 120))
+                except Exception:
+                    return 512
+            return min(800, max(512, self.app.root.winfo_width() - 120))
+        except Exception:
+            return 512
+
+    def _place_docked(self):
+        # Dock = flutuante ancorado embaixo e centralizado (nada de faixa
+        # fina esticada): mesma largura, altura ajustada ao conteudo.
+        w = self._floating_w()
+        try:
+            scale = w / self.KB_BASE_W
+            est = int(44 + 5 * (self.KB_KEY_H + self.KB_GAP_Y) * scale + 16)
+        except Exception:
+            est = 340
+        try:
+            rect = (ctypes.c_long * 4)()
+            ok = bool(ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, rect, 0))
+        except Exception:
+            ok = False
+            rect = None
+        if ok:
+            sw, x0, yb = rect[2] - rect[0], rect[0], rect[3]
+        else:
+            try:
+                sw = self.win.winfo_screenwidth()
+                sh = self.win.winfo_screenheight() - 60
+                x0, yb = 0, sh
+            except Exception:
+                return
+        try:
+            self.win.geometry(f"{w}x{est}+{max(0, x0 + (sw - w) // 2)}+{max(0, yb - est)}")
+        except Exception:
+            pass
+
+    def _layout_geometry(self):
+        """Geometria pela escala W/691: largura exata por flex (uniform),
+        fonte pela altura da tecla. Vale p/ flutuante e dock (mesmo tamanho).
+        Gaps via padx/pady das teclas."""
+        try:
+            self.win.update_idletasks()
+            W = max(200, self.win.winfo_width())
+        except Exception:
+            return
+        scale = W / self.KB_BASE_W
+        gapx = max(2, int(round(self.KB_GAP_X * scale)))
+        gapy = max(4, int(round(self.KB_GAP_Y * scale)))
+        key_h = self.KB_KEY_H * scale
+        font = max(8, min(22, int(key_h * 0.30)))
+        padx = max(1, gapx // 2)
+        pady = max(1, gapy // 2)
+        side = max(2, int(round(self.KB_SIDE * scale)))
+        for rf in getattr(self, "row_frames", []):
+            style = getattr(rf, "_kb_style", None)
+            try:
+                if style == "home":
+                    ind = int(round(self.KB_HOME_INDENT * scale))
+                    rf.pack_configure(padx=(ind, ind))
+                elif style == "fixed":
+                    # Teclas tamanho baseline centralizadas
+                    need = 3 * self.KB_KEY_W * scale + 2 * gapx
+                    pad = max(side, int((W - need) / 2))
+                    rf.pack_configure(padx=(pad, pad))
+                else:
+                    rf.pack_configure(padx=(side, side))
+            except Exception:
+                pass
+        for row in self.cells:
+            for _key, b in row:
+                try:
+                    b.configure(font=("Segoe UI", font, "bold"))
+                    b.grid_configure(padx=padx, pady=pady)
+                except Exception:
+                    pass
+        for _bid, b in self.top_btns:
+            try:
+                b.configure(font=("Segoe UI", max(8, min(13, font - 2)), "bold"))
+            except Exception:
+                pass
+        self._paint()
+
+    def _size_to_content(self):
+        """Altura justa ao conteudo (ancorado embaixo). Vale p/ flutuante
+        e dock: o dock e um flutuante fixado na base."""
+        if self.closed:
+            return
+        try:
+            self.win.update_idletasks()
+            need = self.win.winfo_reqheight()
+            W = self.win.winfo_width()
+            x = self.win.winfo_x()
+            try:
+                yb = self.win.winfo_y() + self.win.winfo_height()
+            except Exception:
+                yb = None
+            h = max(120, min(700, need + 8))
+            if yb is None:
+                self.win.geometry(f"{W}x{h}")
+            else:
+                self.win.geometry(f"{W}x{h}+{x}+{max(0, yb - h)}")
+        except Exception:
+            pass
+
+    def _apply_compact(self, on):
+        try:
+            if on:
+                self.top_title.pack_forget()
+            else:
+                self.top_title.pack(side="left")
+        except Exception:
+            pass
+        self._layout_geometry()
+        self._size_to_content()
+        try:
+            self.dock_bottom()
+        except Exception:
+            pass
 
     def dock_bottom(self):
         """Reancora na base da area util (barra de tarefas descontada)."""
@@ -4174,7 +4608,7 @@ class NexusKeyboard:
             w = self.win.winfo_width()
             h = self.win.winfo_height()
             if w < 50 or h < 50:
-                w, h = 1000, 430
+                w, h = 800, 340
         except Exception:
             return
         placed = False
@@ -4201,37 +4635,82 @@ class NexusKeyboard:
         except Exception:
             pass
         self.cells = []
-        rows = self._rows()
-        for r, keys in enumerate(rows):
+        self.row_frames = []
+        for r, (keys, flex, style) in enumerate(self._rows()):
+            rf = tk.Frame(self.grid_frame, bg=Config.BG_SIDEBAR)
+            rf.pack(fill="x")
+            rf._kb_style = style
+            self.row_frames.append(rf)
+            n = len(keys)
+            flexes = list(flex) if flex else [1.0] * n
             row_cells = []
             for c, key in enumerate(keys):
-                wide = 8 if self.numeric else 4
-                b = tk.Button(self.grid_frame, font=("Segoe UI", 16 if self.numeric else 14, "bold"),
-                              relief="flat", bd=0, cursor="hand2",
-                              width=wide, height=1,
+                b = tk.Button(rf, relief="flat", bd=0, cursor="hand2",
+                              width=1, height=1,
                               command=lambda rr=r, cc=c: self._click(rr, cc))
-                b.grid(row=r, column=c, padx=4, pady=4)
+                b.grid(row=0, column=c, sticky="nsew")
+                try:
+                    rf.grid_columnconfigure(c, weight=max(1, int(flexes[c] * 10)),
+                                            uniform="kb")
+                except Exception:
+                    pass
                 b.bind("<Enter>", lambda e, rr=r, cc=c: self.set_cursor(rr, cc))
                 row_cells.append((key, b))
             self.cells.append(row_cells)
         self.cur = [0, 0]
-        self._paint()
+        self._layout_geometry()
 
     def toggle_mode(self):
         if self.closed:
             return
+        try:
+            was_top = self.cur[0] < 0
+            was_c = self.cur[1] if was_top else 0
+        except Exception:
+            was_top, was_c = False, 0
         self.numeric = not self.numeric
+        self.emoji = False
         self.shift = False
         self._build_keys()
-        self._paint_mode_btn()
+        if was_top:
+            self.cur = [-1, min(was_c, len(self.top_btns) - 1)]
+        self._apply_compact(self.docked)
+        self._paint()
+
+    def toggle_emoji(self):
+        if self.closed:
+            return
+        try:
+            was_top = self.cur[0] < 0
+            was_c = self.cur[1] if was_top else 0
+        except Exception:
+            was_top, was_c = False, 0
+        self.emoji = not self.emoji
+        if self.emoji:
+            self.numeric = False
+        self.shift = False
+        self._build_keys()
+        if was_top:
+            self.cur = [-1, min(was_c, len(self.top_btns) - 1)]
+        self._apply_compact(self.docked)
+        self._paint()
 
     def _paint_mode_btn(self):
+        # Legado: o rotulo ?123/ABC agora sai do _disp via _paint.
         try:
-            self.mode_btn.configure(text="ABC" if self.numeric else "123")
+            self._paint()
         except Exception:
             pass
 
     def _disp(self, key):
+        if key == "?123":
+            return "ABC" if self.numeric else "?123"
+        if key == "emoji":
+            return "\U0001F642"
+        if key == " ":
+            return ""
+        if key == "ok":
+            return "\u2713"
         if len(key) == 1 and key.isalpha():
             return key.upper() if self.shift else key.lower()
         if key == "\u21E7":
@@ -4251,32 +4730,73 @@ class NexusKeyboard:
                     b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                                 highlightbackground=Config.BORDER,
                                 highlightthickness=1)
+        for i, (_bid, b) in enumerate(self.top_btns):
+            try:
+                if self.cur == [-1, i]:
+                    b.configure(bg=Config.ACCENT, fg="white",
+                                highlightbackground="white",
+                                highlightthickness=3)
+                else:
+                    b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                highlightbackground=Config.BORDER,
+                                highlightthickness=1)
+            except Exception:
+                pass
 
     def set_cursor(self, r, c):
         if self.closed:
             return
-        r = max(0, min(r, len(self.cells) - 1))
-        c = max(0, min(c, len(self.cells[r]) - 1))
+        rows = len(self.cells)
+        nt = len(self.top_btns)
+        if r < 0:
+            r = -1
+            c = max(0, min(c, nt - 1)) if nt else 0
+        else:
+            r = max(0, min(r, rows - 1))
+            c = max(0, min(c, len(self.cells[r]) - 1))
         self.cur = [r, c]
+        self._paint()
+
+    def set_top(self, idx):
+        if self.closed or not self.top_btns:
+            return
+        self.cur = [-1, max(0, min(idx, len(self.top_btns) - 1))]
         self._paint()
 
     def on_hat(self, hat):
         if self.closed:
             return
+        rows = len(self.cells)
+        nt = len(self.top_btns)
         r, c = self.cur
-        if hat == (0, 1):
-            r -= 1
+        if r < 0:
+            if not nt:
+                return
+            if hat == (0, 1):
+                r, c = rows - 1, min(c, len(self.cells[rows - 1]) - 1)
+            elif hat == (0, -1):
+                r, c = 0, min(c, len(self.cells[0]) - 1)
+            elif hat == (-1, 0):
+                c = (c - 1) % nt
+            elif hat == (1, 0):
+                c = (c + 1) % nt
+            else:
+                return
+        elif hat == (0, 1):
+            if r == 0 and nt:
+                r, c = -1, min(c, nt - 1)
+            else:
+                r = (r - 1) % rows
         elif hat == (0, -1):
-            r += 1
+            r = (r + 1) % rows
         elif hat == (-1, 0):
-            c -= 1
+            c = (c - 1) % len(self.cells[r])
         elif hat == (1, 0):
-            c += 1
+            c = (c + 1) % len(self.cells[r])
         else:
             return
-        r %= len(self.cells)
-        c %= len(self.cells[r])
-        self.set_cursor(r, c)
+        self.cur = [r, c]
+        self._paint()
 
     def _click(self, r, c):
         self.set_cursor(r, c)
@@ -4285,14 +4805,34 @@ class NexusKeyboard:
     def press_focused(self):
         if self.closed:
             return
+        r, c = self.cur
+        if r < 0:
+            try:
+                bid = self.top_btns[c][0]
+            except Exception:
+                return
+            if bid == "dock":
+                self.toggle_dock()
+            elif bid == "close":
+                self.close()
+            return
         try:
-            key = self.cells[self.cur[0]][self.cur[1]][0]
+            key = self.cells[r][c][0]
         except Exception:
             return
         self.press_key(key)
 
     def press_key(self, key):
         if self.closed:
+            return
+        if key == "?123":
+            self.toggle_mode()
+            return
+        if key == "emoji":
+            self.toggle_emoji()
+            return
+        if key == "ok":
+            self.close()
             return
         if key == "\u21E7":
             self.shift = not self.shift
@@ -5182,6 +5722,8 @@ class BigPictureApp:
         self.current_tab = "all"
         self.sidebar_visible = False
         self.sidebar_menu_index = 0
+        self.notif_visible = False
+        self._latest_release = None
         self.focus_tab = 0
         self.focus_mgr = FocusManager()
         self.nav_level = "tabs"
@@ -5401,6 +5943,7 @@ class BigPictureApp:
         self.build_bottom_tabs()
         self.build_sidebar()
         self.build_qa_overlay()
+        self.build_notif_panel()
 
         self.render_tab(self.current_tab)
 
@@ -5458,6 +6001,17 @@ class BigPictureApp:
         self.clock_label = tk.Label(right, font=("Segoe UI", 13),
                                     fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR)
         self.clock_label.pack(side="left", padx=10)
+
+        self.notif_btn = tk.Button(right, text="\U0001F514", font=("Segoe UI", 16),
+                                   bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
+                                   activebackground=Config.ACCENT, relief="flat",
+                                   cursor="hand2", command=self.toggle_notif_panel, bd=0)
+        self.notif_btn.pack(side="left", padx=10)
+        self.notif_badge = tk.Label(self.notif_btn, text="",
+                                    font=("Segoe UI", 8, "bold"),
+                                    bg="#e94560", fg="white")
+        self.notif_badge.place(relx=0.7, rely=0.12)
+        self.notif_badge.place_forget()
 
         qa_btn = tk.Button(right, text="\u2630", font=("Segoe UI", 18),
                            bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
@@ -5675,6 +6229,8 @@ class BigPictureApp:
         self.root.bind("<Y>", lambda e: self.toggle_sidebar())
         self.root.bind("<x>", lambda e: self.go_to_cards())
         self.root.bind("<X>", lambda e: self.go_to_cards())
+        self.root.bind("<n>", lambda e: self.toggle_notif_panel())
+        self.root.bind("<N>", lambda e: self.toggle_notif_panel())
         self.root.bind("<FocusIn>", lambda e: self._on_focus_in())
         # Modalidade de entrada: controle x mouse/teclado (teclado virtual
         # so abre quando o foco veio do controle)
@@ -5911,7 +6467,9 @@ class BigPictureApp:
                     self.ask_open_target(name)
 
     def go_back(self):
-        if self.sidebar_visible:
+        if self.notif_visible:
+            self.close_notif_panel()
+        elif self.sidebar_visible:
             self.toggle_sidebar()
         elif hasattr(self, 'qa_visible') and self.qa_visible:
             self.close_qa()
@@ -5926,6 +6484,7 @@ class BigPictureApp:
         Em qualquer outro lugar, voltar normal."""
         try:
             if (not self.sidebar_visible
+                    and not getattr(self, "notif_visible", False)
                     and not getattr(self, "qa_visible", False)
                     and self.nav_level == "tabs"
                     and top_modal(self) is None
@@ -7850,6 +8409,7 @@ class BigPictureApp:
             gp.remote_enter_time = time.time()
             gp.remote_off = [0.0, 0.0, 0.0, 0.0]
             gp.remote_cal = []
+            gp.remote_kb_time = 0.0
             gp.hat_debounce.clear()
             gp.prev_buttons.clear()
             self.root.iconify()
@@ -8230,6 +8790,210 @@ class BigPictureApp:
     def close_sidebar(self):
         self.sidebar_visible = False
         self.sidebar.place(x=-Config.SIDEBAR_WIDTH, y=0, relheight=1)
+
+    # ===================== NOTIFICACOES (painel direito) =====================
+    NOTIF_WIDTH = 360
+
+    def build_notif_panel(self):
+        self.notif_visible = False
+        self.notif_panel = tk.Frame(self.main_frame, bg=Config.BG_SIDEBAR,
+                                    width=self.NOTIF_WIDTH)
+        self.notif_panel.pack_propagate(False)
+        self.notif_panel.place_forget()
+
+    def toggle_notif_panel(self):
+        try:
+            top = top_modal(self)
+            if isinstance(top, (NexusKeyboard, NexusTextDialog, NexusMenuWindow,
+                                OpenTargetDialog, GameCardDialog)):
+                return
+        except Exception:
+            pass
+        if self.notif_visible:
+            self.close_notif_panel()
+        else:
+            self.open_notif_panel()
+
+    def open_notif_panel(self):
+        if self.sidebar_visible:
+            self.close_sidebar()
+        self.notif_visible = True
+        self.render_notif_panel()
+        self.notif_panel.place(relx=1.0, y=0, relheight=1, anchor="ne",
+                               width=self.NOTIF_WIDTH)
+        self.notif_panel.lift()
+        self._mark_notif_seen()
+
+    def close_notif_panel(self):
+        self.notif_visible = False
+        try:
+            self.notif_panel.place_forget()
+        except Exception:
+            pass
+
+    def _notif_newer_tag(self):
+        """Tag mais nova que a atual (ou None)."""
+        try:
+            info = self._latest_release or {}
+            tag = (info.get("tag") or "").strip()
+            if tag and ver_tuple(tag) > ver_tuple(APP_VERSION):
+                return tag
+        except Exception:
+            pass
+        return None
+
+    def _refresh_notif_badge(self):
+        try:
+            tag = self._notif_newer_tag()
+            seen = (self.settings.get("notif_seen_update", "")
+                    if isinstance(self.settings, dict) else "")
+            if tag and tag != seen and tag != self.settings.get("update_seen", ""):
+                self.notif_badge.config(text="1")
+                self.notif_badge.place(relx=0.7, rely=0.12)
+            else:
+                self.notif_badge.place_forget()
+        except Exception:
+            pass
+
+    def _mark_notif_seen(self):
+        try:
+            tag = self._notif_newer_tag()
+            if tag and isinstance(self.settings, dict):
+                self.settings["notif_seen_update"] = tag
+                save_settings(self.settings)
+            self.notif_badge.place_forget()
+        except Exception:
+            pass
+
+    def _notif_card(self, parent, title, subtitle, accent, on_click=None):
+        card = tk.Frame(parent, bg=Config.BG_CARD, highlightbackground=accent,
+                        highlightthickness=2)
+        card.pack(fill="x", padx=16, pady=6)
+        inner = tk.Frame(card, bg=Config.BG_CARD)
+        inner.pack(fill="x", padx=12, pady=10)
+        tk.Label(inner, text=title, font=("Segoe UI", 12, "bold"),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
+                 anchor="w", justify="left", wraplength=self.NOTIF_WIDTH - 60).pack(fill="x")
+        if subtitle:
+            tk.Label(inner, text=subtitle, font=("Segoe UI", 10),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_CARD,
+                     anchor="w", justify="left",
+                     wraplength=self.NOTIF_WIDTH - 60).pack(fill="x", pady=(4, 0))
+        if on_click is not None:
+            for w in (card, inner):
+                w.configure(cursor="hand2")
+                w.bind("<Button-1>", lambda e: on_click())
+                for ch in w.winfo_children():
+                    try:
+                        ch.configure(cursor="hand2")
+                        ch.bind("<Button-1>", lambda e: on_click())
+                    except Exception:
+                        pass
+        return card
+
+    def _notif_section(self, parent, text):
+        tk.Label(parent, text=text.upper(), font=("Segoe UI", 11, "bold"),
+                 fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x", padx=16, pady=(14, 2))
+
+    def render_notif_panel(self):
+        try:
+            for w in self.notif_panel.winfo_children():
+                w.destroy()
+        except Exception:
+            return
+        lang = self.lang
+        head = tk.Frame(self.notif_panel, bg=Config.BG_SIDEBAR)
+        head.pack(fill="x", pady=(20, 4))
+        tk.Label(head, text="\U0001F514 " + t("notif_title", lang),
+                 font=("Segoe UI", 18, "bold"),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR).pack(side="left", padx=16)
+        tk.Button(head, text="\u2715", font=("Segoe UI", 12),
+                  bg=Config.BG_SIDEBAR, fg=Config.TEXT_SECONDARY,
+                  activebackground="#e94560", activeforeground="white",
+                  relief="flat", cursor="hand2", bd=0, padx=10,
+                  command=self.close_notif_panel).pack(side="right", padx=12)
+        tk.Frame(self.notif_panel, bg=Config.BORDER, height=1).pack(
+            fill="x", padx=16, pady=(4, 2))
+
+        # ---- Do Nexus: atualizacoes ----
+        self._notif_section(self.notif_panel, t("notif_nexus", lang))
+        tag = self._notif_newer_tag()
+        if tag:
+            try:
+                info = self._latest_release or {}
+                notes = (info.get("notes") or "").strip()
+                date = (info.get("date") or "").strip()
+                changes = [c for c in (info.get("changes") or []) if c][:6]
+            except Exception:
+                notes, date, changes = "", "", []
+            # O card diz O QUE foi atualizado: resumo dos commits
+            # ("Simbolos no ?123", ...) ou as notas da release.
+            parts = []
+            if date:
+                parts.append(date)
+            if changes:
+                parts.append(t("notif_whatsnew", lang))
+                parts.extend("\u2022 " + c for c in changes)
+            elif notes:
+                parts.append(notes)
+            sub = "\n".join(parts)
+            self._notif_card(self.notif_panel, t("notif_upd_avail", lang) % tag,
+                             sub, "#e94560",
+                             on_click=lambda: self._notif_go_update())
+        else:
+            self._notif_card(self.notif_panel, t("notif_upd_cur", lang) % APP_VERSION,
+                             "", Config.ACCENT)
+        tk.Button(self.notif_panel, text="\u27F3 " + t("notif_check", lang),
+                  font=("Segoe UI", 11), fg=Config.TEXT_SECONDARY,
+                  bg=Config.BG_CARD, activebackground=Config.BG_CARD_HOVER,
+                  activeforeground=Config.TEXT_PRIMARY,
+                  relief="flat", cursor="hand2", padx=12, pady=4,
+                  command=self._notif_manual_check).pack(anchor="e", padx=16, pady=(2, 0))
+
+        # ---- Seus apps: abertos recentemente ----
+        self._notif_section(self.notif_panel, t("notif_apps", lang))
+        try:
+            recent = self.db.get_recent_history(5)
+        except Exception:
+            recent = []
+        if not recent:
+            tk.Label(self.notif_panel, text=t("notif_no_apps", lang),
+                     font=("Segoe UI", 11), fg=Config.TEXT_SECONDARY,
+                     bg=Config.BG_SIDEBAR, anchor="w", justify="left",
+                     wraplength=self.NOTIF_WIDTH - 40).pack(fill="x", padx=16, pady=4)
+        for row in recent:
+            try:
+                svc = row.get("service", "")
+                title = row.get("title", "") or "Home"
+                ts = (row.get("time", "") or "")[5:16]
+                icon = (STREAMINGS_DB.get(svc) or {}).get("icon", "")
+                color = (STREAMINGS_DB.get(svc) or {}).get("color", "") or Config.ACCENT
+                sub = title if title != "Home" else ts
+                if title != "Home" and ts:
+                    sub = f"{title} \u2022 {ts}"
+                self._notif_card(self.notif_panel, f"{icon} {svc}".strip(), sub,
+                                 color,
+                                 on_click=lambda s=svc: self._notif_open_app(s))
+            except Exception:
+                pass
+
+    def _notif_go_update(self):
+        info = self._latest_release
+        self.close_notif_panel()
+        if info:
+            self.offer_update(info)
+
+    def _notif_manual_check(self):
+        threading.Thread(target=self._update_check_thread,
+                         args=(False,), daemon=True).start()
+
+    def _notif_open_app(self, service):
+        self.close_notif_panel()
+        try:
+            self.ask_open_target(service)
+        except Exception:
+            pass
 
     def show_gamepad_info(self):
         self.close_sidebar()
@@ -8622,6 +9386,11 @@ class BigPictureApp:
                 self.root.after(0, lambda: self.show_info_message(
                     t("msg_warning", self.lang), t("update_error", self.lang)))
             return
+        self._latest_release = info
+        try:
+            self.root.after(0, self._refresh_notif_badge)
+        except Exception:
+            pass
         try:
             newer = ver_tuple(info["tag"]) > ver_tuple(APP_VERSION)
         except Exception:
@@ -8642,8 +9411,12 @@ class BigPictureApp:
     def offer_update(self, info):
         if getattr(sys, "frozen", False):
             subtitle = t("update_found", self.lang) % (info["tag"], APP_VERSION)
+            changes = [c for c in (info.get("changes") or []) if c][:6]
             notes = (info.get("notes") or "").strip()
-            if notes:
+            if changes:
+                subtitle += ("\n\n" + t("notif_whatsnew", self.lang) + "\n"
+                             + "\n".join("\u2022 " + c for c in changes))
+            elif notes:
                 subtitle += "\n\n" + notes[:300]
             menu = NexusMenuWindow(self, t("update_title", self.lang), [],
                                    subtitle=subtitle, icon="\u2193", width=520)
