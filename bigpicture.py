@@ -1734,13 +1734,57 @@ def _nav_tick_wav(vol=80):
 
 
 def _play_nav_tick(vol=80):
+    """Toca o blip. Retorna (ok, erro): o dialogo de Som mostra o erro.
+    Thread + PlaySound bloqueante: SND_ASYNC da memoria falha em alguns
+    drivers ('Cannot play asynchronously from memory') e era engolido."""
     try:
         if _winsound is None:
-            return
-        _winsound.PlaySound(_nav_tick_wav(vol),
-                            _winsound.SND_MEMORY | _winsound.SND_ASYNC)
-    except Exception:
-        pass
+            return False, "winsound indisponivel"
+        data = _nav_tick_wav(vol)
+    except Exception as e:
+        return False, str(e)[:120]
+    try:
+        threading.Thread(target=_winsound.PlaySound, args=(data, _winsound.SND_MEMORY),
+                         daemon=True).start()
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+def _play_test_tone():
+    """Tom de diagnostico em thread (mesmo motivo acima)."""
+    try:
+        if _winsound is None:
+            return False, "winsound indisponivel"
+        data = _nav_test_wav()
+    except Exception as e:
+        return False, str(e)[:120]
+    try:
+        threading.Thread(target=_winsound.PlaySound, args=(data, _winsound.SND_MEMORY),
+                         daemon=True).start()
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+def _nav_test_wav():
+    """Tom de teste: 2 notas (660 + 880Hz), 400ms, alto. P/ diagnostico."""
+    import math
+    import struct
+    rate = 22050
+    notes = [(660.0, 200), (880.0, 200)]
+    frames = bytearray()
+    for freq, ms in notes:
+        n = rate * ms // 1000
+        for i in range(n):
+            t = i / rate
+            env = min(1.0, t * 60.0) * math.exp(-t * 6.0)
+            s = math.sin(2.0 * math.pi * freq * t) * env * 0.6
+            frames += struct.pack("<h", int(s * 32767))
+    head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
+            b"data" + struct.pack("<I", len(frames)))
+    return head + bytes(frames)
 
 
 def ctrl_tab(prev=False):
@@ -5823,6 +5867,10 @@ class SoundSettingsWindow(NexusMenuWindow):
                                    activebackground=Config.BG_CARD_HOVER,
                                    command=self.close)
         self.close_btn.pack(fill="x", padx=40, pady=3)
+        self.status_lbl = tk.Label(self.body, text="", font=("Segoe UI", 10),
+                                   fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                                   wraplength=400, justify="center")
+        self.status_lbl.pack(fill="x", padx=40, pady=(6, 2))
         self.btns = [self.minus_btn, self.plus_btn, self.nav_btn,
                      self.test_btn, self.close_btn]
         for i, b in enumerate(self.btns):
@@ -5919,7 +5967,17 @@ class SoundSettingsWindow(NexusMenuWindow):
 
     def _test(self):
         try:
-            self.app.play_tick()
+            ok, err = self.app.play_tick()
+            msg = ("Blip ok (vol %d)" % self._get_vol()) if ok else ("Blip: %s" % (err or "falhou"))
+        except Exception as e:
+            msg = "Erro: %s" % str(e)[:100]
+        try:
+            ok2, err2 = _play_test_tone()
+            msg += " + tom de teste" if ok2 else (" | tom: %s" % (err2 or "falhou"))
+        except Exception as e:
+            msg += " | tom: %s" % str(e)[:80]
+        try:
+            self.status_lbl.config(text=msg)
         except Exception:
             pass
 
@@ -6583,7 +6641,7 @@ class BigPictureApp:
 
     def play_tick(self):
         """Blip curto ao trocar de selecao (async; volume 0-100,
-        nav_sound desliga)."""
+        nav_sound desliga). Retorna (ok, erro) p/ diagnostico."""
         try:
             vol = 80
             sonar = True
@@ -6593,14 +6651,16 @@ class BigPictureApp:
                 except Exception:
                     vol = 80
                 sonar = bool(self.settings.get("nav_sound", True))
-            if not sonar or vol <= 0:
-                return
+            if not sonar:
+                return False, "navegacao desligada"
+            if vol <= 0:
+                return False, "volume 0"
         except Exception:
             vol = 80
         try:
-            _play_nav_tick(vol)
-        except Exception:
-            pass
+            return _play_nav_tick(vol)
+        except Exception as e:
+            return False, str(e)[:120]
 
     def _nav(self, direction):
         if self.sidebar_visible:
