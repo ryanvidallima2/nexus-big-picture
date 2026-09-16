@@ -5812,256 +5812,6 @@ class NexusMenuWindow:
 
 
 # ===================== SOUND SETTINGS WINDOW =====================
-class SoundSettingsWindow(NexusMenuWindow):
-    """Som do app: barra 0-100, liga/desliga navegacao, testar.
-    Mouse (arrastar/clicar) e controle (cima/baixo foca, esq/dir volume,
-    A confirma, B fecha). Reusa o roteamento do NexusMenuWindow."""
-
-    def __init__(self, app):
-        NexusMenuWindow.__init__(self, app, t("snd_title", app.lang), [],
-                                 icon="\U0001F50A", width=480)
-        self.items = ["minus", "plus", "nav", "test", "close"]
-        self._prog = False
-        try:
-            for w in self.body.winfo_children():
-                w.destroy()
-        except Exception:
-            pass
-        vol = self._get_vol()
-        row = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
-        row.pack(fill="x", padx=40, pady=(6, 2))
-        tk.Label(row, text=t("snd_volume", app.lang),
-                 font=("Segoe UI", 14, "bold"),
-                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR).pack(side="left")
-        self.vol_lbl = tk.Label(row, text=str(vol),
-                                font=("Segoe UI", 14, "bold"),
-                                fg=Config.ACCENT, bg=Config.BG_SIDEBAR)
-        self.vol_lbl.pack(side="right")
-        srow = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
-        srow.pack(fill="x", padx=40, pady=2)
-        self.minus_btn = tk.Button(srow, text="\u2212",
-                                   font=("Segoe UI", 14, "bold"),
-                                   relief="flat", bd=0, cursor="hand2",
-                                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                                   activebackground=Config.BG_CARD_HOVER,
-                                   padx=14, pady=2,
-                                   command=lambda: self._vol_step(-5))
-        self.minus_btn.pack(side="left")
-        self.scale = tk.Scale(srow, from_=0, to=100, orient="horizontal",
-                              showvalue=False, length=220,
-                              bg=Config.BG_SIDEBAR, fg=Config.TEXT_PRIMARY,
-                              troughcolor=Config.BG_CARD,
-                              activebackground=Config.ACCENT,
-                              highlightthickness=0, bd=0,
-                              command=self._on_scale)
-        self.scale.set(vol)
-        self.scale.pack(side="left", padx=8, expand=True, fill="x")
-        try:
-            self.scale.bind("<ButtonRelease-1>",
-                            lambda e: self._save_and_tick())
-        except Exception:
-            pass
-        self.plus_btn = tk.Button(srow, text="+",
-                                  font=("Segoe UI", 14, "bold"),
-                                  relief="flat", bd=0, cursor="hand2",
-                                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                                  activebackground=Config.BG_CARD_HOVER,
-                                  padx=14, pady=2,
-                                  command=lambda: self._vol_step(5))
-        self.plus_btn.pack(side="left")
-        self.nav_btn = tk.Button(self.body, font=("Segoe UI", 14, "bold"),
-                                 relief="flat", bd=0, cursor="hand2",
-                                 anchor="w", padx=18,
-                                 command=self._toggle_nav)
-        self.nav_btn.pack(fill="x", padx=40, pady=6)
-        self.test_btn = tk.Button(self.body,
-                                  text="\U0001F50A " + t("snd_test", app.lang),
-                                  font=("Segoe UI", 14, "bold"),
-                                  relief="flat", bd=0, cursor="hand2",
-                                  anchor="w", padx=18,
-                                  bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                                  activebackground=Config.BG_CARD_HOVER,
-                                  command=self._test)
-        self.test_btn.pack(fill="x", padx=40, pady=3)
-        self.close_btn = tk.Button(self.body, text=t("snd_close", app.lang),
-                                   font=("Segoe UI", 14, "bold"),
-                                   relief="flat", bd=0, cursor="hand2",
-                                   anchor="w", padx=18,
-                                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                                   activebackground=Config.BG_CARD_HOVER,
-                                   command=self.close)
-        self.close_btn.pack(fill="x", padx=40, pady=3)
-        self.status_lbl = tk.Label(self.body, text="", font=("Segoe UI", 10),
-                                   fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
-                                   wraplength=400, justify="center")
-        self.status_lbl.pack(fill="x", padx=40, pady=(6, 2))
-        self.btns = [self.minus_btn, self.plus_btn, self.nav_btn,
-                     self.test_btn, self.close_btn]
-        for i, b in enumerate(self.btns):
-            try:
-                b.bind("<Enter>", lambda e, idx=i: self.set_focus(idx))
-                b.configure(highlightthickness=3)
-            except Exception:
-                pass
-        try:
-            self.win.geometry(f"{self.win_w}x470+{self.win_x}+{self.win_y}")
-        except Exception:
-            pass
-        self._paint_nav()
-        self._paint()
-
-    def _get_vol(self):
-        try:
-            return max(0, min(100, int(self.app.settings.get("sound_volume", 10))))
-        except Exception:
-            return 80
-
-    def _set_volume(self, vol, tick=True):
-        try:
-            vol = max(0, min(100, int(vol)))
-        except Exception:
-            return
-        try:
-            if isinstance(self.app.settings, dict):
-                self.app.settings["sound_volume"] = vol
-                save_settings(self.app.settings)
-        except Exception:
-            pass
-        try:
-            self._prog = True
-            self.scale.set(vol)
-        except Exception:
-            pass
-        finally:
-            try:
-                self._prog = False
-            except Exception:
-                pass
-        try:
-            self.vol_lbl.config(text=str(vol))
-        except Exception:
-            pass
-        if tick:
-            try:
-                self.app.play_tick()
-            except Exception:
-                pass
-
-    def _vol_step(self, d):
-        self._set_volume(self._get_vol() + d)
-
-    def _on_scale(self, val):
-        if self._prog:
-            return
-        try:
-            self._set_volume(int(float(val)), tick=False)
-        except Exception:
-            pass
-
-    def _save_and_tick(self):
-        try:
-            self._set_volume(int(float(self.scale.get())), tick=True)
-        except Exception:
-            pass
-
-    def _toggle_nav(self):
-        try:
-            cur = True
-            if isinstance(self.app.settings, dict):
-                cur = bool(self.app.settings.get("nav_sound", True))
-                self.app.settings["nav_sound"] = (not cur)
-                save_settings(self.app.settings)
-            self._paint_nav()
-            if not cur:
-                self.app.play_tick()
-        except Exception:
-            pass
-
-    def _paint_nav(self):
-        try:
-            on = True
-            if isinstance(self.app.settings, dict):
-                on = bool(self.app.settings.get("nav_sound", True))
-            mark = "\u2713 " if on else ""
-            state = t("snd_on", self.app.lang) if on else t("snd_off", self.app.lang)
-            self.nav_btn.configure(text="%s%s: %s" % (
-                mark, t("snd_nav", self.app.lang), state))
-        except Exception:
-            pass
-
-    def _test(self):
-        try:
-            ok, err = self.app.play_tick()
-            msg = ("Blip ok (vol %d)" % self._get_vol()) if ok else ("Blip: %s" % (err or "falhou"))
-        except Exception as e:
-            msg = "Erro: %s" % str(e)[:100]
-        try:
-            ok2, err2 = _play_test_tone()
-            msg += " + tom de teste" if ok2 else (" | tom: %s" % (err2 or "falhou"))
-        except Exception as e:
-            msg += " | tom: %s" % str(e)[:80]
-        try:
-            self.status_lbl.config(text=msg)
-        except Exception:
-            pass
-
-    def set_focus(self, idx):
-        if self.closed or not self.btns:
-            return
-        self.focus_idx = idx % len(self.btns)
-        self._paint()
-
-    def _paint(self):
-        for i, b in enumerate(self.btns):
-            try:
-                if i == self.focus_idx:
-                    b.configure(highlightbackground="white",
-                                highlightcolor="white",
-                                bg=Config.ACCENT, fg="white")
-                else:
-                    b.configure(highlightbackground=Config.BORDER,
-                                highlightcolor=Config.BORDER,
-                                bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY)
-            except Exception:
-                pass
-
-    def on_hat(self, hat):
-        if self.closed:
-            return
-        if hat == (0, 1):
-            self.set_focus(self.focus_idx - 1)
-        elif hat == (0, -1):
-            self.set_focus(self.focus_idx + 1)
-        elif hat == (-1, 0):
-            self._vol_step(-5)
-        elif hat == (1, 0):
-            self._vol_step(5)
-
-    def move(self, dh, dv):
-        if dv != 0:
-            self.set_focus(self.focus_idx + dv)
-        elif dh != 0:
-            self._vol_step(5 if dh > 0 else -5)
-
-    def confirm(self):
-        if self.closed:
-            return
-        try:
-            item = self.items[self.focus_idx % len(self.items)]
-        except Exception:
-            return
-        if item == "minus":
-            self._vol_step(-5)
-        elif item == "plus":
-            self._vol_step(5)
-        elif item == "nav":
-            self._toggle_nav()
-        elif item == "test":
-            self._test()
-        elif item == "close":
-            self.close()
-
-
 # ===================== SIDE PANEL =====================
 class SidePanel:
     """Drawer direito generico das Configuracoes (Controles, Idioma,
@@ -6247,7 +5997,7 @@ class SidePanel:
             except Exception:
                 pass
         self.refresh_slider(item, tick=False)
-        return sc
+        return item
 
     def refresh_slider(self, item, tick=True):
         try:
@@ -6512,6 +6262,95 @@ class AdicionarPanel(SidePanel):
             self.app.nav_level = "form"
             self.app.form_idx = 0
             self.app._paint_form()
+        except Exception:
+            pass
+
+
+class SomPanel(SidePanel):
+    NAME = "som"
+    TITLE_KEY = "settings_sound"
+    ICON = "\U0001F50A"
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        self.vol_item = self.slider(t("snd_volume", lang), 0, 100,
+                                    lambda: self._get_vol(),
+                                    lambda v: self._set_volume(v, tick=False),
+                                    step=5)
+        self.nav_btn = self.button("", self._toggle_nav)
+        self._paint_nav()
+        self.button("\U0001F50A " + t("snd_test", lang), self._test)
+        self.status_lbl = tk.Label(self.body, text="", font=("Segoe UI", 10),
+                                   fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                                   wraplength=self.WIDTH - 40, justify="center")
+        self.status_lbl.pack(fill="x", padx=16, pady=(6, 2))
+
+    def _get_vol(self):
+        try:
+            return max(0, min(100, int(self.app.settings.get("sound_volume", 10))))
+        except Exception:
+            return 10
+
+    def _set_volume(self, vol, tick=True):
+        try:
+            vol = max(0, min(100, int(vol)))
+        except Exception:
+            return
+        try:
+            if isinstance(self.app.settings, dict):
+                self.app.settings["sound_volume"] = vol
+                save_settings(self.app.settings)
+        except Exception:
+            pass
+        try:
+            self.refresh_slider(self.vol_item, tick=False)
+        except Exception:
+            pass
+        if tick:
+            try:
+                self.app.play_tick()
+            except Exception:
+                pass
+
+    def _toggle_nav(self):
+        try:
+            cur = True
+            if isinstance(self.app.settings, dict):
+                cur = bool(self.app.settings.get("nav_sound", True))
+                self.app.settings["nav_sound"] = (not cur)
+                save_settings(self.app.settings)
+            self._paint_nav()
+            if not cur:
+                self.app.play_tick()
+        except Exception:
+            pass
+
+    def _paint_nav(self):
+        try:
+            on = True
+            if isinstance(self.app.settings, dict):
+                on = bool(self.app.settings.get("nav_sound", True))
+            mark = "\u2713 " if on else ""
+            state = t("snd_on", self.app.lang) if on else t("snd_off", self.app.lang)
+            self.nav_btn.configure(text="%s%s: %s" % (
+                mark, t("snd_nav", self.app.lang), state))
+        except Exception:
+            pass
+
+    def _test(self):
+        try:
+            ok, err = self.app.play_tick()
+            msg = ("Blip ok (vol %d)" % self._get_vol()) if ok else ("Blip: %s" % (err or "falhou"))
+        except Exception as e:
+            msg = "Erro: %s" % str(e)[:100]
+        try:
+            ok2, err2 = _play_test_tone()
+            msg += " + tom de teste" if ok2 else (" | tom: %s" % (err2 or "falhou"))
+        except Exception as e:
+            msg += " | tom: %s" % str(e)[:80]
+        try:
+            self.status_lbl.config(text=msg)
         except Exception:
             pass
 
@@ -6994,7 +6833,7 @@ class BigPictureApp:
         settings_items = [
             (t("settings_theme", self.lang), self.open_theme_picker, "\U0001F3A8"),
             (t("settings_controls", self.lang), self.open_controles, "\U0001F3AE"),
-            (t("settings_sound", self.lang), self.open_sound_settings, "\U0001F50A"),
+            (t("settings_sound", self.lang), self.open_som, "\U0001F50A"),
             (t("settings_language", self.lang), self.open_idioma, "\U0001F310"),
             (t("sidebar_add", self.lang), self.open_adicionar, "\U0001F4FA"),
             (t("settings_system", self.lang), self.open_sistema, "\u2699"),
@@ -10178,9 +10017,8 @@ class BigPictureApp:
         except Exception:
             pass
 
-    def open_sound_settings(self):
-        self.close_sidebar()
-        SoundSettingsWindow(self)
+    def open_som(self):
+        SomPanel(self).open()
 
     # ===================== SIDE PANELS =====================
     def close_sidepanel(self):
