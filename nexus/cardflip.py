@@ -70,6 +70,16 @@ class CardFlipMixin:
             return
         tall = getattr(widget, "_flip_tall", True)
         try:
+            icon = "\U0001F3AE"
+            if not is_game:
+                try:
+                    icon = (self.get_all_services().get(name, {}).get("icon")
+                            or "\U0001F4F0")
+                except Exception:
+                    icon = "\U0001F4F0"
+        except Exception:
+            icon = "\U0001F3AE"
+        try:
             back = tk.Frame(widget, bg=Config.BG_SIDEBAR,
                             highlightbackground=Config.ACCENT,
                             highlightthickness=2)
@@ -77,7 +87,8 @@ class CardFlipMixin:
             return
         flip = {"widget": widget, "name": name, "is_game": bool(is_game),
                 "tall": bool(tall), "back": back, "opts": [], "idx": 0,
-                "page": "main", "busy": False, "status": None, "orig_h": None}
+                "page": "main", "busy": False, "status": None, "orig_h": None,
+                "icon": icon}
         self.flipped = flip
         try:
             if tall:
@@ -123,7 +134,7 @@ class CardFlipMixin:
             pass
 
     # ---------- verso ----------
-    def _flip_header(self, parent, name):
+    def _flip_header(self, parent, name, icon=""):
         head = tk.Frame(parent, bg=Config.BG_SIDEBAR)
         head.pack(fill="x", pady=(8, 2), padx=8)
         b = tk.Button(head, text="\u2190", font=("Segoe UI", 11, "bold"),
@@ -134,8 +145,9 @@ class CardFlipMixin:
         b.pack(side="left")
         b.bind("<Button-1>", lambda e: (self.unflip_card(), "break"),
                add="+")
-        short = name if len(name) <= 16 else name[:15] + "\u2026"
-        tk.Label(head, text=short, font=("Segoe UI", 11, "bold"),
+        short = name if len(name) <= 14 else name[:13] + "\u2026"
+        title = f"{icon} - {short} - {icon}" if icon else short
+        tk.Label(head, text=title, font=("Segoe UI", 11, "bold"),
                  fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR).pack(
                      side="left", padx=(6, 0))
         return b
@@ -234,7 +246,7 @@ class CardFlipMixin:
         except Exception:
             return
         name = flip["name"]
-        self._flip_header(back, name)
+        self._flip_header(back, name, flip.get("icon", ""))
         self._flip_status(back, flip)
         if not flip["tall"]:
             try:
@@ -262,13 +274,13 @@ class CardFlipMixin:
         row.pack(fill="both", expand=True)
         row.grid_columnconfigure(0, weight=1)
         row.grid_columnconfigure(1, weight=1)
-        b1 = self._flip_opt(row, flip, "\U0001F310 " + t("dlg_site", lang),
+        b1 = self._flip_opt(row, flip, t("dlg_site", lang),
                             lambda: self._flip_site(name), big=True)
         b1.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
-        b2 = self._flip_opt(row, flip, "\U0001F4F1 " + t("dlg_app", lang),
+        b2 = self._flip_opt(row, flip, t("dlg_app", lang),
                             lambda: self._flip_app(name), big=True)
         b2.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
-        b3 = self._flip_opt(body, flip, "\u2699 " + t("dlg_config", lang),
+        b3 = self._flip_opt(body, flip, t("dlg_config", lang),
                             lambda: self.flip_show_page("config"))
         b3.pack(fill="both", expand=True, pady=(6, 0))
 
@@ -306,10 +318,10 @@ class CardFlipMixin:
         row.pack(fill="both", expand=True)
         row.grid_columnconfigure(0, weight=1)
         row.grid_columnconfigure(1, weight=1)
-        b1 = self._flip_opt(row, flip, "\u25B6 " + t("dlg_play", lang),
+        b1 = self._flip_opt(row, flip, t("dlg_play", lang),
                             lambda: self._flip_play(name), big=True)
         b1.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
-        b2 = self._flip_opt(row, flip, "\u2699 " + t("dlg_config", lang),
+        b2 = self._flip_opt(row, flip, t("dlg_config", lang),
                             lambda: self.flip_show_page("config"), big=True)
         b2.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
 
