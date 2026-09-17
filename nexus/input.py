@@ -134,7 +134,7 @@ def _nav_tick_wav(vol=10):
     try:
         vol = max(0, min(100, int(vol)))
     except Exception:
-        vol = 80
+        vol = 10
     if vol in _NAV_TICK_WAV:
         return _NAV_TICK_WAV[vol]
     import math
@@ -273,10 +273,10 @@ _EDIT_CLASS_NAMES = frozenset([
 ])
 
 
-def _uia_focused_control():
+def _uia_focused_control(timeout=4):
     out = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", _UIA_PS],
-        capture_output=True, text=True, timeout=12,
+        capture_output=True, text=True, timeout=timeout,
         creationflags=subprocess.CREATE_NO_WINDOW)
     lines = (out.stdout or "").strip().splitlines()
     return lines[-1].strip() if lines else None
@@ -344,10 +344,35 @@ def focused_is_text_field():
 
 def remote_button_allowed(action):
     """No remoto, atalhos de tecla unica (F do fullscreen) nao disparam
-    com campo de texto focado: virariam letra no meio da digitacao."""
+    com campo de texto focado: virariam letra no meio da digitacao.
+    Usa cache curto: cada consulta gera um powershell (~0,5s) e nao pode
+    travar o loop do controle a cada aperto do Y."""
     if action != "fullscreen":
         return True
     try:
-        return not focused_is_text_field()
+        return not focused_is_text_field_cached()
     except Exception:
         return True
+
+
+_FOCUS_CACHE = {"t": 0.0, "v": False}
+
+
+def focused_is_text_field_cached(ttl=1.0):
+    """Versao com cache p/ caminho sincrono (loop do gamepad)."""
+    try:
+        now = time.monotonic()
+    except Exception:
+        return focused_is_text_field()
+    try:
+        if now - _FOCUS_CACHE["t"] < ttl:
+            return _FOCUS_CACHE["v"]
+    except Exception:
+        pass
+    v = focused_is_text_field()
+    try:
+        _FOCUS_CACHE["t"] = now
+        _FOCUS_CACHE["v"] = bool(v)
+    except Exception:
+        pass
+    return v

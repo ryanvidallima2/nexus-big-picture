@@ -244,13 +244,13 @@ def run():
         check(True, "gamepad poll/stop")
 
         from nexus import input as nexus_input
-        _orig_focus = nexus_input.focused_is_text_field
-        nexus_input.focused_is_text_field = lambda: True
+        _orig_focus = nexus_input.focused_is_text_field_cached
+        nexus_input.focused_is_text_field_cached = lambda: True
         try:
             no_f = nexus_input.remote_button_allowed("fullscreen")
             ok_other = nexus_input.remote_button_allowed("space")
         finally:
-            nexus_input.focused_is_text_field = _orig_focus
+            nexus_input.focused_is_text_field_cached = _orig_focus
         check(no_f is False and ok_other is True,
               "fullscreen nao digita em campo")
 

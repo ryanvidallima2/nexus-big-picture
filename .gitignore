@@ -47,3 +47,7 @@ Nexus-v*.zip
 .vscode/
 .idea/
 Thumbs.db
+
+# Pasta local de estudo (copias de leitura, nao vai p/ o git)
+teste/
+teste 2/

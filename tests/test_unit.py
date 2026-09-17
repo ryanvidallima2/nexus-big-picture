@@ -794,6 +794,16 @@ from nexus.pad import detect_pad_layout  # noqa: E402
 check(detect_pad_layout('Xbox 360 Controller') == 'xbox'
       and detect_pad_layout('PS3/PC Gamepad') == 'playstation'
       and detect_pad_layout('Teclado X') == 'generic', "I9 layouts")
+calls_f = []
+_real_fit = NINPUT.focused_is_text_field
+NINPUT.focused_is_text_field = lambda: calls_f.append(True) or False
+NINPUT._FOCUS_CACHE.update(t=0.0, v=False)
+NINPUT.focused_is_text_field_cached()
+NINPUT.focused_is_text_field_cached()
+check(len(calls_f) == 1, "I10 foco com cache (1 consulta)")
+NINPUT.focused_is_text_field_cached(ttl=0)
+check(len(calls_f) == 2, "I11 ttl=0 reconsulta")
+NINPUT.focused_is_text_field = _real_fit
 
 print("PARTE 3 OK (%d checks)" % COUNT[0], flush=True)
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
