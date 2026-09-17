@@ -71,24 +71,29 @@ class CardFlipMixin:
         tall = getattr(widget, "_flip_tall", True)
         try:
             icon = "\U0001F3AE"
+            color = Config.ACCENT
             if not is_game:
                 try:
-                    icon = (self.get_all_services().get(name, {}).get("icon")
-                            or "\U0001F4F0")
+                    info = self.get_all_services().get(name, {})
+                    icon = info.get("icon") or "\U0001F4F0"
+                    color = self.settings.get("card_colors", {}).get(
+                        name, info.get("color", Config.ACCENT))
                 except Exception:
                     icon = "\U0001F4F0"
         except Exception:
             icon = "\U0001F3AE"
+            color = Config.ACCENT
         try:
-            back = tk.Frame(widget, bg=Config.BG_SIDEBAR,
-                            highlightbackground=Config.ACCENT,
-                            highlightthickness=2)
+            # Borda neon na cor do card: moldura viva + miolo escuro.
+            back = tk.Frame(widget, bg=color)
+            box = tk.Frame(back, bg=Config.BG_SIDEBAR)
+            box.pack(fill="both", expand=True, padx=3, pady=3)
         except Exception:
             return
         flip = {"widget": widget, "name": name, "is_game": bool(is_game),
-                "tall": bool(tall), "back": back, "opts": [], "idx": 0,
-                "page": "main", "busy": False, "status": None, "orig_h": None,
-                "icon": icon}
+                "tall": bool(tall), "back": back, "box": box,
+                "opts": [], "idx": 0, "page": "main", "busy": False,
+                "status": None, "orig_h": None, "icon": icon}
         self.flipped = flip
         try:
             if tall:
@@ -249,20 +254,21 @@ class CardFlipMixin:
         flip["opts"] = []
         flip["idx"] = 0
         back = flip["back"]
+        box = flip.get("box") or back
         try:
-            for w in back.winfo_children():
+            for w in box.winfo_children():
                 w.destroy()
         except Exception:
             return
         name = flip["name"]
-        self._flip_header(back, name, flip.get("icon", ""))
-        self._flip_status(back, flip)
+        self._flip_header(box, name, flip.get("icon", ""))
+        self._flip_status(box, flip)
         if not flip["tall"]:
             try:
                 flip["widget"].configure(height=self.ROW_H.get(page, 190))
             except Exception:
                 pass
-        body = tk.Frame(back, bg=Config.BG_SIDEBAR)
+        body = tk.Frame(box, bg=Config.BG_SIDEBAR)
         body.pack(fill="both", expand=True, padx=10, pady=(2, 8))
         if flip["is_game"]:
             if page == "config":

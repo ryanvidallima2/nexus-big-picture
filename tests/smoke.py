@@ -134,6 +134,10 @@ def run():
         back_on = (app.flipped is not None and app.flipped["back"].winfo_ismapped()
                    and len(app.flipped["opts"]) == 3)
         check(back_on, "card vira (verso Site/App/Config)")
+        exp_color = app.settings.get("card_colors", {}).get(
+            n, (app.get_all_services().get(n, {}).get("color") or "#7c4dff"))
+        check(app.flipped["back"].cget("bg").lower() == exp_color.lower(),
+              "borda neon na cor do card")
         app.flip_show_page("config")
         root.update()
         check(app.flipped["page"] == "config" and len(app.flipped["opts"]) == 8,
@@ -158,35 +162,41 @@ def run():
         check(app.settings.get("card_colors", {}).get(n)
               and app.flipped is not None
               and app.flipped["page"] == "color", "cor aplica e continua")
-        w = app.flipped["widget"]
-        app.flip_show_page("url")
-        root.update()
-        check(app.flipped["page"] == "url" and app.flipped.get("entry") is not None
-              and len(app.flipped["opts"]) == 2, "verso url (campo+ok)")
-        app.flip_show_page("delete")
-        root.update()
-        check(app.flipped["page"] == "delete" and len(app.flipped["opts"]) == 2,
-              "verso excluir confirma")
-        app.unflip_card()
-        root.update()
-        check(app.flipped is None, "card desvira")
-        bound = []
+        w = app.flipped["widget"] if app.flipped else None
+        if w is None:
+            check(False, "verso url (sem card)")
+            check(False, "verso excluir confirma")
+            check(False, "card desvira")
+            check(False, "clique em toda area do card")
+        else:
+            app.flip_show_page("url")
+            root.update()
+            check(app.flipped["page"] == "url" and app.flipped.get("entry") is not None
+                  and len(app.flipped["opts"]) == 2, "verso url (campo+ok)")
+            app.flip_show_page("delete")
+            root.update()
+            check(app.flipped["page"] == "delete" and len(app.flipped["opts"]) == 2,
+                  "verso excluir confirma")
+            app.unflip_card()
+            root.update()
+            check(app.flipped is None, "card desvira")
+            bound = []
 
-        def walk(x):
-            try:
-                if x.bind("<Button-1>"):
-                    bound.append(True)
-            except Exception:
-                pass
-            try:
-                kids = x.winfo_children()
-            except Exception:
-                return
-            for c in kids:
-                walk(c)
+            def walk(x):
+                try:
+                    if x.bind("<Button-1>"):
+                        bound.append(True)
+                except Exception:
+                    pass
+                try:
+                    kids = x.winfo_children()
+                except Exception:
+                    return
+                for c in kids:
+                    walk(c)
 
-        walk(w)
-        check(len(bound) >= 6, "clique em toda area do card")
+            walk(w)
+            check(len(bound) >= 6, "clique em toda area do card")
 
         entry = tk.Entry(root)
         entry.pack()
