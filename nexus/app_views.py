@@ -788,9 +788,14 @@ class AppViewsMixin:
         def on_leave(e, c=row):
             c.configure(bg=Config.BG_CARD, highlightbackground=Config.BORDER, highlightthickness=1)
 
-        # Clique/menu so no container (filhos borbulham).
+        # Clique/menu em row + filhos (Button-1 nao borbulha no Tk).
         row.bind("<Button-1>", on_click)
         row.bind("<Button-3>", on_ctx)
         row.bind("<Enter>", on_enter)
         row.bind("<Leave>", on_leave)
+        for w in (thumb, name_lbl):
+            w.bind("<Button-1>", on_click)
+            w.bind("<Button-3>", on_ctx)
+            w.bind("<Enter>", on_enter)
+            w.bind("<Leave>", on_leave)
         return row

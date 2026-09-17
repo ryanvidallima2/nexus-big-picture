@@ -143,6 +143,19 @@ def run():
         app.unflip_card()
         root.update()
         check(app.flipped is None, "card desvira")
+        bound = []
+
+        def walk(x):
+            try:
+                if x.bind("<Button-1>"):
+                    bound.append(True)
+            except Exception:
+                pass
+            for c in x.winfo_children():
+                walk(c)
+
+        walk(w)
+        check(len(bound) >= 6, "clique em toda area do card")
 
         entry = tk.Entry(root)
         entry.pack()

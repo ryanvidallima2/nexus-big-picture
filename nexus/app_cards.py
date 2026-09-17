@@ -226,25 +226,36 @@ class AppCardsMixin:
         def on_leave(e, c=card):
             c.configure(bg=Config.BG_CARD, highlightbackground=Config.BORDER, highlightthickness=1)
 
-        # Clique/menu so no container: os filhos borbulham ate aqui
-        # (um bind por nivel evitava flip-duplo; agora e bind unico).
+        # Clique/menu em TODOS os elementos: no Tk o Button-1 nao borbulha
+        # p/ o pai, entao cada filho precisa do proprio bind (1 disparo por
+        # clique, no widget sob o cursor). Todos passam o card container.
         card.bind("<Button-1>", on_click)
         card.bind("<Button-3>", on_ctx)
         card.bind("<Enter>", on_enter)
         card.bind("<Leave>", on_leave)
 
+        top_area.bind("<Button-1>", on_click)
+        top_area.bind("<Button-3>", on_ctx)
         top_area.bind("<Enter>", on_enter)
         top_area.bind("<Leave>", on_leave)
 
+        lbl.bind("<Button-1>", on_click)
+        lbl.bind("<Button-3>", on_ctx)
         lbl.bind("<Enter>", on_enter)
         lbl.bind("<Leave>", on_leave)
 
+        info_area.bind("<Button-1>", on_click)
+        info_area.bind("<Button-3>", on_ctx)
         info_area.bind("<Enter>", on_enter)
         info_area.bind("<Leave>", on_leave)
 
+        name_lbl.bind("<Button-1>", on_click)
+        name_lbl.bind("<Button-3>", on_ctx)
         name_lbl.bind("<Enter>", on_enter)
         name_lbl.bind("<Leave>", on_leave)
 
+        cat_lbl.bind("<Button-1>", on_click)
+        cat_lbl.bind("<Button-3>", on_ctx)
         cat_lbl.bind("<Enter>", on_enter)
         cat_lbl.bind("<Leave>", on_leave)
 
