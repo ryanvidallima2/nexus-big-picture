@@ -3043,6 +3043,7 @@ TRANSLATIONS = {
         "pad_remap": "Remapear botões",
         "kb_open": "Abrir teclado virtual",
         "ctrl_pad_sec": "Controle",
+        "ctrl_devices": "Controles conectados",
         "ctrl_kb_sec": "Teclado virtual",
         "pad_connected": "Conectado: %s",
         "settings_sound": "Som",
@@ -3259,6 +3260,7 @@ TRANSLATIONS = {
         "pad_remap": "Remap buttons",
         "kb_open": "Open virtual keyboard",
         "ctrl_pad_sec": "Gamepad",
+        "ctrl_devices": "Connected controllers",
         "ctrl_kb_sec": "Virtual keyboard",
         "pad_connected": "Connected: %s",
         "settings_sound": "Sound",
@@ -6109,17 +6111,30 @@ class ControlesPanel(SidePanel):
     def render(self):
         app = self.app
         lang = app.lang
-        self.section("\U0001F3AE " + t("ctrl_pad_sec", lang))
+        self.section(t("ctrl_devices", lang))
+        try:
+            devices = app.pad_devices()
+        except Exception:
+            devices = []
         try:
             gp = app.gamepad
-            name = gp.device_label() if (gp is not None and gp.joystick) else ""
+            active_name = gp.joystick.get_name() if (gp is not None and gp.joystick) else None
+            conn = gp.connection_info() if gp else ""
         except Exception:
-            name = ""
-        tk.Label(self.body,
-                 text=(t("pad_connected", lang) % name) if name else t("pad_none", lang),
-                 font=("Segoe UI", 12), fg=Config.TEXT_SECONDARY,
-                 bg=Config.BG_SIDEBAR, anchor="w", justify="left",
-                 wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=(0, 4))
+            active_name, conn = None, ""
+        if not devices:
+            tk.Label(self.body, text=t("pad_none", lang),
+                     font=("Segoe UI", 12), fg=Config.TEXT_SECONDARY,
+                     bg=Config.BG_SIDEBAR, anchor="w").pack(fill="x", padx=16)
+        for pos, d in enumerate(devices):
+            tag = PAD_LAYOUT_LABEL.get(d.get("layout", "generic"), "")
+            text = d["name"] + (" [%s]" % tag if tag else "")
+            if d["name"] == active_name:
+                text = "\u2713 " + text + ("  \u2022  " + conn if conn else "")
+            self.button(text, lambda p=pos: self._pick(p))
+        self.button("\u21BB " + t("pad_rescan", lang),
+                    lambda: self._rescan())
+        self.section("\U0001F3AE " + t("ctrl_pad_sec", lang))
         self.button(t("pad_remap", lang),
                     lambda: app.show_gamepad_info())
         self.slider(t("pad_sens", lang), 4, 30,
@@ -6140,6 +6155,28 @@ class ControlesPanel(SidePanel):
             return min(40, max(5, int(self.app.settings.get("pad_deadzone", 22))))
         except Exception:
             return 22
+
+    def _pick(self, pos):
+        try:
+            self.app.select_pad_device(pos)
+        except Exception:
+            pass
+        try:
+            self.open()
+        except Exception:
+            pass
+
+    def _rescan(self):
+        try:
+            gp = self.app.gamepad
+            if gp is not None:
+                gp.refresh_devices()
+        except Exception:
+            pass
+        try:
+            self.open()
+        except Exception:
+            pass
 
     def _save_pad(self, key, val):
         try:
