@@ -219,6 +219,10 @@ def run():
         entry.pack()
         app.open_keyboard(entry)
         app.kb_window.on_hat((1, 0))
+        app.kb_window.force_front()
+        from nexus.win32 import force_topmost_noactivate
+        check(isinstance(force_topmost_noactivate(app.kb_window.win), bool),
+              "teclado forca frente")
         app.kb_window.close()
         for opener in (app.open_controles, app.open_idioma, app.open_adicionar,
                        app.open_sistema, app.open_som):

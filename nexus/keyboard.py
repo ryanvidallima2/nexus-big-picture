@@ -8,7 +8,10 @@ import tkinter as tk
 from .config import Config
 from .i18n import t
 from .input import VK_BACK, tap_key, type_text
-from .win32 import _apply_dark_title, bring_to_front, foreground_hwnd
+from .win32 import (
+    _apply_dark_title, bring_to_front, force_topmost_noactivate,
+    foreground_hwnd,
+)
 
 
 # ===================== NEXUS VIRTUAL KEYBOARD =====================
@@ -146,10 +149,7 @@ class NexusKeyboard:
         except Exception:
             w, h, x, y = 620, 430, 200, 150
         win.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
-        try:
-            win.lift()
-        except Exception:
-            pass
+        self.force_front()
         try:
             win.after(150, self.dock_bottom)
         except Exception:
@@ -366,6 +366,29 @@ class NexusKeyboard:
             self.dock_bottom()
         except Exception:
             pass
+
+    def force_front(self, retries=2):
+        """Traz p/ frente SEM roubar o foco (teclado sobre app/site em
+        tela cheia). Repete 2x: fullscreen pode se reafirmar depois."""
+        if self.closed:
+            return
+        try:
+            self.win.attributes("-topmost", True)
+        except Exception:
+            pass
+        try:
+            self.win.lift()
+        except Exception:
+            pass
+        try:
+            force_topmost_noactivate(self.win)
+        except Exception:
+            pass
+        if retries > 0:
+            try:
+                self.win.after(400, lambda: self.force_front(retries - 1))
+            except Exception:
+                pass
 
     def dock_bottom(self):
         """Reancora na base da area util (barra de tarefas descontada)."""

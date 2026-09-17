@@ -229,3 +229,28 @@ def _apply_dark_title_later(widget, delay=150, tag="win"):
         widget.after(delay, lambda: _apply_dark_title(widget, tag))
     except Exception:
         pass
+
+
+def force_topmost_noactivate(widget):
+    """Joga a janela p/ frente SEM roubar o foco (teclado virtual sobre
+    app/site em tela cheia). Retorna True se o Windows aceitou."""
+    try:
+        inner = int(widget.winfo_id())
+    except Exception:
+        return False
+    if not _WIN32_OK:
+        return False
+    try:
+        try:
+            _get_parent = ctypes.windll.user32.GetParent
+            _get_parent.argtypes = [ctypes.c_void_p]
+            _get_parent.restype = ctypes.c_void_p
+            outer = _get_parent(inner)
+            hwnd = outer if outer else inner
+        except Exception:
+            hwnd = inner
+        HWND_TOPMOST = ctypes.c_void_p(-1)
+        flags = 0x0001 | 0x0002 | 0x0010 | 0x0040  # NOSIZE|NOMOVE|NOACTIVATE|SHOW
+        return bool(_SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags))
+    except Exception:
+        return False

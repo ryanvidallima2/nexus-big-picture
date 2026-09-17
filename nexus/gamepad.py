@@ -759,7 +759,7 @@ class GamepadManager:
         try:
             if _modal_alive(self.app.kb_window):
                 try:
-                    self.app.kb_window.win.lift()
+                    self.app.kb_window.force_front()
                 except Exception:
                     pass
                 return

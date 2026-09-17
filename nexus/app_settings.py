@@ -395,7 +395,7 @@ class AppSettingsMixin:
             kb = self.kb_window
             if _modal_alive(kb):
                 try:
-                    kb.win.lift()
+                    kb.force_front()
                 except Exception:
                     pass
                 return
