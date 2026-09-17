@@ -137,6 +137,24 @@ class AppViewsMixin:
                 return
             self.play_tick()
             return
+        if getattr(self, "flipped", None) is not None and self.nav_level == "items":
+            # Verso aberto: setas passeiam nas opcoes (como no dialogo).
+            # Se o foco saiu do card virado, desvira e navega normal.
+            try:
+                w, _n, _g = self.focused_card()
+                same = (w is not None and w == self.flipped.get("widget"))
+            except Exception:
+                same = False
+            if same:
+                if direction in ("up", "left"):
+                    self.flip_opt_move(-1)
+                else:
+                    self.flip_opt_move(1)
+                return
+            try:
+                self.unflip_card()
+            except Exception:
+                pass
         if direction == "up":
             if self._dpad_up():
                 self.play_tick()
@@ -290,17 +308,20 @@ class AppViewsMixin:
             if self.focus_tab < len(tabs):
                 self.switch_tab(tabs[self.focus_tab])
         elif self.nav_level == "items":
-            sec = self.sections[self.focus_mgr.focused_row]
-            if sec["canvas"] is None:
-                name_idx = self.focus_mgr.focused_col
-            else:
-                name_idx = sec["scroll_offset"] + self.focus_mgr.focused_col
-            if 0 <= name_idx < len(sec["names"]):
-                name = sec["names"][name_idx]
-                if self.current_tab == "games":
-                    self.ask_game_card(name)
-                else:
-                    self.ask_open_target(name)
+            w, name, is_game = self.focused_card()
+            if w is None:
+                return
+            try:
+                cur = getattr(self, "flipped", None)
+                if cur is not None and cur.get("widget") == w:
+                    self.flip_opt_activate()
+                    return
+            except Exception:
+                pass
+            try:
+                self.flip_card(w, name, is_game)
+            except Exception:
+                pass
 
     def go_back(self):
         if self.theme_visible:
@@ -314,6 +335,8 @@ class AppViewsMixin:
             self.toggle_sidebar()
         elif hasattr(self, 'qa_visible') and self.qa_visible:
             self.close_qa()
+        elif getattr(self, "flipped", None) is not None:
+            self.unflip_card()
         elif self.nav_level == "form":
             self.switch_tab(self.current_tab)
         elif self.nav_level == "items":
@@ -330,6 +353,7 @@ class AppViewsMixin:
                     and not (getattr(self, "sidepanel", None) is not None
                              and self.sidepanel.visible)
                     and not getattr(self, "qa_visible", False)
+                    and getattr(self, "flipped", None) is None
                     and self.nav_level == "tabs"
                     and top_modal(self) is None
                     and not _modal_alive(self.pad_window)):
@@ -546,6 +570,8 @@ class AppViewsMixin:
         self.card_widgets = []
         self.sections = []
         self.card_index = {}
+        # Cards recriados: verso aberto cai (cfg_keep_flip re-vira depois).
+        self.flipped = None
         if tab == "home":
             # Legado: aba Home foi removida, mostra Todos
             tab = "all"
@@ -722,6 +748,7 @@ class AppViewsMixin:
                        highlightbackground=Config.BORDER, highlightthickness=1,
                        cursor="hand2", height=52)
         row.pack_propagate(False)
+        row._flip_tall = False
 
         mini = self.get_logo(name, size=40)
         if mini:
@@ -748,8 +775,8 @@ class AppViewsMixin:
                      fg=Config.TEXT_SECONDARY, bg=Config.BG_CARD, cursor="hand2",
                      anchor="w").pack(side="left", padx=(10, 8))
 
-        def on_click(e, n=name):
-            self.on_card_click(n)
+        def on_click(e, n=name, c=row):
+            self.on_card_click(c, n)
 
         def on_ctx(e, n=name):
             self.show_context_menu(e, n)
@@ -761,9 +788,9 @@ class AppViewsMixin:
         def on_leave(e, c=row):
             c.configure(bg=Config.BG_CARD, highlightbackground=Config.BORDER, highlightthickness=1)
 
-        for w in (row, thumb, name_lbl):
-            w.bind("<Button-1>", on_click)
-            w.bind("<Button-3>", on_ctx)
-            w.bind("<Enter>", on_enter)
-            w.bind("<Leave>", on_leave)
+        # Clique/menu so no container (filhos borbulham).
+        row.bind("<Button-1>", on_click)
+        row.bind("<Button-3>", on_ctx)
+        row.bind("<Enter>", on_enter)
+        row.bind("<Leave>", on_leave)
         return row

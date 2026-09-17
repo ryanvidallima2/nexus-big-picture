@@ -7,9 +7,7 @@ import tkinter as tk
 from shutil import copy2
 
 from .config import Config, save_settings
-from .dialogs import (
-    GameCardDialog, OpenTargetDialog, _modal_alive, top_modal,
-)
+from .dialogs import _modal_alive, top_modal
 from .games import GAME_IMG_EXTS, _safe_icon_basename
 from .i18n import cat_label
 from .paths import GAMES_DIR, IMAGES_DIR
@@ -176,6 +174,7 @@ class AppCardsMixin:
                         highlightbackground=Config.BORDER, highlightthickness=1,
                         cursor="hand2", width=Config.CARD_WIDTH, height=Config.CARD_HEIGHT)
         card.pack_propagate(False)
+        card._flip_tall = True
 
         top_area = tk.Frame(card, bg=color, height=160)
         top_area.pack(fill="x")
@@ -214,8 +213,8 @@ class AppCardsMixin:
             tk.Label(card, text="\u2B50", font=("Segoe UI", 10),
                      fg="#ffd700", bg=Config.BG_CARD).place(relx=0.92, rely=0.03, anchor="ne")
 
-        def on_click(e, n=name):
-            self.on_card_click(n)
+        def on_click(e, n=name, c=card):
+            self.on_card_click(c, n)
 
         def on_ctx(e, n=name):
             self.show_context_menu(e, n)
@@ -227,33 +226,25 @@ class AppCardsMixin:
         def on_leave(e, c=card):
             c.configure(bg=Config.BG_CARD, highlightbackground=Config.BORDER, highlightthickness=1)
 
+        # Clique/menu so no container: os filhos borbulham ate aqui
+        # (um bind por nivel evitava flip-duplo; agora e bind unico).
         card.bind("<Button-1>", on_click)
         card.bind("<Button-3>", on_ctx)
         card.bind("<Enter>", on_enter)
         card.bind("<Leave>", on_leave)
 
-        top_area.bind("<Button-1>", on_click)
-        top_area.bind("<Button-3>", on_ctx)
         top_area.bind("<Enter>", on_enter)
         top_area.bind("<Leave>", on_leave)
 
-        lbl.bind("<Button-1>", on_click)
-        lbl.bind("<Button-3>", on_ctx)
         lbl.bind("<Enter>", on_enter)
         lbl.bind("<Leave>", on_leave)
 
-        info_area.bind("<Button-1>", on_click)
-        info_area.bind("<Button-3>", on_ctx)
         info_area.bind("<Enter>", on_enter)
         info_area.bind("<Leave>", on_leave)
 
-        name_lbl.bind("<Button-1>", on_click)
-        name_lbl.bind("<Button-3>", on_ctx)
         name_lbl.bind("<Enter>", on_enter)
         name_lbl.bind("<Leave>", on_leave)
 
-        cat_lbl.bind("<Button-1>", on_click)
-        cat_lbl.bind("<Button-3>", on_ctx)
         cat_lbl.bind("<Enter>", on_enter)
         cat_lbl.bind("<Leave>", on_leave)
 
@@ -340,16 +331,20 @@ class AppCardsMixin:
         except Exception:
             pass
 
-    def on_card_click(self, name):
-        if self.current_tab == "games":
-            self.ask_game_card(name)
-        else:
-            self.ask_open_target(name)
-
-    def ask_game_card(self, name):
-        if _modal_alive(self.open_dialog):
-            return
-        self.open_dialog = GameCardDialog(self, name)
+    def on_card_click(self, widget, name):
+        try:
+            is_game = (self.current_tab == "games")
+        except Exception:
+            is_game = False
+        if widget is None:
+            try:
+                widget = self.find_card_widget(name)
+            except Exception:
+                widget = None
+        try:
+            self.flip_card(widget, name, is_game)
+        except Exception:
+            pass
 
     def set_game_cover(self, name, src_path):
         if not src_path or not os.path.isfile(src_path):
@@ -416,8 +411,3 @@ class AppCardsMixin:
             return True
         except Exception:
             return False
-
-    def ask_open_target(self, name):
-        if _modal_alive(self.open_dialog):
-            return
-        self.open_dialog = OpenTargetDialog(self, name)

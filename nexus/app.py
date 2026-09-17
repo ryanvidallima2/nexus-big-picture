@@ -7,9 +7,11 @@ from .app_remote import AppRemoteMixin
 from .app_settings import AppSettingsMixin
 from .app_shell import AppShellMixin
 from .app_views import AppViewsMixin
+from .cardflip import CardFlipMixin
 
 
 class BigPictureApp(AppShellMixin, AppViewsMixin, AppGamesMixin,
-                    AppCardsMixin, AppRemoteMixin, AppSettingsMixin):
+                    AppCardsMixin, AppRemoteMixin, AppSettingsMixin,
+                    CardFlipMixin):
     """Janela principal do Nexus (metodos vivem nos mixins)."""
 

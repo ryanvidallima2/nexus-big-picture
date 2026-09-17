@@ -8,7 +8,7 @@ import time
 
 from .config import save_settings
 from .dialogs import (
-    OpenTargetDialog, GameCardDialog, NexusTextDialog, NexusMenuWindow,
+    NexusTextDialog, NexusMenuWindow,
     _modal_alive, top_modal,
 )
 from .i18n import t
@@ -386,9 +386,7 @@ class GamepadManager:
     def _stick_nav_action(self, ndir):
         """Mesmos alvos do D-pad: dialogos, janela de controles e cards."""
         top = top_modal(self.app)
-        if isinstance(top, (OpenTargetDialog, GameCardDialog)):
-            top.move()
-        elif isinstance(top, NexusMenuWindow):
+        if isinstance(top, NexusMenuWindow):
             top.on_hat(ndir)
         elif isinstance(top, NexusKeyboard):
             top.on_hat(ndir)
@@ -477,9 +475,7 @@ class GamepadManager:
                     self.hat_debounce[hat] = now
                     self.app.using_gamepad = True
                     top = top_modal(self.app)
-                    if isinstance(top, (OpenTargetDialog, GameCardDialog)):
-                        top.move()
-                    elif isinstance(top, NexusMenuWindow):
+                    if isinstance(top, NexusMenuWindow):
                         top.on_hat(hat)
                     elif isinstance(top, NexusKeyboard):
                         top.on_hat(hat)
@@ -531,12 +527,7 @@ class GamepadManager:
                 is_confirm = (logical == "south")
                 is_cancel = (logical == "east")
                 top = top_modal(self.app)
-                if isinstance(top, (OpenTargetDialog, GameCardDialog)):
-                    if is_confirm:
-                        top.confirm()
-                    elif is_cancel:
-                        top.cancel()
-                elif isinstance(top, (NexusMenuWindow, NexusTextDialog)):
+                if isinstance(top, (NexusMenuWindow, NexusTextDialog)):
                     if is_confirm:
                         top.confirm()
                     elif is_cancel:

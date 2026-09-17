@@ -14,7 +14,7 @@ from tkinter import filedialog
 
 from .config import Config, save_settings
 from .dialogs import (
-    GameCardDialog, NexusMenuWindow, NexusTextDialog, OpenTargetDialog,
+    NexusMenuWindow, NexusTextDialog,
     _modal_alive, sniff_numeric_entry, top_modal,
 )
 from .games import GAME_COVER_SIZE
@@ -42,7 +42,7 @@ class AppSettingsMixin:
             menu = tk.Menu(self.root, tearoff=0, bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                             activebackground=Config.ACCENT, activeforeground="white",
                             font=("Segoe UI", 12), bd=0)
-            menu.add_command(label=f"\u25B6 {t('ctx_open', self.lang)}", command=lambda: self.on_card_click(name))
+            menu.add_command(label=f"\u25B6 {t('ctx_open', self.lang)}", command=lambda: self.on_card_click(None, name))
             if name in self.settings.get("favorites", []):
                 menu.add_command(label=f"\u2716 {t('ctx_remove_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
             else:
@@ -82,7 +82,7 @@ class AppSettingsMixin:
         menu = tk.Menu(self.root, tearoff=0, bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
                         activebackground=Config.ACCENT, activeforeground="white",
                         font=("Segoe UI", 12), bd=0)
-        menu.add_command(label=f"\u25B6 {t('ctx_open', self.lang)}", command=lambda: self.on_card_click(name))
+        menu.add_command(label=f"\u25B6 {t('ctx_open', self.lang)}", command=lambda: self.on_card_click(None, name))
         if name in self.settings.get("favorites", []):
             menu.add_command(label=f"\u2716 {t('ctx_remove_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
         else:
@@ -217,8 +217,7 @@ class AppSettingsMixin:
     def toggle_notif_panel(self):
         try:
             top = top_modal(self)
-            if isinstance(top, (NexusKeyboard, NexusTextDialog, NexusMenuWindow,
-                                OpenTargetDialog, GameCardDialog)):
+            if isinstance(top, (NexusKeyboard, NexusTextDialog, NexusMenuWindow)):
                 return
         except Exception:
             pass

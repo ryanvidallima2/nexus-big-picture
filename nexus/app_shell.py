@@ -71,6 +71,8 @@ class AppShellMixin:
         self.card_widgets = []
         self.carousel_cards = []
         self.open_dialog = None
+        self.flipped = None
+        self._pending_flip = None
         self.active_menu = None
         self.pad_capture = None
         self.pad_window = None

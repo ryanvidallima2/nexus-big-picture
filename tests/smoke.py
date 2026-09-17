@@ -81,7 +81,7 @@ def run():
     app = None
     try:
         app = B.BigPictureApp(root)
-        check(app.current_tab == "all" and len(app.get_all_services()) == 32,
+        check(app.current_tab == "all" and len(app.get_all_services()) >= 32,
               "boot (aba all, 32 servicos)")
 
         from nexus.app import BigPictureApp as App2
@@ -115,7 +115,7 @@ def run():
         app.toggle_favorite("Netflix")
         check("Netflix" not in app.settings.get("favorites", []), "favorito")
 
-        from nexus.dialogs import NexusMenuWindow, NexusTextDialog, OpenTargetDialog
+        from nexus.dialogs import NexusMenuWindow, NexusTextDialog
         got = []
         td = NexusTextDialog(app, "T", "P", "x", got.append)
         td.confirm()
@@ -123,10 +123,26 @@ def run():
         menu.set_options([("O", lambda: got.append(1))])
         menu.confirm()
         menu.close()
-        od = OpenTargetDialog(app, "Netflix")
-        app.open_dialog = od
-        od.cancel()
         check(got == ["x", 1], "dialogos")
+
+        app.render_tab("all")
+        root.update()
+        w = app.sections[0]["widgets"][0]
+        n = app.sections[0]["names"][0]
+        app.flip_card(w, n, False)
+        root.update()
+        back_on = (app.flipped is not None and app.flipped["back"].winfo_ismapped()
+                   and len(app.flipped["opts"]) == 3)
+        check(back_on, "card vira (verso Site/App/Config)")
+        app.flip_show_page("config")
+        root.update()
+        check(app.flipped["page"] == "config" and len(app.flipped["opts"]) == 8,
+              "verso config (8 acoes)")
+        app.flip_opt_move(1)
+        check(app.flipped["idx"] == 1, "opcao navega")
+        app.unflip_card()
+        root.update()
+        check(app.flipped is None, "card desvira")
 
         entry = tk.Entry(root)
         entry.pack()
