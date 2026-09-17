@@ -340,3 +340,14 @@ def focused_is_text_field():
         return _caret_visible()
     except Exception:
         return False
+
+
+def remote_button_allowed(action):
+    """No remoto, atalhos de tecla unica (F do fullscreen) nao disparam
+    com campo de texto focado: virariam letra no meio da digitacao."""
+    if action != "fullscreen":
+        return True
+    try:
+        return not focused_is_text_field()
+    except Exception:
+        return True

@@ -16,7 +16,7 @@ from .input import (
     VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_RETURN, VK_ESCAPE, VK_SPACE,
     VK_F, VK_VOL_DOWN, VK_VOL_UP, VK_MEDIA_NEXT, VK_MEDIA_PREV,
     VK_MEDIA_PLAY_PAUSE, focused_is_text_field, mouse_click, mouse_move,
-    mouse_wheel, stick_response, tap_key,
+    mouse_wheel, remote_button_allowed, stick_response, tap_key,
 )
 from .keyboard import NexusKeyboard
 from .pad import (
@@ -706,7 +706,8 @@ class GamepadManager:
                     elif action == "space":
                         tap_key(VK_SPACE)
                     elif action == "fullscreen":
-                        tap_key(VK_F)
+                        if remote_button_allowed("fullscreen"):
+                            tap_key(VK_F)
                     elif action == "vol_down":
                         tap_key(VK_VOL_DOWN)
                     elif action == "vol_up":
