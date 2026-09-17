@@ -728,11 +728,18 @@ class GamepadManager:
 
     def _maybe_open_kb_for_focus(self):
         """Apos clique com o controle: se o foco caiu num campo de texto,
-        abre o teclado (com cooldown)."""
+        abre o teclado (com cooldown). Nos primeiros 6s de remoto, nao:
+        o foco inicial do app/site (barra de endereco etc.) nao conta."""
         try:
             if _modal_alive(self.app.kb_window):
                 return
             now = time.time()
+            try:
+                born = float(getattr(self, "remote_enter_time", 0.0) or 0.0)
+            except Exception:
+                born = 0.0
+            if born and now - born < 6.0:
+                return
             if now - (self.remote_kb_time or 0.0) < 3.0:
                 return
             self.remote_kb_time = now

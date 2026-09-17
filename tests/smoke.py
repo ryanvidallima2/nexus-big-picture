@@ -11,6 +11,7 @@ import os
 import py_compile
 import shutil
 import sys
+import time
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
@@ -252,6 +253,14 @@ def run():
             nexus_input.focused_is_text_field = _orig_focus
         check(no_f is False and ok_other is True,
               "fullscreen nao digita em campo")
+
+        gm.remote_enter_time = time.time()
+        gm.remote_kb_time = 0.0
+        gm._maybe_open_kb_for_focus()
+        check(gm.remote_kb_time == 0.0, "teclado nao abre ao entrar no app")
+        gm.remote_enter_time = time.time() - 30.0
+        gm._maybe_open_kb_for_focus()
+        check(gm.remote_kb_time != 0.0, "teclado abre apos carencia")
 
         app.scan_games()
         app.render_games()
