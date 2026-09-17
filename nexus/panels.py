@@ -763,12 +763,14 @@ class SidePanel:
             self.refresh_slider(_it, tick=False)
 
         sc.configure(command=_drag)
+        # e=None defensivo: o Tk pode disparar o bind sem evento em
+        # cantos de corrida (o e nunca e usado; so _it importa).
         sc.bind("<ButtonRelease-1>",
-                lambda e, _it=item: self.refresh_slider(_it, tick=True))
-        sc.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+                lambda e=None, _it=item: self.refresh_slider(_it, tick=True))
+        sc.bind("<Enter>", lambda e=None, i=idx: self.set_focus(i))
         for w in (row, lab, val):
             try:
-                w.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+                w.bind("<Enter>", lambda e=None, i=idx: self.set_focus(i))
             except Exception:
                 pass
         self.refresh_slider(item, tick=False)
