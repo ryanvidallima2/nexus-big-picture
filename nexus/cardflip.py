@@ -5,6 +5,7 @@ inline, sem janela popup. Clique/A vira o card; B desvira."""
 import threading
 import time
 import tkinter as tk
+from tkinter import filedialog
 
 from .apps import open_app_for_service, open_store_search, try_install_service
 from .browser import open_in_nexus_browser
@@ -185,6 +186,12 @@ class CardFlipMixin:
             return
         for i, (b, _cmd) in enumerate(flip["opts"]):
             try:
+                # Swatch de cor mantem o proprio bg (so o anel muda).
+                if getattr(b, "_swatch", None):
+                    b.configure(highlightbackground=(
+                        "white" if i == flip["idx"] else Config.BORDER),
+                        highlightthickness=3 if i == flip["idx"] else 1)
+                    continue
                 if i == flip["idx"]:
                     b.configure(bg=Config.ACCENT, fg="white",
                                 highlightbackground=Config.ACCENT_GLOW,
@@ -262,8 +269,6 @@ class CardFlipMixin:
                 self._flip_game_config(body, flip, name)
             elif page == "color":
                 self._flip_color_page(body, flip, name, True)
-            elif page == "logo":
-                self._flip_path_page(body, flip, name, True)
             elif page == "delete":
                 self._flip_delete_page(body, flip, name, True)
             else:
@@ -275,8 +280,6 @@ class CardFlipMixin:
                 self._flip_color_page(body, flip, name, False)
             elif page == "url":
                 self._flip_url_page(body, flip, name)
-            elif page == "logo":
-                self._flip_path_page(body, flip, name, False)
             elif page == "delete":
                 self._flip_delete_page(body, flip, name, False)
             else:
@@ -314,7 +317,7 @@ class CardFlipMixin:
                                         lambda: self.reset_card_color(name))),
             (t("dlg_url", lang), lambda: self.flip_show_page("url")),
             ((f"\U0001F5BC {t('ctx_change_logo', lang)}"),
-             lambda: self.flip_show_page("logo")),
+             lambda: self._flip_logo_pick(name)),
             ((f"\U0001F4CB {t('ctx_copy_url', lang)}"),
              lambda: self._flip_copy_url(name)),
             ((f"\U0001F5D1 {t('ctx_delete', lang)}"),
@@ -363,7 +366,7 @@ class CardFlipMixin:
             (t("dlg_color_reset", lang),
              lambda: self.cfg_keep_flip(name, True, "config",
                                         lambda: self.reset_card_color(name))),
-            (t("dlg_cover", lang), lambda: self.flip_show_page("logo")),
+            (t("dlg_cover", lang), lambda: self._flip_cover_pick(name)),
             (t("games_openfolder", lang),
              lambda: self._flip_open_folder(name)),
             ((f"\U0001F5D1 {t('ctx_delete', lang)}"),
@@ -640,6 +643,7 @@ class CardFlipMixin:
                           cursor="hand2", width=4, height=1,
                           highlightthickness=1,
                           highlightbackground=Config.BORDER)
+            b._swatch = color
             b.grid(row=i // 4, column=i % 4, padx=3, pady=3, sticky="nsew")
             idx = len(flip["opts"])
             flip["opts"].append((b, lambda col=color: self.cfg_keep_flip(
@@ -673,35 +677,29 @@ class CardFlipMixin:
 
         self._flip_entry_page(body, flip, current, _ok)
 
-    def _flip_path_page(self, body, flip, name, is_game):
-        lang = self.lang
-        key = "dlg_cover" if is_game else "ctx_change_logo"
-        tk.Label(body, text=t(key, lang), font=("Segoe UI", 10),
-                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
-                 anchor="w").pack(fill="x")
+    def _flip_logo_pick(self, name):
+        # Explorador de pastas do SO (escolher arquivo exige picker).
+        self.cfg_keep_flip(name, False, "config",
+                           lambda: self.change_logo(name))
 
-        def _ok(val):
-            path = (val or "").strip()
-            if not path:
-                return
-            try:
-                ok = (self.set_game_cover(name, path) if is_game
-                      else self._flip_logo_path(name, path))
-            except Exception:
-                ok = False
-            if ok:
-                self.cfg_keep_flip(name, is_game, "logo", lambda: None)
-            else:
-                self._flip_status_text(path + " ?")
-
-        self._flip_entry_page(body, flip, "", _ok)
-
-    def _flip_logo_path(self, name, path):
-        import os as _os
-        if not path or not _os.path.isfile(path):
-            return False
-        self.change_logo(name, path)
-        return True
+    def _flip_cover_pick(self, name):
+        self._pending_flip = (name, True, "config")
+        try:
+            picked = filedialog.askopenfilename(
+                title=name,
+                filetypes=[("Imagens", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.ico"),
+                           ("Todas", "*.*")],
+                parent=self.root)
+        except Exception:
+            picked = ""
+        try:
+            if picked and self.set_game_cover(name, picked):
+                try:
+                    self.refresh_ui()
+                except Exception:
+                    pass
+        finally:
+            self._restore_pending_flip()
 
     def _flip_delete_page(self, body, flip, name, is_game):
         lang = self.lang

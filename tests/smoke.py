@@ -144,6 +144,15 @@ def run():
         root.update()
         check(app.flipped["page"] == "color" and len(app.flipped["opts"]) == 17,
               "verso cor (16+cancela)")
+        from nexus.dialogs import CARD_COLOR_PRESETS
+        sw_bgs = set()
+        for b, _c in app.flipped["opts"][:16]:
+            try:
+                sw_bgs.add(b.cget("bg"))
+            except Exception:
+                pass
+        want = {c for _l, c in CARD_COLOR_PRESETS}
+        check(want <= sw_bgs, "swatches coloridos")
         app.flip_click(0)
         root.update()
         check(app.settings.get("card_colors", {}).get(n)
