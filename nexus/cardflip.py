@@ -5,12 +5,11 @@ inline, sem janela popup. Clique/A vira o card; B desvira."""
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog
 
 from .apps import open_app_for_service, open_store_search, try_install_service
 from .browser import open_in_nexus_browser
 from .config import Config
-from .dialogs import CARD_COLOR_PRESETS, NexusMenuWindow, NexusTextDialog
+from .dialogs import CARD_COLOR_PRESETS, _modal_alive
 from .i18n import t
 from .pad import BROWSER_WATCH
 from .paths import BROWSER_PROCS
@@ -227,6 +226,9 @@ class CardFlipMixin:
         except Exception:
             pass
 
+    ROW_H = {"main": 190, "config": 300, "color": 320,
+             "url": 250, "logo": 250, "delete": 210}
+
     def flip_show_page(self, page):
         flip = getattr(self, "flipped", None)
         if not flip:
@@ -250,7 +252,7 @@ class CardFlipMixin:
         self._flip_status(back, flip)
         if not flip["tall"]:
             try:
-                flip["widget"].configure(height=300 if page == "config" else 190)
+                flip["widget"].configure(height=self.ROW_H.get(page, 190))
             except Exception:
                 pass
         body = tk.Frame(back, bg=Config.BG_SIDEBAR)
@@ -258,11 +260,25 @@ class CardFlipMixin:
         if flip["is_game"]:
             if page == "config":
                 self._flip_game_config(body, flip, name)
+            elif page == "color":
+                self._flip_color_page(body, flip, name, True)
+            elif page == "logo":
+                self._flip_path_page(body, flip, name, True)
+            elif page == "delete":
+                self._flip_delete_page(body, flip, name, True)
             else:
                 self._flip_game_main(body, flip, name)
         else:
             if page == "config":
                 self._flip_stream_config(body, flip, name)
+            elif page == "color":
+                self._flip_color_page(body, flip, name, False)
+            elif page == "url":
+                self._flip_url_page(body, flip, name)
+            elif page == "logo":
+                self._flip_path_page(body, flip, name, False)
+            elif page == "delete":
+                self._flip_delete_page(body, flip, name, False)
             else:
                 self._flip_stream_main(body, flip, name)
         self.flip_paint()
@@ -292,17 +308,17 @@ class CardFlipMixin:
               else f"\u2B50 {t('ctx_add_fav', lang)}"),
              lambda: self.cfg_keep_flip(name, False, "config",
                                         lambda: self.toggle_favorite(name))),
-            (t("dlg_color", lang), lambda: self._flip_color(name, False)),
+            (t("dlg_color", lang), lambda: self.flip_show_page("color")),
             (t("dlg_color_reset", lang),
              lambda: self.cfg_keep_flip(name, False, "config",
                                         lambda: self.reset_card_color(name))),
-            (t("dlg_url", lang), lambda: self._flip_url(name)),
+            (t("dlg_url", lang), lambda: self.flip_show_page("url")),
             ((f"\U0001F5BC {t('ctx_change_logo', lang)}"),
-             lambda: self._flip_logo(name)),
+             lambda: self.flip_show_page("logo")),
             ((f"\U0001F4CB {t('ctx_copy_url', lang)}"),
              lambda: self._flip_copy_url(name)),
             ((f"\U0001F5D1 {t('ctx_delete', lang)}"),
-             lambda: self._flip_delete_stream(name)),
+             lambda: self.flip_show_page("delete")),
             ((f"\u2190 {t('dlg_back', lang)}"),
              lambda: self.flip_show_page("main")),
         ]
@@ -343,15 +359,15 @@ class CardFlipMixin:
               else f"\u2B50 {t('ctx_add_fav', lang)}"),
              lambda: self.cfg_keep_flip(name, True, "config",
                                         lambda: self.toggle_favorite(name))),
-            (t("dlg_color", lang), lambda: self._flip_color(name, True)),
+            (t("dlg_color", lang), lambda: self.flip_show_page("color")),
             (t("dlg_color_reset", lang),
              lambda: self.cfg_keep_flip(name, True, "config",
                                         lambda: self.reset_card_color(name))),
-            (t("dlg_cover", lang), lambda: self._flip_cover(name)),
+            (t("dlg_cover", lang), lambda: self.flip_show_page("logo")),
             (t("games_openfolder", lang),
              lambda: self._flip_open_folder(name)),
             ((f"\U0001F5D1 {t('ctx_delete', lang)}"),
-             lambda: self._flip_delete_game(name)),
+             lambda: self.flip_show_page("delete")),
             ((f"\u2190 {t('dlg_back', lang)}"),
              lambda: self.flip_show_page("main")),
         ]
@@ -565,51 +581,140 @@ class CardFlipMixin:
         except Exception:
             pass
 
-    def _flip_color(self, name, is_game):
-        lang = self.lang
-        menu = NexusMenuWindow(self, t("dlg_color", lang), [],
-                               icon="\U0001F3A8", width=480, cols=4)
-        opts = []
-        for label, color in CARD_COLOR_PRESETS:
-            opts.append((label,
-                         lambda col=color: self._flip_pick_color(menu, name,
-                                                                is_game, col),
-                         {"bg": color,
-                          "fg": "black" if color == "#ffd600" else "white",
-                          "activebackground": color, "width": 8}))
-        opts.append((t("sidebar_close", lang), menu.close, {"width": 8}))
-        menu.set_options(opts, opt_font=10)
-
-    def _flip_pick_color(self, menu, name, is_game, color):
+    def _flip_entry_page(self, body, flip, initial, on_ok):
+        """Pagina com campo de texto inline (URL/caminho): sem janelas.
+        Mouse clica e digita; no controle o teclado virtual abre sozinho."""
+        e = tk.Entry(body, font=("Segoe UI", 11),
+                     bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                     insertbackground=Config.ACCENT, bd=0,
+                     highlightbackground=Config.ACCENT, highlightthickness=1)
+        e.pack(fill="x", pady=(4, 6))
         try:
-            menu.close()
+            e.insert(0, initial or "")
         except Exception:
             pass
-        self.cfg_keep_flip(name, is_game, "config",
+        flip["entry"] = e
+        ok = self._flip_opt(body, flip, "\u2713 OK", lambda: self._flip_entry_ok(on_ok))
+        ok.pack(fill="x", pady=1)
+        back = self._flip_opt(body, flip, "\u2190 " + t("dlg_back", self.lang),
+                              lambda: self.flip_show_page("config"))
+        back.pack(fill="x", pady=1)
+        try:
+            if getattr(self, "using_gamepad", False):
+                try:
+                    if _modal_alive(self.kb_window):
+                        self.kb_window.close()
+                except Exception:
+                    pass
+                self.open_keyboard(e)
+        except Exception:
+            pass
+        return e
+
+    def _flip_entry_ok(self, on_ok):
+        flip = getattr(self, "flipped", None)
+        try:
+            if _modal_alive(self.kb_window):
+                self.kb_window.close()
+        except Exception:
+            pass
+        val = ""
+        try:
+            if flip is not None and flip.get("entry") is not None:
+                val = flip["entry"].get()
+        except Exception:
+            pass
+        try:
+            on_ok(val)
+        except Exception:
+            pass
+
+    def _flip_color_page(self, body, flip, name, is_game):
+        grid = tk.Frame(body, bg=Config.BG_SIDEBAR)
+        grid.pack(fill="both", expand=True)
+        for i, (_label, color) in enumerate(CARD_COLOR_PRESETS):
+            b = tk.Button(grid, text="\u2713" if color == Config.ACCENT else "",
+                          font=("Segoe UI", 10, "bold"),
+                          bg=color, fg="black" if color == "#ffd600" else "white",
+                          activebackground=color, relief="flat", bd=0,
+                          cursor="hand2", width=4, height=1,
+                          highlightthickness=1,
+                          highlightbackground=Config.BORDER)
+            b.grid(row=i // 4, column=i % 4, padx=3, pady=3, sticky="nsew")
+            idx = len(flip["opts"])
+            flip["opts"].append((b, lambda col=color: self._flip_pick_color(
+                name, is_game, col)))
+            b.bind("<Enter>", lambda e, j=idx: self.flip_set_focus(j))
+            b.bind("<Button-1>", lambda e, j=idx: self.flip_click(j))
+        for c in range(4):
+            grid.grid_columnconfigure(c, weight=1)
+        back = self._flip_opt(body, flip, "\u2190 " + t("dlg_back", self.lang),
+                              lambda: self.flip_show_page("config"))
+        back.pack(fill="x", pady=(4, 0))
+
+    def _flip_pick_color(self, name, is_game, color):
+        self.cfg_keep_flip(name, is_game, "color",
                            lambda: self.set_card_color(name, color))
 
-    def _flip_url(self, name):
+    def _flip_url_page(self, body, flip, name):
         lang = self.lang
         try:
             current = self.opener.effective_url(name)
         except Exception:
             current = ""
+        tk.Label(body, text=t("dlg_url", lang), font=("Segoe UI", 10),
+                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x")
 
-        def _done(url):
-            if url and self.edit_card_url(name, url):
-                try:
-                    self.refresh_ui()
-                except Exception:
-                    pass
-                self._pending_flip = (name, False, "config")
-                self._restore_pending_flip()
+        def _ok(val):
+            if (val or "").strip() and self.edit_card_url(name, val):
+                self.flip_show_page("config")
 
-        NexusTextDialog(self, t("dlg_url_title", lang),
-                        t("dlg_url_prompt", lang), current, _done)
+        self._flip_entry_page(body, flip, current, _ok)
 
-    def _flip_logo(self, name):
-        self.cfg_keep_flip(name, False, "config",
-                           lambda: self.change_logo(name))
+    def _flip_path_page(self, body, flip, name, is_game):
+        lang = self.lang
+        key = "dlg_cover" if is_game else "ctx_change_logo"
+        tk.Label(body, text=t(key, lang), font=("Segoe UI", 10),
+                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x")
+
+        def _ok(val):
+            path = (val or "").strip()
+            if not path:
+                return
+            try:
+                ok = (self.set_game_cover(name, path) if is_game
+                      else self._flip_logo_path(name, path))
+            except Exception:
+                ok = False
+            if ok:
+                self.cfg_keep_flip(name, is_game, "logo", lambda: None)
+            else:
+                self._flip_status_text(path + " ?")
+
+        self._flip_entry_page(body, flip, "", _ok)
+
+    def _flip_logo_path(self, name, path):
+        import os as _os
+        if not path or not _os.path.isfile(path):
+            return False
+        self.change_logo(name, path)
+        return True
+
+    def _flip_delete_page(self, body, flip, name, is_game):
+        lang = self.lang
+        tk.Label(body, text=f"{t('games_del_q' if is_game else 'delete_question', lang)} '{name}'?",
+                 font=("Segoe UI", 11, "bold"), fg=Config.TEXT_PRIMARY,
+                 bg=Config.BG_SIDEBAR, wraplength=220,
+                 justify="center").pack(pady=(6, 8))
+        yes = self._flip_opt(
+            body, flip, f"\U0001F5D1 {t('ctx_delete', lang)}",
+            lambda: self._flip_delete_yes(name, is_game))
+        yes.pack(fill="x", pady=1)
+        no = self._flip_opt(body, flip, "\u2190 " + t("dlg_back", lang),
+                            lambda: self.flip_show_page("config"))
+        no.pack(fill="x", pady=1)
 
     def _flip_copy_url(self, name):
         try:
@@ -618,68 +723,54 @@ class CardFlipMixin:
         except Exception:
             pass
 
-    def _flip_delete_stream(self, name):
-        self.unflip_card()
-        try:
-            self.delete_streaming(name)
-        except Exception:
-            pass
-
-    def _flip_cover(self, name):
-        self._pending_flip = (name, True, "config")
-        try:
-            picked = filedialog.askopenfilename(
-                title=name,
-                filetypes=[("Imagens", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.ico"),
-                           ("Todas", "*.*")],
-                parent=self.root)
-        except Exception:
-            picked = ""
-        try:
-            if picked and self.set_game_cover(name, picked):
-                try:
-                    self.refresh_ui()
-                except Exception:
-                    pass
-        finally:
-            self._restore_pending_flip()
-
     def _flip_open_folder(self, name):
         try:
             self.open_game_location(name)
         except Exception:
             pass
 
-    def _flip_delete_game(self, name):
-        self.unflip_card()
-        lang = self.lang
-        try:
-            if self.game_is_platform(name):
-                self.remove_platform_game(name)
-                return
-            if self.game_is_external(name):
-                self.remove_external_game(name)
-                return
-        except Exception:
-            pass
-
-        def _yes(menu):
+    def _flip_delete_yes(self, name, is_game):
+        if is_game:
             try:
-                menu.close()
+                if self.game_is_platform(name):
+                    self.unflip_card()
+                    self.remove_platform_game(name)
+                    return
+                if self.game_is_external(name):
+                    self.unflip_card()
+                    self.remove_external_game(name)
+                    return
             except Exception:
                 pass
+            self.unflip_card()
             try:
-                ok = self.delete_game_folder(name)
+                if self.delete_game_folder(name):
+                    try:
+                        self.refresh_ui()
+                    except Exception:
+                        pass
             except Exception:
-                ok = False
-            if ok:
-                try:
-                    self.refresh_ui()
-                except Exception:
-                    pass
-
-        menu = NexusMenuWindow(self, t("ctx_delete", lang), [],
-                               subtitle=f"{t('games_del_q', lang)} '{name}'?",
-                               icon="\U0001F5D1", width=460)
-        menu.set_options([(t("ctx_delete", lang), lambda: _yes(menu)),
-                          (t("sidebar_close", lang), menu.close)])
+                pass
+            return
+        self.unflip_card()
+        try:
+            custom = self.settings.get("custom_streamings", {})
+            if name in custom:
+                del custom[name]
+                self.settings["custom_streamings"] = custom
+            else:
+                hidden = self.settings.get("hidden_streamings", [])
+                if name not in hidden:
+                    hidden.append(name)
+                self.settings["hidden_streamings"] = hidden
+            favs = self.settings.get("favorites", [])
+            if name in favs:
+                favs.remove(name)
+                self.settings["favorites"] = favs
+            save_settings(self.settings)
+            try:
+                self.refresh_ui()
+            except Exception:
+                pass
+        except Exception:
+            pass

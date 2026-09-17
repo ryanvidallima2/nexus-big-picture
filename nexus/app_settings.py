@@ -137,10 +137,13 @@ class AppSettingsMixin:
                                icon="\u2139", width=440)
         menu.set_options([(t("sidebar_close", self.lang), menu.close)])
 
-    def change_logo(self, name):
-        filepath = filedialog.askopenfilename(
-            title=f"Logo de {name}",
-            filetypes=[("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp *.ico"), ("Todas", "*.*")])
+    def change_logo(self, name, path=None):
+        if path is None:
+            filepath = filedialog.askopenfilename(
+                title=f"Logo de {name}",
+                filetypes=[("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp *.ico"), ("Todas", "*.*")])
+        else:
+            filepath = path
         if filepath:
             ext = os.path.splitext(filepath)[1].lower()
             dest = os.path.join(IMAGES_DIR, f"{name}_logo{ext}")

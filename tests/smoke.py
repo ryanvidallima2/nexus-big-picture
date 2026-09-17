@@ -140,6 +140,18 @@ def run():
               "verso config (8 acoes)")
         app.flip_opt_move(1)
         check(app.flipped["idx"] == 1, "opcao navega")
+        app.flip_show_page("color")
+        root.update()
+        check(app.flipped["page"] == "color" and len(app.flipped["opts"]) == 17,
+              "verso cor (16+cancela)")
+        app.flip_show_page("url")
+        root.update()
+        check(app.flipped["page"] == "url" and app.flipped.get("entry") is not None
+              and len(app.flipped["opts"]) == 2, "verso url (campo+ok)")
+        app.flip_show_page("delete")
+        root.update()
+        check(app.flipped["page"] == "delete" and len(app.flipped["opts"]) == 2,
+              "verso excluir confirma")
         app.unflip_card()
         root.update()
         check(app.flipped is None, "card desvira")

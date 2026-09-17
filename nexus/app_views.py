@@ -139,7 +139,15 @@ class AppViewsMixin:
             return
         if getattr(self, "flipped", None) is not None and self.nav_level == "items":
             # Verso aberto: setas passeiam nas opcoes (como no dialogo).
+            # Com cursor num campo de texto, as setas sao do campo.
             # Se o foco saiu do card virado, desvira e navega normal.
+            try:
+                import tkinter as _tk
+                _f = self.root.focus_get()
+                if isinstance(_f, _tk.Entry):
+                    return
+            except Exception:
+                pass
             try:
                 w, _n, _g = self.focused_card()
                 same = (w is not None and w == self.flipped.get("widget"))
