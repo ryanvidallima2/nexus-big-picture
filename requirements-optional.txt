@@ -1,0 +1,5 @@
+# Dependencias opcionais do Nexus (o app abre sem elas, com funcao reduzida).
+# O start.bat tenta instalar e segue mesmo se falhar (ex.: pygame ainda
+# nao tem wheel para Python 3.14 -> controle fica indisponivel).
+pywebview>=4
+pygame>=2.5

@@ -1,0 +1,49 @@
+# Nexus - Big Picture: o que NAO vai para o GitHub
+# (dados locais, especificos desta maquina)
+
+# Banco local e configuracoes pessoais (cores, favoritos, historico, GUID do controle)
+nexus.db
+settings.json
+
+# Logs e erros locais
+nexus_error.log
+*.log
+
+# Cache Python
+__pycache__/
+*.py[cod]
+
+# Backups locais de refatoracao
+*.bak
+
+# Config de pasta do Windows (contem caminho absoluto desta maquina)
+desktop.ini
+
+# Perfil do navegador embutido (logins, cookies, senhas!) fica fora do projeto,
+# em %LOCALAPPDATA%\Nexus - nunca commitar credenciais
+browser_profile/
+
+# Pasta de jogos (binarios e arquivos de cada maquina - nunca commitar)
+games/
+
+# Capas pessoais de jogos baixadas pelo app (Steam/icone/Xbox de cada maquina).
+# As 32 logos padrao dos streamings JA estao rastreadas e continuam no git;
+# a regra abaixo so esconde as capas novas que cada um baixar na sua maquina.
+streaming_images/*_logo.jpg
+streaming_images/*_logo.jpeg
+streaming_images/*_logo.png
+streaming_images/*_logo.webp
+streaming_images/*_logo.gif
+streaming_images/*_logo.bmp
+streaming_images/*_logo.ico
+
+# Build do executavel (PyInstaller)
+dist/
+build/
+*.spec
+Nexus-v*.zip
+
+# Editores / SO
+.vscode/
+.idea/
+Thumbs.db

@@ -1,0 +1,140 @@
+# RELATORIO FINAL - Nexus Big Picture v5.0
+
+Data: 07/09/2026
+
+## 1. RESUMO
+
+Reescrita completa do Nexus com interface estilo Steam Big Picture Mode.
+Banco de dados SQLite, deep links, sidebar, gamepad e navegacao por teclado.
+
+---
+
+## 2. ESTRUTURA DE ARQUIVOS
+
+```
+D:\Nexus App\Default Project\
+├── bigpicture.py          # Codigo principal (~750 linhas)
+├── start.bat              # Launcher (4 linhas)
+├── settings.json          # Configuracoes salvas
+├── nexus.db               # Banco SQLite (auto-criado)
+├── README.md              # Documentacao
+├── RELATORIO.txt          # Este relatorio
+├── generate_logos.py      # Gerador de logos PNG
+├── download_logos.py      # Script de download (fallback)
+└── streaming_images/      # 32 logos
+    ├── Netflix_logo.jpg
+    ├── Netflix_logo.png
+    ├── Youtube_logo.png
+    └── ... (30+ arquivos)
+```
+
+---
+
+## 3. COMPONENTES DO CODIGO
+
+### 3.1 Imports (linhas 1-16)
+tkinter, PIL, shutil, webbrowser, json, os, sys, sqlite3, subprocess, threading, time, random, datetime, pygame
+
+### 3.2 Config (linhas 22-37)
+Constantes de cores e tamanhos. Cards: 260x340px. Sidebar: 380px.
+
+### 3.3 STREAMINGS_DB (linhas 41-76)
+32 servicos com: url, category, icon, color, deep_link, url_template, top_content
+
+### 3.4 NexusDB (linhas 153-188)
+SQLite com tabelas: history (id, service_name, content_title, timestamp), stats (service_name, total_watches, last_watched)
+
+### 3.5 StreamingOpener (linhas 191-210)
+Deep links: tenta protocolo nativo (netflix://, youtube://), fallback para URL web.
+
+### 3.6 GamepadManager (linhas 213-248)
+Thread separada para polling de gamepad via pygame. 20ms polling.
+
+### 3.7 BigPictureApp (linhas 251-750)
+ Classe principal com:
+ - build_ui(): Layout completo com top bar, content area, sidebar
+ - Navegacao: Left/Right/Up/Down/Enter/Escape
+ - render_home(): Recentes, Favoritos, categorias
+ - render_section(): Cards em linha horizontal
+ - create_card(): Card com cor do servico, logo, top 3 titulos
+ - Sidebar: Historico, Favoritos, Tema, Resolucao, Gamepad
+ - Context menu: Abrir, Favorito, Logo, Excluir, Copiar URL
+ - Adicionar streaming: Formulario completo
+ - Resolucao: 5 opcoes
+ - Tema: 8 cores
+
+---
+
+## 4. 32 STREAMINGS
+
+### Filmes (18):
+Netflix, Disney+, Amazon Prime, HBO Max, Crunchyroll, Pluto TV,
+Apple TV, Peacock, Paramount+, Discovery+, Globoplay, Vix,
+Curiosity Stream, MUBI, Shudder, BritBox, Tubi, Plex
+
+### Videos (8):
+YouTube, Twitch, Dailymotion, Kodi, Jellyfin, Mixer, Vimeo, Rumble
+
+### Musica (6):
+Spotify, Bandcamp, SoundCloud, Tidal, Deezer, Mixcloud
+
+---
+
+## 5. RECURSOS NOVOS (v5.0)
+
+1. **UI Big Picture**: Cards grandes com cor do servico, layout horizontal
+2. **SQLite**: Historico e estatisticas persistentes
+3. **Deep Links**: Protocolos nativos (netflix://, youtube://, etc)
+4. **Sidebar**: Painel lateral estilo Steam
+5. **Gamepad**: Suporte via pygame (XInput)
+6. **Navegacao por teclado**: Setas, Enter, Esc
+7. **Top 3 titulos**: Cada card mostra os 3 principais titulos
+8. **Cores por servico**: Netflix=vermelho, YouTube=verde, etc
+
+---
+
+## 6. ATALHOS
+
+| Tecla | Funcao |
+|-------|--------|
+| Setas | Navegar |
+| Enter | Abrir |
+| Esc | Voltar |
+| F11 | Fullscreen |
+| F5 | Atualizar |
+| Ctrl+Q | Sidebar |
+
+---
+
+## 7. BIBLIOTECAS
+
+- Python 3.12
+- Pillow (pip install Pillow)
+- pygame (pip install pygame) - gamepad
+- tkinter (incluso)
+- sqlite3 (incluso)
+
+---
+
+## 8. ADENDO v5.5.0 (17/09/2026) - Refatoracao fase 2 + fixes
+
+bigpicture.py: 8409 -> 48 linhas (entry fino). Codigo agora em nexus/
+(27 modulos, mixins AppShell/Views/Games/Cards/Remote/Settings).
+Sem bump/commit durante o trabalho; validado por fase com py_compile,
+boot contido e smokes (virou tests/smoke.py permanente).
+Backups locais bigpicture.py.bak* removidos apos a conclusao.
+
+Fixes no caminho:
+1. start.bat nao achava o Python da pasta (caminho com espaco quebrava
+   o check de versao e o start): pasta adicionada a lista + aspas nos usos.
+2. F11 morto no YouTube: innerHTML joga TypeError sob TrustedHTML e
+   abortava a injecao antes do listener. Refeito com DOM puro + listener
+   do F11 independente da barrinha (nexus_browser.py).
+3. Titulos das abas e tags de categoria hardcoded em PT: novas chaves
+   sec_favorites/sec_all + cat_label() em nexus/i18n.py.
+4. Fechar app abria a pagina no navegador externo: o fallback <5s (feito
+   p/ crash do WebView2) disparava em fechamento manual rapido. Agora so
+   em morte anormal (exit code != 0) e nunca em morte pedida (Back+Start,
+   quit) via _browser_closing; fechamento rapido tambem sai do remoto.
+5. Watchdog do browser: wait(timeout=6000) unico derrubava o remoto aos
+   ~100min com o browser vivo. Rearmado em fatias de 600s.

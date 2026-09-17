@@ -1,0 +1,3 @@
+# Dependencia obrigatoria do Nexus (o app nao abre sem ela).
+# O start.bat instala sozinho se faltar.
+Pillow>=10
