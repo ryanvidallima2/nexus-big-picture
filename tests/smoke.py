@@ -195,8 +195,25 @@ def run():
                 for c in kids:
                     walk(c)
 
-            walk(w)
-            check(len(bound) >= 6, "clique em toda area do card")
+        walk(w)
+        check(len(bound) >= 6, "clique em toda area do card")
+        app.set_view_mode("all", "list")
+        app.render_tab("all")
+        root.update()
+        rw = app.sections[0]["widgets"][0]
+        rn = app.sections[0]["names"][0]
+        row_kids = list(rw.winfo_children())
+        app.flip_card(rw, rn, False)
+        root.update()
+        front_hidden = all(not c.winfo_ismapped() for c in row_kids)
+        check(app.flipped is not None and front_hidden
+              and app.flipped["back"].winfo_ismapped(),
+              "linha vira inteira (frente some)")
+        app.unflip_card()
+        root.update()
+        check(app.flipped is None
+              and all(c.winfo_ismapped() for c in row_kids),
+              "linha desvira (frente volta)")
 
         entry = tk.Entry(root)
         entry.pack()

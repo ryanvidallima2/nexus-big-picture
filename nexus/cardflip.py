@@ -93,16 +93,33 @@ class CardFlipMixin:
         flip = {"widget": widget, "name": name, "is_game": bool(is_game),
                 "tall": bool(tall), "back": back, "box": box,
                 "opts": [], "idx": 0, "page": "main", "busy": False,
-                "status": None, "orig_h": None, "icon": icon}
+                "status": None, "orig_h": None, "icon": icon, "front": []}
         self.flipped = flip
         try:
             if tall:
                 back.place(relx=0, rely=0, relwidth=1, relheight=1)
             else:
+                # Linha (lista/detalhes): esconde a frente e o verso vira
+                # a linha inteira, com neon em volta de tudo.
                 try:
                     flip["orig_h"] = widget.cget("height")
                 except Exception:
                     flip["orig_h"] = 52
+                for ch in list(widget.winfo_children()):
+                    if ch == back:
+                        continue
+                    try:
+                        info = ch.pack_info()
+                    except Exception:
+                        continue
+                    keys = ("side", "fill", "expand", "padx", "pady",
+                            "anchor", "ipadx", "ipady", "before", "after")
+                    flip["front"].append(
+                        (ch, {k: info[k] for k in keys if k in info}))
+                    try:
+                        ch.pack_forget()
+                    except Exception:
+                        pass
                 try:
                     widget.configure(height=190)
                 except Exception:
@@ -135,6 +152,15 @@ class CardFlipMixin:
             back = flip.get("back")
             if back is not None:
                 back.destroy()
+        except Exception:
+            pass
+        try:
+            for ch, kwargs in flip.get("front") or []:
+                try:
+                    if ch.winfo_exists():
+                        ch.pack(**kwargs)
+                except Exception:
+                    pass
         except Exception:
             pass
 
