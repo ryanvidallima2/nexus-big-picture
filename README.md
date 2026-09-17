@@ -114,3 +114,18 @@ Default Project/
 │   └── ... (32 arquivos)
 └── README.md              # Este arquivo
 ```
+
+## Rodar em outro PC (sem configurar nada)
+
+1. Copie a pasta inteira para o outro PC (pendrive, rede, etc.).
+2. Duplo clique em `start.bat`.
+
+O launcher encontra o Python sozinho (qualquer instalacao 3.10+),
+instala o que faltar (Pillow obrigatorio; pywebview/pygame se der),
+limpa cache velho de outro Python e abre sem console. Na primeira vez
+precisa de internet para baixar as dependencias.
+
+- Sem pygame (ex.: Python 3.14 ainda sem wheel): o app abre normal,
+  so o controle fica indisponivel (mouse/teclado funcionam).
+- Para comecar do zero nessa maquina, apague `settings.json` e
+  `nexus.db` (sao recriados; nao vao para o git).
