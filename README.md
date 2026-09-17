@@ -1,4 +1,4 @@
-# Nexus - Big Picture v5.4
+# Nexus - Big Picture v5.5.0
 
 Interface de streaming inspirada no Steam Big Picture Mode.
 
@@ -102,12 +102,43 @@ Nexus/
 ## Estrutura do codigo (desenvolvimento)
 
 ```
-Default Project/
-├── bigpicture.py          # Codigo principal
+Nexus App/
+├── bigpicture.py          # Entry fino (48 linhas: Tk + BigPictureApp + main)
 ├── nexus_browser.py       # Janela do navegador embutido (Site)
+├── nexus/                 # Pacote interno (27 modulos)
+│   ├── app.py             # BigPictureApp (composicao dos 6 mixins abaixo)
+│   ├── app_shell.py       # Init + construcao da janela
+│   ├── app_views.py       # Navegacao, abas e renderizacao base
+│   ├── app_games.py       # Aba Jogos (deteccao, capas, lancamento)
+│   ├── app_cards.py       # Cards, grade, lista e foco
+│   ├── app_remote.py      # Mapeamento do controle e modo remoto
+│   ├── app_settings.py    # Menus, sidebar, tema, idioma, update
+│   ├── gamepad.py         # GamepadManager (polling pygame)
+│   ├── keyboard.py        # Teclado virtual
+│   ├── panels.py          # SidePanel (5 paineis) + GamepadConfigWindow
+│   ├── dialogs.py         # OpenTarget/GameCard/Texto/Menu + modais
+│   ├── i18n.py            # TRANSLATIONS pt-br/en + t()/cat_label()
+│   ├── streamings.py      # Base dos 32 servicos
+│   ├── games.py           # Steam/Epic/Xbox + capas
+│   ├── apps.py            # UWP/atalho/exe + winget/Store
+│   ├── input.py           # SendInput + sons + campo de texto
+│   ├── pad.py             # Mapas e watch lists do controle
+│   ├── win32.py           # Fullscreen, hwnd, titulo escuro (DWM)
+│   ├── browser.py         # Processo do navegador embutido
+│   ├── opener.py          # Deep-link / URL (com fallback externo)
+│   ├── paths.py           # Pastas, perfil, BROWSER_PROCS
+│   ├── config.py          # Config, settings.json, abas, modos
+│   ├── database.py        # SQLite (historico, stats)
+│   ├── focus.py           # Foco unificado mouse+teclado+controle
+│   ├── util.py            # Normalizacao (_norm)
+│   ├── update.py          # Release GitHub + changelog
+│   └── version.py         # APP_VERSION (5.5.0)
+├── tests/
+│   └── smoke.py           # Suite: py_compile + boot + render + modulos
+│                          # (rode: Python\python.exe tests\smoke.py)
 ├── start.bat              # Launcher
-├── settings.json          # Configuracoes salvas
-├── nexus.db               # Banco SQLite (criado automaticamente)
+├── settings.json          # Configuracoes salvas (local, nao vai p/ git)
+├── nexus.db               # Banco SQLite (local, nao vai p/ git)
 ├── streaming_images/      # Logos dos streamings
 │   ├── Netflix_logo.jpg
 │   ├── YouTube_logo.png

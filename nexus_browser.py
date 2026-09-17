@@ -120,8 +120,16 @@ _TOAST_JS = (
     "setTimeout(function(){try{d.remove();}catch(e){}},4500);'ok';}catch(e){'fail';}"
 )
 
-# Barra discreta + modal de saida + F11 (re-injetado se a pagina trocar)
+# Barra discreta + modal de saida + F11 (re-injetado se a pagina trocar).
+# DOM puro, sem innerHTML: o YouTube exige TrustedHTML e o innerHTML joga
+# TypeError, abortando a injecao antes do listener do F11. O F11 tem guarda
+# propria, independente da barrinha.
 _CHROME_JS = """try{
+if(!window.__nexusF11){window.__nexusF11=true;
+document.addEventListener('keydown',function(ev){
+if(ev&&ev.key==='F11'){try{ev.preventDefault();}catch(e){}try{window.pywebview.api.toggle_fullscreen();}catch(e){}}
+else if(ev&&ev.key==='Escape'){var q=document.getElementById('nexus-quit');if(q&&q.style.display==='flex'){q.style.display='none';}}
+},true);}
 if(!document.getElementById('nexus-bar')){
 var css='#nexus-bar{position:fixed;top:10px;right:10px;z-index:2147483647;display:flex;gap:6px;opacity:.18;transition:opacity .2s;}'
 +'#nexus-bar:hover{opacity:1;}'
@@ -140,20 +148,23 @@ var css='#nexus-bar{position:fixed;top:10px;right:10px;z-index:2147483647;displa
 var st=document.createElement('style');st.textContent=css;
 (document.head||document.documentElement).appendChild(st);
 var bar=document.createElement('div');bar.id='nexus-bar';bar.title='Nexus (F11: tela cheia)';
-bar.innerHTML='<div class=nxb id=nxb-min title=Minimizar>&ndash;</div><div class=nxb id=nxb-close title=Fechar>&times;</div>';
+var bm=document.createElement('div');bm.className='nxb';bm.id='nxb-min';bm.title='Minimizar';bm.textContent='–';
+var bc=document.createElement('div');bc.className='nxb';bc.id='nxb-close';bc.title='Fechar';bc.textContent='×';
+bar.appendChild(bm);bar.appendChild(bc);
 (document.body||document.documentElement).appendChild(bar);
 var ov=document.createElement('div');ov.id='nexus-quit';
-ov.innerHTML='<div id=nexus-quit-box><h2>&#x1F6AA; Sair do Nexus</h2><p>Deseja realmente sair do aplicativo?</p><button id=nxb-no>N&atilde;o, ficar</button><button id=nxb-yes>Sim, sair</button></div>';
+var qb=document.createElement('div');qb.id='nexus-quit-box';
+var qh=document.createElement('h2');qh.textContent='🚪 Sair do Nexus';
+var qp=document.createElement('p');qp.textContent='Deseja realmente sair do aplicativo?';
+var qn=document.createElement('button');qn.id='nxb-no';qn.textContent='Não, ficar';
+var qy=document.createElement('button');qy.id='nxb-yes';qy.textContent='Sim, sair';
+qb.appendChild(qh);qb.appendChild(qp);qb.appendChild(qn);qb.appendChild(qy);ov.appendChild(qb);
 (document.body||document.documentElement).appendChild(ov);
 document.getElementById('nxb-min').onclick=function(){try{window.pywebview.api.minimize();}catch(e){}};
 document.getElementById('nxb-close').onclick=function(){document.getElementById('nexus-quit').style.display='flex';try{document.getElementById('nxb-no').focus();}catch(e){}};
 document.getElementById('nxb-no').onclick=function(){document.getElementById('nexus-quit').style.display='none';};
 document.getElementById('nxb-yes').onclick=function(){try{window.pywebview.api.quit_app();}catch(e){window.close();}};
 document.getElementById('nexus-quit').onclick=function(ev){if(ev.target&&ev.target.id==='nexus-quit'){ev.target.style.display='none';}};
-document.addEventListener('keydown',function(ev){
-if(ev&&ev.key==='F11'){try{ev.preventDefault();}catch(e){}try{window.pywebview.api.toggle_fullscreen();}catch(e){}}
-else if(ev&&ev.key==='Escape'){var q=document.getElementById('nexus-quit');if(q&&q.style.display==='flex'){q.style.display='none';}}
-},true);
 'ok';}
 }catch(e){'fail';}"""
 

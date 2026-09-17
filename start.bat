@@ -21,6 +21,7 @@ rem    python.exe, que nao entende `-w` e quebrava o boot).
 set "PYW="
 set "PY="
 for %%P in (
+    "C:\Users\User\Desktop\Pasta do Ryan\Python\pythonw.exe"
     "%LOCALAPPDATA%\Programs\Python\Python312\pythonw.exe"
     "%LOCALAPPDATA%\Programs\Python\Python313\pythonw.exe"
     "%LOCALAPPDATA%\Programs\Python\Python314\pythonw.exe"
@@ -74,7 +75,7 @@ pause
 exit /b 1
 
 :foundver
-%PY% -c "import sys; sys.exit(0 if sys.version_info>=(3,10) else 1)" >nul 2>&1
+"%PY%" -c "import sys; sys.exit(0 if sys.version_info>=(3,10) else 1)" >nul 2>&1
 if errorlevel 1 (
     echo [Nexus] Encontrado mas antigo demais: %PYW%
     echo [Nexus] Instale o Python 3.10+ em https://www.python.org/downloads/ e rode de novo.
@@ -86,32 +87,36 @@ if errorlevel 1 (
 echo [Nexus] Usando: %PYW%
 
 rem 3) Dependencia obrigatoria (sem Pillow o app nem abre).
-%PY% -c "import PIL" >nul 2>&1
+"%PY%" -c "import PIL" >nul 2>&1
 if errorlevel 1 (
     echo [Nexus] Instalando Pillow...
-    %PY% -m pip install --disable-pip-version-check -r requirements.txt
+    "%PY%" -m pip install --disable-pip-version-check -r requirements.txt
     if errorlevel 1 (
         echo [Nexus] ERRO: nao consegui instalar o Pillow ^(sem internet?^).
-        echo [Nexus] Rode uma vez com internet ou instale manual: %PY% -m pip install Pillow
+        echo [Nexus] Rode uma vez com internet ou instale manual: "%PY%" -m pip install Pillow
         pause
         exit /b 1
     )
 )
 
 rem 4) Opcionais: tenta, mas segue o jogo se falhar.
-%PY% -c "import webview" >nul 2>&1
+"%PY%" -c "import webview" >nul 2>&1
 if errorlevel 1 (
     echo [Nexus] Instalando navegador embutido ^(pywebview^)...
-    %PY% -m pip install --disable-pip-version-check pywebview >nul 2>&1
+    "%PY%" -m pip install --disable-pip-version-check pywebview >nul 2>&1
     if errorlevel 1 echo [Nexus] Aviso: sem navegador embutido ^(abre no navegador normal^).
 )
-%PY% -c "import pygame" >nul 2>&1
+"%PY%" -c "import pygame" >nul 2>&1
 if errorlevel 1 (
     echo [Nexus] Instalando suporte a controle ^(pygame^)...
-    %PY% -m pip install --disable-pip-version-check pygame >nul 2>&1
+    "%PY%" -m pip install --disable-pip-version-check pygame >nul 2>&1
     if errorlevel 1 echo [Nexus] Aviso: sem suporte a controle nesta maquina.
 )
 
 rem 5) Abre sem console.
-start "" %PYW% bigpicture.py
+if "%PYW%"=="py -w" (
+    start "" py -w bigpicture.py
+) else (
+    start "" "%PYW%" bigpicture.py
+)
 exit /b 0

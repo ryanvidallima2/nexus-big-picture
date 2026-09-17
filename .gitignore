@@ -13,6 +13,9 @@ nexus_error.log
 __pycache__/
 *.py[cod]
 
+# Backups locais de refatoracao
+*.bak
+
 # Config de pasta do Windows (contem caminho absoluto desta maquina)
 desktop.ini
 
