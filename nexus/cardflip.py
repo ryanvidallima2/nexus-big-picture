@@ -642,8 +642,9 @@ class CardFlipMixin:
                           highlightbackground=Config.BORDER)
             b.grid(row=i // 4, column=i % 4, padx=3, pady=3, sticky="nsew")
             idx = len(flip["opts"])
-            flip["opts"].append((b, lambda col=color: self._flip_pick_color(
-                name, is_game, col)))
+            flip["opts"].append((b, lambda col=color: self.cfg_keep_flip(
+                name, is_game, "color",
+                lambda: self.set_card_color(name, col))))
             b.bind("<Enter>", lambda e, j=idx: self.flip_set_focus(j))
             b.bind("<Button-1>", lambda e, j=idx: self.flip_click(j))
         for c in range(4):

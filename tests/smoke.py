@@ -144,6 +144,12 @@ def run():
         root.update()
         check(app.flipped["page"] == "color" and len(app.flipped["opts"]) == 17,
               "verso cor (16+cancela)")
+        app.flip_click(0)
+        root.update()
+        check(app.settings.get("card_colors", {}).get(n)
+              and app.flipped is not None
+              and app.flipped["page"] == "color", "cor aplica e continua")
+        w = app.flipped["widget"]
         app.flip_show_page("url")
         root.update()
         check(app.flipped["page"] == "url" and app.flipped.get("entry") is not None
@@ -163,7 +169,11 @@ def run():
                     bound.append(True)
             except Exception:
                 pass
-            for c in x.winfo_children():
+            try:
+                kids = x.winfo_children()
+            except Exception:
+                return
+            for c in kids:
                 walk(c)
 
         walk(w)
