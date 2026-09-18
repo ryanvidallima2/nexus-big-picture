@@ -7,7 +7,7 @@ import tkinter as tk
 
 from .config import Config
 from .i18n import t
-from .input import VK_BACK, tap_key, type_text
+from .input import VK_BACK, VK_RETURN, tap_key, type_text
 from .win32 import (
     _apply_dark_title, bring_to_front, force_topmost_noactivate,
     foreground_hwnd,
@@ -367,9 +367,9 @@ class NexusKeyboard:
         except Exception:
             pass
 
-    def force_front(self, retries=2):
+    def force_front(self, retries=4):
         """Traz p/ frente SEM roubar o foco (teclado sobre app/site em
-        tela cheia). Repete 2x: fullscreen pode se reafirmar depois."""
+        tela cheia ou janela). Repete: fullscreen pode se reafirmar depois."""
         if self.closed:
             return
         try:
@@ -623,7 +623,7 @@ class NexusKeyboard:
             self.toggle_emoji()
             return
         if key == "ok":
-            self.close()
+            self.submit()
             return
         if key == "\u21E7":
             self.shift = not self.shift
@@ -685,6 +685,26 @@ class NexusKeyboard:
             tap_key(vk)
         except Exception:
             pass
+
+    def submit(self):
+        """Confirma o texto e fecha. No modo global (sobre app/site, sem
+        entry do Nexus) manda Enter junto p/ submeter a busca/login; com
+        entry do Nexus so fecha (o dialogo confirma separado)."""
+        try:
+            global_mode = True
+            try:
+                ent = self.entry
+                global_mode = not (ent is not None and ent.winfo_exists())
+            except Exception:
+                pass
+        except Exception:
+            global_mode = True
+        self.close()
+        if global_mode:
+            try:
+                self._type_global_key(VK_RETURN)
+            except Exception:
+                pass
 
     def close(self):
         if self.closed:

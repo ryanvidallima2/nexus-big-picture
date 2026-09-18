@@ -1000,6 +1000,121 @@ check(appK.settings["pad_nexus"].get("cards") == "west"
 check(GPStub([{"name": "B", "guid": "B"}], "B").current_guid() == "B"
       and GPStub([], None).current_guid() == "", "K8 guid atual")
 
+# ================= L) teclado: abre no 1o confirmar, fecha ao confirmar ====
+import nexus.keyboard as KMOD  # noqa: E402
+ktaps = []
+_orig_ktap = KMOD.tap_key
+KMOD.tap_key = lambda vk: ktaps.append(vk)
+
+# L1: Start com teclado global confirma o texto (fecha + Enter)
+appL = StubApp()
+kbL = kb_cls(appL, None)
+appL.kb_window = kbL
+root.update()
+mgrL = GM.__new__(GM)
+mgrL.app = appL
+mgrL.joystick = FakeJS()
+mgrL.dpad_sources = [("hat", 0)]
+mgrL.raw_to_logical = {0: "south", 1: "east", 7: "start"}
+mgrL.logical_to_raw = {}
+mgrL.hat_debounce = {}
+mgrL.prev_buttons = {}
+mgrL.remote_cal = None
+mgrL.remote_off = [0.0, 0.0, 0.0, 0.0]
+mgrL.remote_kb_time = 0.0
+mgrL.remote_enter_time = 0.0
+mgrL.remote_service = ""
+mgrL.remote_hwnd = None
+mgrL.remote_watch_list = []
+mgrL.remote_watch_count = 0
+mgrL.remote_watch_seen = False
+mgrL.remote_watch_missed = 0
+mgrL._maybe_hotplug = lambda: None
+mgrL.joystick.btns = {7}
+GM._poll_remote(mgrL)
+check(kbL.closed and appL.kb_window is None and ktaps == [KMOD.VK_RETURN],
+      "L1 Start confirma texto (fecha + Enter)")
+
+# L2/L3: tecla ok: global fecha + Enter; com entry so fecha
+ktaps.clear()
+kbLG = kb_cls(appL, None)
+kbLG.press_key("ok")
+check(kbLG.closed and ktaps == [KMOD.VK_RETURN], "L2 ok global fecha + Enter")
+ktaps.clear()
+kbLE = kb_cls(appL, tk.Entry(root))
+kbLE.press_key("ok")
+check(kbLE.closed and ktaps == [], "L3 ok com entry fecha sem Enter")
+KMOD.tap_key = _orig_ktap
+
+# L4/L5: confirmar no Site e via Enter agenda a checagem do teclado
+_tL, _cL = GMOD2.tap_key, GMOD2.mouse_click
+tapsL = []
+GMOD2.tap_key = lambda vk: tapsL.append(vk)
+GMOD2.mouse_click = lambda right=False: None
+
+
+def _mgrE(bnav, action):
+    aE = StubApp()
+    aE.browser_nav_active = lambda: bnav
+    aE.remote_action_for = lambda l: action if l == "south" else None
+    aE.kb_window = None
+    mE = GM.__new__(GM)
+    mE.app = aE
+    mE.joystick = FakeJS()
+    mE.dpad_sources = [("hat", 0)]
+    mE.raw_to_logical = {0: "south"}
+    mE.logical_to_raw = {}
+    mE.hat_debounce = {}
+    mE.prev_buttons = {}
+    mE.remote_cal = None
+    mE.remote_off = [0.0, 0.0, 0.0, 0.0]
+    mE.remote_kb_time = 0.0
+    mE.remote_enter_time = 0.0
+    mE.remote_service = ""
+    mE.remote_hwnd = None
+    mE.remote_watch_list = []
+    mE.remote_watch_count = 0
+    mE.remote_watch_seen = False
+    mE.remote_watch_missed = 0
+    mE.browser_nav_dir = (0, 0)
+    mE.browser_nav_next = 0.0
+    mE._maybe_hotplug = lambda: None
+    mE.joystick.btns = {0}
+    return mE
+
+
+mgrE4 = _mgrE(True, "click_left")
+kbchecks4 = []
+mgrE4._maybe_open_kb_for_focus = lambda: kbchecks4.append(True)
+GM._poll_remote(mgrE4)
+check(tapsL == [GMOD2.VK_RETURN] and kbchecks4 == [True],
+      "L4 confirmar no Site checa teclado no 1o toque")
+mgrE5 = _mgrE(False, "enter")
+kbchecks5 = []
+mgrE5._maybe_open_kb_for_focus = lambda: kbchecks5.append(True)
+mgrE5.prev_buttons = {}
+tapsL.clear()
+GM._poll_remote(mgrE5)
+check(tapsL == [GMOD2.VK_RETURN] and kbchecks5 == [True],
+      "L5 Enter checa teclado no 1o toque")
+GMOD2.tap_key = _tL
+GMOD2.mouse_click = _cL
+
+# L6: foco com atraso (2a fase) tambem abre o teclado
+_real_gfit = GMOD2.focused_is_text_field
+_script = [False, True]
+GMOD2.focused_is_text_field = lambda: _script.pop(0) if _script else False
+appT = StubApp()
+appT.kb_window = None
+openedT = []
+appT.open_keyboard = lambda *a, **k: openedT.append(True)
+mgrT = GM.__new__(GM)
+mgrT.app = appT
+GM._focus_check_thread(mgrT)
+root.update()
+check(openedT == [True], "L6 foco tardio abre o teclado")
+GMOD2.focused_is_text_field = _real_gfit
+
 print("PARTE 5 OK (%d checks)" % COUNT[0], flush=True)
 
 # ================= L) 1 clique abre (retry) =================
