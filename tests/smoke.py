@@ -77,6 +77,14 @@ def run():
         tk_errors.append(str(val))
 
     tk.Tk.report_callback_exception = _rep
+    import threading
+    thread_errors = []
+    _orig_thehook = threading.excepthook
+
+    def _thehook(args):
+        thread_errors.append(str(args.exc_value))
+
+    threading.excepthook = _thehook
     root = tk.Tk()
     root.withdraw()
     app = None
@@ -87,6 +95,9 @@ def run():
 
         from nexus.app import BigPictureApp as App2
         check(B.BigPictureApp is App2, "entry usa nexus.app")
+        check("webview" not in sys.modules, "webview lazy (fora do boot)")
+        from nexus.browser import browser_available
+        check(browser_available() is True, "browser disponivel (lazy ok)")
 
         for lang, title_all, tag in (("pt-br", "Todos os Streamings", "FILMES"),
                                      ("en", "All Streamings", "MOVIES")):
@@ -103,6 +114,21 @@ def run():
             root.update()
             texts = collect_texts(app.scroll_frame)
             check(title_all in texts and tag in texts, "render %s" % lang)
+
+        app.render_tab("all")
+        root.update()
+        before = [str(w) for w in app.scroll_frame.winfo_children()]
+        app.switch_tab("all")
+        root.update()
+        check([str(w) for w in app.scroll_frame.winfo_children()] == before
+              and len(before) > 0, "mesma aba nao reconstrói")
+        app.switch_tab("movies")
+        root.update()
+        check([str(w) for w in app.scroll_frame.winfo_children()] != before,
+              "outra aba reconstrói")
+        app.switch_tab("movies", force=True)
+        root.update()
+        check(True, "force reconstrói")
 
         for d in ("up", "down", "left", "right"):
             app._nav(d)
@@ -268,7 +294,21 @@ def run():
         check(True, "games scan+render")
     finally:
         try:
+            import time as _time
+            for _ in range(8):
+                try:
+                    root.update()
+                except Exception:
+                    pass
+                _time.sleep(0.5)
+        except Exception:
+            pass
+        try:
             tk.Tk.report_callback_exception = _orig_rep
+        except Exception:
+            pass
+        try:
+            threading.excepthook = _orig_thehook
         except Exception:
             pass
         try:
@@ -279,6 +319,8 @@ def run():
             pass
     if tk_errors:
         print("WARN callbacks Tk com erro (%d): %s" % (len(tk_errors), tk_errors[:3]))
+    for _te in thread_errors[:3]:
+        check(False, "thread sem excecao (teve: %s)" % (_te[:100],))
     return 0 if not fails else 1
 
 

@@ -742,7 +742,7 @@ class AppGamesMixin:
                   activebackground=Config.BG_CARD_HOVER,
                   activeforeground=Config.TEXT_PRIMARY,
                   relief="flat", cursor="hand2", bd=0, padx=20, pady=8,
-                  command=lambda: self.switch_tab("games")).pack(side="left")
+                   command=lambda: self.switch_tab("games", force=True)).pack(side="left")
         tk.Button(bar, text=f"\U0001F50D {t('games_detect', self.lang)}",
                   font=("Segoe UI", 13),
                   bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
