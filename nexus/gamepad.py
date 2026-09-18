@@ -833,6 +833,14 @@ class GamepadManager:
             is_text = focused_is_text_field()
         except Exception:
             is_text = False
+        if not is_text:
+            # Pagina lenta: o foco assenta depois do clique. Segunda
+            # chance automatica (~1,6s) p/ abrir com 1 clique so.
+            try:
+                time.sleep(1.2)
+                is_text = focused_is_text_field()
+            except Exception:
+                is_text = False
         if is_text:
             try:
                 self.app.root.after(0, self._open_kb_global)
