@@ -714,14 +714,23 @@ class GamepadManager:
                 self.app.using_gamepad = True
                 logical = self.logical_for_raw(btn_id)
                 kb = self.app.kb_window
-                if _modal_alive(kb) and logical in ("south", "east"):
-                    # Teclado aberto sobre o app: A digita, B fecha.
-                    # Continue: o botao ja foi tratado; sem isso o codigo
-                    # abaixo usaria `top` de outra iteracao (ou NameError).
+                if _modal_alive(kb) and logical in ("south", "east", "start"):
+                    # Teclado aberto sobre o app: A digita, B fecha,
+                    # Start confirma o texto (fecha + Enter). Continue:
+                    # o botao ja foi tratado; sem isso o codigo abaixo
+                    # usaria `top` de outra iteracao (ou NameError).
                     if logical == "south":
                         kb.press_focused()
-                    else:
+                    elif logical == "east":
                         kb.close()
+                    else:
+                        try:
+                            kb.submit()
+                        except Exception:
+                            try:
+                                kb.close()
+                            except Exception:
+                                pass
                     continue
                 top = top_modal(self.app)
                 if isinstance(top, NexusKeyboard):
@@ -729,6 +738,11 @@ class GamepadManager:
                         top.press_focused()
                     elif logical == "east":
                         top.close()
+                    elif logical == "start":
+                        try:
+                            top.submit()
+                        except Exception:
+                            pass
                 elif self.app.pad_capture is not None:
                     if logical == "east":
                         self.app.cancel_pad_capture()
@@ -759,6 +773,9 @@ class GamepadManager:
                             pass
                         if self.app.browser_nav_active():
                             tap_key(VK_RETURN)  # modo console: A abre o quadro
+                            # Site: selecionou campo de busca? Abre o teclado
+                            # ja no 1o confirmar (sem precisar de 2 cliques).
+                            self._maybe_open_kb_for_focus()
                         else:
                             mouse_click(right=False)
                             self._maybe_open_kb_for_focus()
@@ -768,6 +785,8 @@ class GamepadManager:
                         mouse_click(right=True)
                     elif action == "enter":
                         tap_key(VK_RETURN)
+                        # Enter que foca um campo (busca/login) abre o teclado.
+                        self._maybe_open_kb_for_focus()
                     elif action == "back":
                         tap_key(VK_ESCAPE)
                     elif action == "space":
@@ -803,9 +822,10 @@ class GamepadManager:
             pass
 
     def _maybe_open_kb_for_focus(self):
-        """Apos clique com o controle: se o foco caiu num campo de texto,
-        abre o teclado (com cooldown). Nos primeiros 6s de remoto, nao:
-        o foco inicial do app/site (barra de endereco etc.) nao conta."""
+        """Apos confirmar com o controle (clique/Enter, no Site ou no app):
+        se o foco caiu num campo de texto, abre o teclado (com cooldown).
+        Nos primeiros 3s de remoto, nao: o foco inicial do app/site
+        (barra de endereco etc.) nao conta."""
         try:
             if _modal_alive(self.app.kb_window):
                 return
@@ -814,7 +834,7 @@ class GamepadManager:
                 born = float(getattr(self, "remote_enter_time", 0.0) or 0.0)
             except Exception:
                 born = 0.0
-            if born and now - born < 6.0:
+            if born and now - born < 3.0:
                 return
             if now - (self.remote_kb_time or 0.0) < 3.0:
                 return
@@ -828,9 +848,20 @@ class GamepadManager:
             pass
 
     def _focus_check_thread(self):
+        # Duas fases: campo com foco imediato (0,45s) e pagina que foca com
+        # atraso via JS (busca com resultado instantaneo). Segunda fase so
+        # se o teclado ainda nao abriu.
         try:
             time.sleep(0.45)
             is_text = focused_is_text_field()
+            if not is_text:
+                try:
+                    if _modal_alive(self.app.kb_window):
+                        return
+                except Exception:
+                    pass
+                time.sleep(0.8)
+                is_text = focused_is_text_field()
         except Exception:
             is_text = False
         if is_text:
