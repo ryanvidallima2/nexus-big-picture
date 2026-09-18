@@ -1172,6 +1172,57 @@ root.update()
 check(openedT == [True], "L6 foco tardio abre o teclado")
 GMOD2.focused_is_text_field = _real_gfit
 
+# ================= PARTE 6: busca + favoritos segregados =================
+import nexus.app_settings as SETMOD  # noqa: E402
+import nexus.app_views as VIEWMOD  # noqa: E402
+from nexus.app_games import AppGamesMixin as _GMX  # noqa: E402
+_orig_set_save = SETMOD.save_settings
+SETMOD.save_settings = lambda s: None
+try:
+    for _k in ("is_game_name", "game_favorites", "is_favorite",
+               "_migrate_favorites", "toggle_favorite"):
+        setattr(StubApp, _k, getattr(SETMOD.AppSettingsMixin, _k))
+    setattr(StubApp, "_match_search", VIEWMOD.AppViewsMixin._match_search)
+    for _k in ("game_folder", "game_is_external", "game_is_platform"):
+        setattr(StubApp, _k, getattr(_GMX, _k))
+    StubApp.refresh_ui = lambda self: None
+
+    g = StubApp()
+    g.settings = {"favorites": [],
+                  "external_games": {"ZZJogo": {"exe": "x"}},
+                  "game_favorites": []}
+    g.search_query = ""
+    check(g.is_game_name("ZZJogo") is True, "M1 jogo detectado")
+    check(g.is_game_name("Netflix") is False, "M2 app nao e jogo")
+    g.toggle_favorite("ZZJogo")
+    check("ZZJogo" in g.settings["game_favorites"]
+          and "ZZJogo" not in g.settings["favorites"],
+          "M3 toggle jogo vai p/ game_favorites")
+    g.toggle_favorite("Netflix")
+    check("Netflix" in g.settings["favorites"], "M4 toggle app vai p/ favorites")
+    g.toggle_favorite("ZZJogo")
+    check("ZZJogo" not in g.settings["game_favorites"], "M5 toggle remove jogo")
+    g2 = StubApp()
+    g2.settings = {"favorites": ["Netflix", "ZZJogo2"],
+                   "external_games": {"ZZJogo2": {"exe": "x"}},
+                   "game_favorites": []}
+    g2.search_query = ""
+    g2._migrate_favorites()
+    check("ZZJogo2" not in g2.settings["favorites"]
+          and "ZZJogo2" in g2.settings["game_favorites"]
+          and "Netflix" in g2.settings["favorites"], "M6 migracao separa")
+    check(g2.is_favorite("ZZJogo2") and g2.is_favorite("Netflix")
+          and not g2.is_favorite("Nada"), "M7 is_favorite roteia")
+    g2.search_query = ""
+    check(g2._match_search("Netflix") is True, "M8 match vazio passa")
+    g2.search_query = "net"
+    check(g2._match_search("Netflix") is True
+          and g2._match_search("YouTube") is False, "M9 match filtra")
+    g2.search_query = "pokemon"
+    check(g2._match_search("Pokémon") is True, "M10 match sem acento")
+finally:
+    SETMOD.save_settings = _orig_set_save
+
 print("PARTE 5 OK (%d checks)" % COUNT[0], flush=True)
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:

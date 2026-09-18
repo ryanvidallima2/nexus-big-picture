@@ -2,6 +2,7 @@
 """Verso do card: Site/App/Config (streamings) e Jogar/Config (jogos)
 inline, sem janela popup. Clique/A vira o card; B desvira."""
 
+import os
 import threading
 import time
 import tkinter as tk
@@ -337,9 +338,8 @@ class CardFlipMixin:
 
     def _flip_stream_config(self, body, flip, name):
         lang = self.lang
-        favs = self.settings.get("favorites", [])
         rows = [
-            ((f"\u2716 {t('ctx_remove_fav', lang)}" if name in favs
+            ((f"\u2716 {t('ctx_remove_fav', lang)}" if self.is_favorite(name)
               else f"\u2B50 {t('ctx_add_fav', lang)}"),
              lambda: self.cfg_keep_flip(name, False, "config",
                                         lambda: self.toggle_favorite(name))),
@@ -388,12 +388,11 @@ class CardFlipMixin:
                          justify="center").pack(pady=(0, 2))
         except Exception:
             pass
-        favs = self.settings.get("favorites", [])
         rows = [
-            ((f"\u2716 {t('ctx_remove_fav', lang)}" if name in favs
+            ((f"\u2716 {t('ctx_remove_fav', lang)}" if self.is_favorite(name)
               else f"\u2B50 {t('ctx_add_fav', lang)}"),
-             lambda: self.cfg_keep_flip(name, True, "config",
-                                        lambda: self.toggle_favorite(name))),
+              lambda: self.cfg_keep_flip(name, True, "config",
+                                         lambda: self.toggle_favorite(name))),
             (t("dlg_color", lang), lambda: self.flip_show_page("color")),
             (t("dlg_color_reset", lang),
              lambda: self.cfg_keep_flip(name, True, "config",
@@ -469,6 +468,15 @@ class CardFlipMixin:
                 pad_label = self.current_pad_label()
             except Exception:
                 pad_label = ""
+            # HWND do Nexus p/ o filho (minimizar tudo junto sem depender
+            # de titulo, que pode repetir com outra instancia aberta).
+            try:
+                os.environ["NEXUS_PARENT_HWND"] = str(int(self.root.wm_frame(), 16))
+            except Exception:
+                try:
+                    os.environ.pop("NEXUS_PARENT_HWND", None)
+                except Exception:
+                    pass
             proc = open_in_nexus_browser(url, name, pad_label)
         try:
             self.db.add_history(name)

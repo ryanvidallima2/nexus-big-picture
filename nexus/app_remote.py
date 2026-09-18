@@ -15,7 +15,11 @@ from .pad import (
     DEFAULT_PAD_DEADZONE, normalize_pad_value,
 )
 from .paths import BROWSER_PROCS
-from .win32 import _top_level_windows, force_borderless_fullscreen
+from .win32 import (
+    _top_level_windows, force_borderless_fullscreen, find_window_by_title,
+    find_window_by_title_pid, is_window_visible, set_owner_window,
+    show_window, SW_HIDE, SW_SHOW,
+)
 
 
 class AppRemoteMixin:
@@ -364,6 +368,10 @@ class AppRemoteMixin:
         # O navegador embutido e parte do Nexus: fecha junto (Back+Start
         # ou retorno). Apps externos (Spotify etc.) continuam abertos.
         try:
+            self.browser_hwnd = None
+        except Exception:
+            pass
+        try:
             closing = getattr(self, "_browser_closing", None)
             if closing is None:
                 closing = self._browser_closing = set()
@@ -465,12 +473,129 @@ class AppRemoteMixin:
             self.enter_remote_mode(service, watch=[])
             self.browser_remote = service
             self.monitor_browser_process(proc, service)
+            try:
+                self.root.after(800, lambda: self._own_browser_tick(
+                    proc, service, 0))
+            except Exception:
+                pass
         else:
             try:
                 self.opener.open_content(service)
             except Exception:
                 pass
             self.enter_remote_mode(service, watch=BROWSER_WATCH)
+
+    def _own_browser_tick(self, proc, service, tries=0):
+        """Torna o navegador owned do Nexus (1 aba no Alt+Tab, minimiza e
+        restaura junto). Poll: a janela demora ~1s p/ aparecer."""
+        try:
+            alive = proc.poll() is None
+        except Exception:
+            alive = False
+        if not alive:
+            return
+        try:
+            if getattr(self, "browser_remote", None) != service:
+                return
+            if getattr(self, "browser_hwnd", None):
+                return
+        except Exception:
+            return
+        hwnd = None
+        try:
+            pid = getattr(proc, "pid", None)
+        except Exception:
+            pid = None
+        if pid:
+            hwnd = find_window_by_title_pid("Nexus - %s" % service, pid)
+        if not hwnd:
+            hwnd = find_window_by_title("Nexus - %s" % service)
+        if hwnd:
+            # Dono tem que ser top-level: winfo_id e o filho interno, o
+            # top-level de verdade e o wm_frame() (ou o pai do winfo_id).
+            root_hw = None
+            try:
+                root_hw = int(self.root.wm_frame())
+            except Exception:
+                root_hw = None
+            if not root_hw:
+                try:
+                    import ctypes as _ct
+                    _get_parent = _ct.windll.user32.GetParent
+                    _get_parent.argtypes = [_ct.c_void_p]
+                    _get_parent.restype = _ct.c_void_p
+                    _outer = _get_parent(int(self.root.winfo_id()))
+                    if _outer:
+                        root_hw = int(_outer)
+                except Exception:
+                    root_hw = None
+            if root_hw:
+                try:
+                    if set_owner_window(hwnd, root_hw):
+                        self.browser_hwnd = hwnd
+                        try:
+                            self.root.after(
+                                500, self._browser_visibility_tick)
+                        except Exception:
+                            pass
+                        return
+                except Exception:
+                    pass
+        if tries < 30:
+            try:
+                self.root.after(500, lambda: self._own_browser_tick(
+                    proc, service, tries + 1))
+            except Exception:
+                pass
+
+    def _browser_visibility_tick(self):
+        """Sincronia Nexus <-> navegador owned (poll 500ms).
+        Root minimizou -> esconde o browser; root restaurou -> reexibe.
+        Por borda: o proprio enter ja deixa o root minimizado, sem
+        fingir acao do usuario. Map/Unmap/FocusIn nao chegam aqui."""
+        try:
+            hwnd = getattr(self, 'browser_hwnd', None)
+            if not hwnd:
+                return
+            try:
+                alive = False
+                for proc in list(BROWSER_PROCS):
+                    try:
+                        if proc.poll() is None:
+                            alive = True
+                            break
+                    except Exception:
+                        continue
+                if not alive:
+                    try:
+                        self.browser_hwnd = None
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                return
+            try:
+                iconic = (self.root.state() == 'iconic')
+            except Exception:
+                return
+            prev = getattr(self, '_browser_root_was_icon', None)
+            self._browser_root_was_icon = iconic
+            if prev is None or prev == iconic:
+                pass
+            elif iconic:
+                if is_window_visible(hwnd):
+                    show_window(hwnd, SW_HIDE)
+            else:
+                if not is_window_visible(hwnd):
+                    show_window(hwnd, SW_SHOW)
+        except Exception:
+            pass
+        try:
+            if getattr(self, 'browser_hwnd', None):
+                self.root.after(500, self._browser_visibility_tick)
+        except Exception:
+            pass
+
 
     def borderless_new_app(self, before, tries=0):
         """Converte a janela nova do app externo p/ fullscreen sem bordas."""
@@ -552,6 +677,10 @@ class AppRemoteMixin:
         try:
             if getattr(self, "browser_remote", None) == service:
                 self.browser_remote = None
+            try:
+                self.browser_hwnd = None
+            except Exception:
+                pass
         except Exception:
             pass
         try:
@@ -588,11 +717,30 @@ class AppRemoteMixin:
     def _on_focus_in(self):
         # Usuario voltou ao Nexus (Alt+Tab/clique): sai do modo remoto.
         # Ignora o foco dos primeiros 2s (restos da troca dialogo->app).
+        # EXCECAO: voltou de um minimize junto (navegador owned escondido).
+        # Ai reexibe o navegador em vez de matar a sessao.
         try:
             gp = self.gamepad
             if gp and gp.remote_active:
                 if time.time() - getattr(gp, "remote_enter_time", 0) < 2.0:
                     return
+                try:
+                    if getattr(self, "browser_remote", None) is not None:
+                        hwnd = getattr(self, "browser_hwnd", None)
+                        if hwnd and not is_window_visible(hwnd):
+                            alive = False
+                            for proc in list(BROWSER_PROCS):
+                                try:
+                                    if proc.poll() is None:
+                                        alive = True
+                                        break
+                                except Exception:
+                                    continue
+                            if alive:
+                                show_window(hwnd, SW_SHOW)
+                                return
+                except Exception:
+                    pass
                 self.exit_remote_mode()
         except Exception:
             pass

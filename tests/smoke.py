@@ -115,20 +115,63 @@ def run():
             texts = collect_texts(app.scroll_frame)
             check(title_all in texts and tag in texts, "render %s" % lang)
 
+        app.lang = "pt-br"
         app.render_tab("all")
         root.update()
-        before = [str(w) for w in app.scroll_frame.winfo_children()]
-        app.switch_tab("all")
+        check(getattr(app.search_entry, "_hint_on", False) is True
+              and app.search_entry.get() == "Buscar aplicativo...",
+              "busca placeholder app")
+        app.render_tab("games")
         root.update()
-        check([str(w) for w in app.scroll_frame.winfo_children()] == before
-              and len(before) > 0, "mesma aba nao reconstrói")
-        app.switch_tab("movies")
+        check(app.search_entry.get() == "Buscar jogo...",
+              "busca placeholder jogo")
+        app.lang = "en"
+        app.render_tab("all")
         root.update()
-        check([str(w) for w in app.scroll_frame.winfo_children()] != before,
-              "outra aba reconstrói")
-        app.switch_tab("movies", force=True)
+        check(app.search_entry.get() == "Search apps...",
+              "busca placeholder en")
+        app.lang = "pt-br"
+        app.search_query = "net"
+        app.render_tab("all")
         root.update()
-        check(True, "force reconstrói")
+        texts = collect_texts(app.scroll_frame)
+        check("Netflix" in texts and "YouTube" not in texts, "busca filtra")
+        app.search_query = ""
+        app.render_tab("all")
+        root.update()
+
+        _fav_bak = list(app.settings.get("favorites", []) or [])
+        _gfav_bak = list(app.settings.get("game_favorites", []) or [])
+        _ext_bak = dict(app.settings.get("external_games", {}) or {})
+        try:
+            app.settings["favorites"] = ["Netflix"]
+            app.settings["game_favorites"] = []
+            app.settings["external_games"] = dict(
+                _ext_bak, **{"ZZJogo": {"exe": "x"}})
+            app.render_tab("favorites")
+            root.update()
+            texts = collect_texts(app.scroll_frame)
+            check("Netflix" in texts, "favoritos mostra app")
+            app.toggle_favorite("ZZJogo")
+            app.render_tab("favorites")
+            root.update()
+            texts = collect_texts(app.scroll_frame)
+            check("ZZJogo" not in texts, "favoritos nao mostra jogo")
+            check("ZZJogo" in app.settings.get("game_favorites", []),
+                  "toggle jogo segrega")
+            for lang, title in (("pt-br", "Jogos Favoritos"),
+                                ("en", "Favorite Games")):
+                app.lang = lang
+                app.render_tab("gamefavorites")
+                root.update()
+                check(title in collect_texts(app.scroll_frame),
+                      "gamefavorites %s" % lang)
+            app.lang = "pt-br"
+        finally:
+            app.settings["favorites"] = _fav_bak
+            app.settings["game_favorites"] = _gfav_bak
+            app.settings["external_games"] = _ext_bak
+        app.search_query = ""
 
         for d in ("up", "down", "left", "right"):
             app._nav(d)

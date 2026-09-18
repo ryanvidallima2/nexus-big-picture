@@ -3,6 +3,7 @@
 
 import os
 import tkinter as tk
+import unicodedata
 import urllib.parse
 
 from .config import (
@@ -13,6 +14,7 @@ from .dialogs import _modal_alive, top_modal
 from .games import PLATFORM_LABEL
 from .i18n import cat_label, t
 from .input import _play_nav_tick
+from .util import _norm
 
 
 class AppViewsMixin:
@@ -23,24 +25,30 @@ class AppViewsMixin:
         self.root.bind("<Escape>", lambda e: self.go_back())
         self.root.bind("<F11>", lambda e: self.toggle_fullscreen())
         self.root.bind("<F5>", lambda e: self.refresh_ui())
-        self.root.bind("<Left>", lambda e: self._nav_keys("left"))
-        self.root.bind("<Right>", lambda e: self._nav_keys("right"))
-        self.root.bind("<Up>", lambda e: self._nav_keys("up"))
-        self.root.bind("<Down>", lambda e: self._nav_keys("down"))
-        self.root.bind("<Return>", lambda e: self.select_current())
-        self.root.bind("<space>", lambda e: self.select_current())
+        self.root.bind("<Left>", lambda e: None if self._typing() else self._nav_keys("left"))
+        self.root.bind("<Right>", lambda e: None if self._typing() else self._nav_keys("right"))
+        self.root.bind("<Up>", lambda e: None if self._typing() else self._nav_keys("up"))
+        self.root.bind("<Down>", lambda e: None if self._typing() else self._nav_keys("down"))
+        self.root.bind("<Return>", lambda e: self._activate_key())
+        self.root.bind("<space>", lambda e: self._activate_key())
         self.root.bind("<Control-q>", lambda e: self.toggle_sidebar())
-        self.root.bind("<y>", lambda e: self.toggle_sidebar())
-        self.root.bind("<Y>", lambda e: self.toggle_sidebar())
-        self.root.bind("<x>", lambda e: self.go_to_cards())
-        self.root.bind("<X>", lambda e: self.go_to_cards())
-        self.root.bind("<n>", lambda e: self.toggle_notif_panel())
-        self.root.bind("<N>", lambda e: self.toggle_notif_panel())
         self.root.bind("<FocusIn>", lambda e: self._on_focus_in())
         # Modalidade de entrada: controle x mouse/teclado (teclado virtual
         # so abre quando o foco veio do controle)
         self.root.bind("<Button-1>", lambda e: setattr(self, "using_gamepad", False), add="+")
         self.root.bind("<Key>", lambda e: setattr(self, "using_gamepad", False), add="+")
+
+    def _typing(self):
+        """Foco num campo de texto (ex.: busca): a tecla e dele, o app
+        nao reage (sem abrir painel, sem navegar, sem selecionar)."""
+        try:
+            return isinstance(self.root.focus_get(), (tk.Entry, tk.Text))
+        except Exception:
+            return False
+
+    def _activate_key(self):
+        if not self._typing():
+            self.select_current()
 
     # ===================== NAVIGATION =====================
     def _nav_keys(self, direction):
@@ -495,6 +503,9 @@ class AppViewsMixin:
         self.nav_level = "tabs"
         self.form_focus = []
         self.form_idx = 0
+        if changed:
+            self.search_query = ""
+            self._search_refocus = False
         if tab in tabs:
             self.focus_tab = tabs.index(tab)
         self.render_tab(tab)
@@ -589,7 +600,8 @@ class AppViewsMixin:
         self.update_tab_highlight()
 
         if tab == "favorites":
-            names = self.settings.get("favorites", [])
+            names = [n for n in self.settings.get("favorites", [])
+                     if not self.is_game_name(n)]
             if names:
                 self.render_view_bar(tab)
                 self.render_names(tab, t("sec_favorites", self.lang), names)
@@ -610,6 +622,12 @@ class AppViewsMixin:
                 self.render_names(tab, cat_label("Videos", self.lang), names)
         elif tab == "games":
             self.render_games()
+        elif tab == "gamefavorites":
+            names = [g for g in self.scan_games()
+                     if g in (self.settings.get("game_favorites", []) or [])]
+            if names:
+                self.render_view_bar(tab)
+                self.render_names(tab, t("sec_gamefavorites", self.lang), names)
         else:
             all_names = list(self.get_all_services().keys())
             if all_names:
@@ -662,10 +680,109 @@ class AppViewsMixin:
                       activebackground=Config.ACCENT_GLOW, activeforeground="white",
                       relief="flat", cursor="hand2", bd=0, padx=12, pady=5,
                       command=lambda m=mode: self.set_view_mode(tab, m)).pack(side="left", padx=(0, 6))
+        self.render_search_bar(tab)
         return bar
+
+    def _search_hint(self, tab):
+        if tab in ("games", "gamefavorites"):
+            return t("search_game", self.lang)
+        return t("search_app", self.lang)
+
+    def _match_search(self, name):
+        try:
+            raw_q = self.search_query or ""
+            raw_n = name or ""
+            fold = lambda s: "".join(
+                c for c in unicodedata.normalize("NFKD", s)
+                if not unicodedata.combining(c))
+            q = _norm(fold(raw_q))
+        except Exception:
+            q = ""
+        if not q:
+            return True
+        try:
+            return q in _norm(fold(raw_n))
+        except Exception:
+            return True
+
+    def render_search_bar(self, tab):
+        """Busca da aba, abaixo dos modos de exibicao. Filtra ao digitar
+        (mouse, teclado fisico e teclado virtual)."""
+        hint = self._search_hint(tab)
+        row = tk.Frame(self.scroll_frame, bg=Config.BG_PRIMARY)
+        row.pack(fill="x", padx=30, pady=(8, 0))
+        entry = tk.Entry(row, font=("Segoe UI", 12), bg=Config.BG_CARD,
+                         fg=Config.TEXT_PRIMARY,
+                         insertbackground=Config.ACCENT,
+                         relief="flat", bd=0,
+                         highlightbackground=Config.BORDER,
+                         highlightthickness=1)
+        entry.pack(fill="x", ipady=6)
+        q = self.search_query or ""
+        if q:
+            entry.insert(0, q)
+            entry._hint_on = False
+        else:
+            entry.insert(0, hint)
+            entry.configure(fg=Config.TEXT_SECONDARY)
+            entry._hint_on = True
+        entry.bind("<FocusIn>",
+                   lambda e, e2=entry: self._search_focus_in(e2, hint))
+        entry.bind("<FocusOut>",
+                   lambda e, e2=entry: self._search_focus_out(e2, hint))
+        entry.bind("<KeyRelease>",
+                   lambda e, e2=entry: self._search_changed(e2, hint))
+        try:
+            self.bind_keyboard_popup(entry)
+        except Exception:
+            pass
+        self.search_entry = entry
+        if getattr(self, "_search_refocus", False):
+            self._search_refocus = False
+            try:
+                entry.focus_set()
+                entry.icursor("end")
+            except Exception:
+                pass
+
+    def _search_focus_in(self, entry, hint):
+        try:
+            if getattr(entry, "_hint_on", False):
+                entry.delete(0, "end")
+                entry.configure(fg=Config.TEXT_PRIMARY)
+                entry._hint_on = False
+        except Exception:
+            pass
+
+    def _search_focus_out(self, entry, hint):
+        try:
+            if not (entry.get() or ""):
+                entry.delete(0, "end")
+                entry.insert(0, hint)
+                entry.configure(fg=Config.TEXT_SECONDARY)
+                entry._hint_on = True
+        except Exception:
+            pass
+
+    def _search_changed(self, entry, hint):
+        try:
+            val = entry.get()
+        except Exception:
+            return
+        if getattr(entry, "_hint_on", False):
+            return
+        if (val or "") == (self.search_query or ""):
+            return
+        self.search_query = val
+        self._search_refocus = True
+        try:
+            self.render_tab(self.current_tab)
+        except Exception:
+            pass
 
     def render_names(self, tab, title, names):
         """Titulo + itens no modo de exibicao ativo da aba."""
+        names = [n for n in (names or []) if self._match_search(n)]
         mode = self.get_view_mode(tab)
         if mode == "grid":
             self.render_grid(title, names)
@@ -752,7 +869,7 @@ class AppViewsMixin:
             info = {"icon": "\U0001F3AE", "category": "Games"}
         icon = info.get("icon", "\U0001F4F0")
         tipo, detalhe = self.item_details(name)
-        star = "\u2B50 " if name in self.settings.get("favorites", []) else ""
+        star = "\u2B50 " if self.is_favorite(name) else ""
 
         row = tk.Frame(parent, bg=Config.BG_CARD, relief="flat",
                        highlightbackground=Config.BORDER, highlightthickness=1,

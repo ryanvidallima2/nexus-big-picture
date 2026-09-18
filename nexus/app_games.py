@@ -331,9 +331,9 @@ class AppGamesMixin:
                     pass
             # Migra referencias com o nome antigo
             try:
-                favs = self.settings.get("favorites", [])
+                favs = self.settings.get("game_favorites", [])
                 if name in favs:
-                    self.settings["favorites"] = [new if f == name else f for f in favs]
+                    self.settings["game_favorites"] = [new if f == name else f for f in favs]
                 colors = self.settings.get("card_colors", {})
                 if name in colors:
                     colors[new] = colors.pop(name)
@@ -361,10 +361,10 @@ class AppGamesMixin:
                         old_cover = ""
                     del ext[name]
                     self.settings["external_games"] = ext
-                favs = self.settings.get("favorites", [])
+                favs = self.settings.get("game_favorites", [])
                 if name in favs:
                     favs.remove(name)
-                    self.settings["favorites"] = favs
+                    self.settings["game_favorites"] = favs
                 save_settings(self.settings)
                 # Limpa o PNG do icone orfao (so dentro de streaming_images)
                 try:
@@ -415,10 +415,10 @@ class AppGamesMixin:
                     if key not in ign:
                         ign.append(key)
                     self.settings["platform_ignored"] = ign
-                favs = self.settings.get("favorites", [])
+                favs = self.settings.get("game_favorites", [])
                 if name in favs:
                     favs.remove(name)
-                    self.settings["favorites"] = favs
+                    self.settings["game_favorites"] = favs
                 save_settings(self.settings)
                 try:
                     if old_cover:
@@ -606,7 +606,7 @@ class AppGamesMixin:
                     except Exception:
                         pass
                     try:
-                        favs = self.settings.get("favorites", [])
+                        favs = self.settings.get("game_favorites", [])
                         if n in favs:
                             favs.remove(n)
                     except Exception:
@@ -714,10 +714,11 @@ class AppGamesMixin:
 
     def render_games(self):
         names = self.scan_games()
+        names = [n for n in names if self._match_search(n)]
         self.backfill_missing_game_icons(names)
         mode = self.get_view_mode("games")
         try:
-            favs = set(self.settings.get("favorites", []))
+            favs = set(self.settings.get("game_favorites", []))
         except Exception:
             favs = set()
         names.sort(key=lambda n: (0 if n in favs else 1, n.lower()))
@@ -761,6 +762,7 @@ class AppGamesMixin:
                       activebackground=Config.ACCENT_GLOW, activeforeground="white",
                       relief="flat", cursor="hand2", bd=0, padx=10, pady=5,
                       command=lambda m=m: self.set_view_mode("games", m)).pack(side="left", padx=(6, 0))
+        self.render_search_bar("games")
         if names:
             title = f"\U0001F3AE {t('games_title', self.lang)}"
             if mode == "grid":

@@ -76,14 +76,66 @@ except Exception:
     pass
 
 
+SW_MINIMIZE = 6
+SW_HIDE = 0
+
+
+def _show_window(hwnd, cmd):
+    try:
+        import ctypes as _ct
+        _sw = _ct.windll.user32.ShowWindow
+        _sw.argtypes = [_ct.c_void_p, _ct.c_int]
+        _sw.restype = _ct.c_bool
+        return bool(_sw(hwnd, cmd))
+    except Exception:
+        return False
+
+
+def _find_window(title):
+    try:
+        import ctypes as _ct
+        _fw = _ct.windll.user32.FindWindowW
+        _fw.argtypes = [_ct.c_wchar_p, _ct.c_wchar_p]
+        _fw.restype = _ct.c_void_p
+        hwnd = _fw(None, title)
+        return hwnd or None
+    except Exception:
+        return None
+
+
 class NexusApi:
     """Ponte pagina -> janela (chamada pelo JS injetado)."""
     def __init__(self):
         self._window = None  # underscore: o pywebview varre atributos
         # publicos da api e travaria enumerando a janela (.native)
+        self._title = "Nexus"
 
     def minimize(self):
+        # Minimiza TUDO (1 botao na tarefa, volta tudo junto): esconde
+        # esta janela e minimiza o Nexus (o minimize() do pywebview vira
+        # barrinha flutuante em fullscreen sem bordas). Voltar pela
+        # tarefa restaura o Nexus e o hook Map reexibe o navegador.
+        # TEMP-DEBUG
+        import sys as _sys
+        def _dbg(m):
+            try:
+                _sys.stderr.write("MINDBG %s\n" % m)
+            except Exception:
+                pass
         try:
+            me = _find_window("Nexus - %s" % (self._title or ""))
+            _dbg("me=%s" % (me,))
+            if me:
+                _dbg("hide=%s" % _show_window(me, SW_HIDE))
+                try:
+                    _ph = int((os.environ.get("NEXUS_PARENT_HWND") or "0").strip(), 0)
+                except Exception:
+                    _ph = 0
+                root = _ph or _find_window("Nexus - Big Picture")
+                _dbg("root=%s" % (root,))
+                if root:
+                    _dbg("minroot=%s" % _show_window(root, SW_MINIMIZE))
+                    return "ok"
             if self._window is not None:
                 self._window.minimize()
             return "ok"
@@ -325,6 +377,7 @@ def main():
         url = "https://" + url
     import webview
     api = NexusApi()
+    api._title = title
     window = webview.create_window("Nexus - %s" % title, url,
                                    width=1280, height=800, min_size=(800, 600),
                                    fullscreen=True, focus=True, js_api=api)

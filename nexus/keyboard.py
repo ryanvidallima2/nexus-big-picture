@@ -739,6 +739,10 @@ class NexusKeyboard:
             ent = self.entry
             if ent is not None and ent.winfo_exists():
                 ent.insert(tk.INSERT, ch)
+                try:
+                    ent.event_generate("<KeyRelease>")
+                except Exception:
+                    pass
                 return
         except Exception:
             pass
