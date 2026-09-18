@@ -2,6 +2,7 @@
 """Teclado/mouse virtuais + deteccao de campo de texto (extraido sem alteracao)."""
 
 import ctypes
+import subprocess
 import threading
 import time
 
@@ -273,13 +274,29 @@ _EDIT_CLASS_NAMES = frozenset([
 ])
 
 
+def _debug_log(msg):
+    """Log temporario de diagnostico (bug Y->F). Nao falha o app se der erro."""
+    try:
+        import datetime
+        import os
+        base = os.path.dirname(os.path.realpath(__file__))
+        path = os.path.join(base, "..", "nexus_debug.log")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("%s %s\n" % (datetime.datetime.now().isoformat(), msg))
+    except Exception:
+        pass
+
+
 def _uia_focused_control(timeout=4):
     out = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", _UIA_PS],
         capture_output=True, text=True, timeout=timeout,
         creationflags=subprocess.CREATE_NO_WINDOW)
     lines = (out.stdout or "").strip().splitlines()
-    return lines[-1].strip() if lines else None
+    result = lines[-1].strip() if lines else None
+    _debug_log("UIA stdout=%r stderr=%r -> result=%r" % (
+        (out.stdout or "")[:200], (out.stderr or "")[:200], result))
+    return result
 
 
 def _caret_visible():
@@ -333,12 +350,18 @@ def focused_is_text_field():
     try:
         name = _uia_focused_control()
         if name and name != "none":
-            return name in _UIA_TEXT_TYPES
-    except Exception:
-        pass
+            decision = name in _UIA_TEXT_TYPES
+            _debug_log("focused_is_text_field: via UIA, name=%r -> %r" % (name, decision))
+            return decision
+        _debug_log("focused_is_text_field: UIA sem elemento util (name=%r), indo pro caret" % name)
+    except Exception as e:
+        _debug_log("focused_is_text_field: UIA falhou (%r), indo pro caret" % e)
     try:
-        return _caret_visible()
-    except Exception:
+        decision = _caret_visible()
+        _debug_log("focused_is_text_field: via caret -> %r" % decision)
+        return decision
+    except Exception as e:
+        _debug_log("focused_is_text_field: caret tambem falhou (%r) -> False" % e)
         return False
 
 
