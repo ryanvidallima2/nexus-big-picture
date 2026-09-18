@@ -5,7 +5,7 @@ import ctypes
 import time
 import tkinter as tk
 
-from .config import Config
+from .config import Config, save_settings
 from .i18n import t
 from .input import VK_BACK, VK_RETURN, tap_key, type_text
 from .win32 import (
@@ -32,7 +32,7 @@ class NexusKeyboard:
     KB_SIDE = 8.0
     KB_HOME_INDENT = 31.0
     KB_SHIFT_FLEX = (1.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.5)
-    KB_ACTION_FLEX = (1.8, 0.5, 5.8, 0.8, 1.4)
+    KB_ACTION_FLEX = (1.6, 1.1, 0.5, 4.7, 0.8, 1.3)
 
     # Cada fileira: (teclas, flex|None, estilo)
     # estilo None = ocupa tudo; "home" = indentada p/ direita sem esticar;
@@ -64,9 +64,40 @@ class NexusKeyboard:
          None, None),
     ]
 
-    # Fileira de acao (sempre visivel): ?123 alterna simbolos, emoji
-    # alterna emojis, espaco em branco (sem idioma), . e ✓ fecha.
-    ACTION_ROW = (["?123", "emoji", " ", ".", "ok"], list(KB_ACTION_FLEX), None)
+    # Layout BR (ABNT2): mesmas fileiras + Ç na home (10 teclas, sem
+    # indent) + fileira de acentos p/ tecla morta (estilo "fixed" = 3
+    # teclas centralizadas). Vale no Nexus e nos apps (mesma classe).
+    ROWS_ALPHA_BR = [
+        ROWS_ALPHA[0],
+        ROWS_ALPHA[1],
+        (["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ç"], None, None),
+        ROWS_ALPHA[3],
+    ]
+    ROWS_ACCENT_BR = [
+        (["\u00B4", "^", "~"], None, "fixed"),
+    ]
+
+    # Tecla morta: acento pendente + vogal = combinada; acento + nao-vogal
+    # = acento + letra; acento + acento = o acento; espaco confirma o acento.
+    ACCENT_COMPOSE = {
+        "\u00B4": {"a": "\u00E1", "e": "\u00E9", "i": "\u00ED",
+                   "o": "\u00F3", "u": "\u00FA", "y": "\u00FD",
+                   "A": "\u00C1", "E": "\u00C9", "I": "\u00CD",
+                   "O": "\u00D3", "U": "\u00DA", "Y": "\u00DD",
+                   " ": "\u00B4"},
+        "^": {"a": "\u00E2", "e": "\u00EA", "i": "\u00EE",
+              "o": "\u00F4", "u": "\u00FB",
+              "A": "\u00C2", "E": "\u00CA", "I": "\u00CE",
+              "O": "\u00D4", "U": "\u00DB", " ": "^"},
+        "~": {"a": "\u00E3", "o": "\u00F5", "n": "\u00F1",
+              "A": "\u00C3", "O": "\u00D5", "N": "\u00D1", " ": "~"},
+    }
+
+    # Fileira de acao (sempre visivel): ?123 alterna simbolos, lang troca
+    # o layout BR/US (vale no Nexus e nos apps), emoji alterna emojis,
+    # espaco em branco (sem idioma), . e ✓ fecha.
+    ACTION_ROW = (["?123", "lang", "emoji", " ", ".", "ok"],
+                  list(KB_ACTION_FLEX), None)
 
     def __init__(self, app, entry=None, numeric=False):
         self.app = app
@@ -76,6 +107,14 @@ class NexusKeyboard:
         self.shift = False
         self.numeric = bool(numeric)
         self.emoji = False
+        self.layout = "us"
+        try:
+            want = (app.settings.get("kb_layout", "us") or "us")
+            if want in ("br", "us"):
+                self.layout = want
+        except Exception:
+            pass
+        self.dead = None
         self.cur = [0, 0]
         self.cells = []
         self.row_frames = []
@@ -195,6 +234,9 @@ class NexusKeyboard:
             rows = list(self.ROWS_EMOJI)
         elif self.numeric:
             rows = list(self.ROWS_NUM)
+        elif getattr(self, "layout", "us") == "br":
+            rows = list(self.ROWS_ALPHA_BR)
+            rows.extend(self.ROWS_ACCENT_BR)
         else:
             rows = list(self.ROWS_ALPHA)
         rows.append(self.ACTION_ROW)
@@ -462,6 +504,7 @@ class NexusKeyboard:
         self.numeric = not self.numeric
         self.emoji = False
         self.shift = False
+        self.dead = None
         self._build_keys()
         if was_top:
             self.cur = [-1, min(was_c, len(self.top_btns) - 1)]
@@ -480,6 +523,30 @@ class NexusKeyboard:
         if self.emoji:
             self.numeric = False
         self.shift = False
+        self.dead = None
+        self._build_keys()
+        if was_top:
+            self.cur = [-1, min(was_c, len(self.top_btns) - 1)]
+        self._apply_compact(self.docked)
+        self._paint()
+
+    def toggle_layout(self):
+        """Troca BR/US (vale no Nexus e nos apps); persiste em settings."""
+        if self.closed:
+            return
+        try:
+            was_top = self.cur[0] < 0
+            was_c = self.cur[1] if was_top else 0
+        except Exception:
+            was_top, was_c = False, 0
+        self.layout = "br" if getattr(self, "layout", "us") != "br" else "us"
+        self.shift = False
+        self.dead = None
+        try:
+            self.app.settings["kb_layout"] = self.layout
+            save_settings(self.app.settings)
+        except Exception:
+            pass
         self._build_keys()
         if was_top:
             self.cur = [-1, min(was_c, len(self.top_btns) - 1)]
@@ -496,6 +563,8 @@ class NexusKeyboard:
     def _disp(self, key):
         if key == "?123":
             return "ABC" if self.numeric else "?123"
+        if key == "lang":
+            return "BR" if getattr(self, "layout", "us") != "br" else "US"
         if key == "emoji":
             return "\U0001F642"
         if key == " ":
@@ -509,12 +578,20 @@ class NexusKeyboard:
         return key
 
     def _paint(self):
+        try:
+            dead = self.dead
+        except Exception:
+            dead = None
         for r, row in enumerate(self.cells):
             for c, (key, b) in enumerate(row):
                 focused = (self.cur == [r, c])
                 b.configure(text=self._disp(key))
                 if focused:
                     b.configure(bg=Config.ACCENT, fg="white",
+                                highlightbackground=Config.ACCENT_GLOW,
+                                highlightthickness=2)
+                elif dead is not None and key == dead:
+                    b.configure(bg=Config.ACCENT_GLOW, fg="white",
                                 highlightbackground=Config.ACCENT_GLOW,
                                 highlightthickness=2)
                 else:
@@ -622,6 +699,9 @@ class NexusKeyboard:
         if key == "emoji":
             self.toggle_emoji()
             return
+        if key == "lang":
+            self.toggle_layout()
+            return
         if key == "ok":
             self.submit()
             return
@@ -632,9 +712,29 @@ class NexusKeyboard:
         if key == "\u232B":
             self._erase()
             return
+        if key in self.ACCENT_COMPOSE:
+            if self.dead == key:
+                self._emit_char(key)
+                self.dead = None
+            else:
+                if self.dead:
+                    self._emit_char(self.dead)
+                self.dead = key
+            self._paint()
+            return
         ch = key.upper() if (len(key) == 1 and key.isalpha() and self.shift) else key
         if len(key) == 1 and key.isalpha() and not self.shift:
             ch = key.lower()
+        if self.dead is not None:
+            dead, self.dead = self.dead, None
+            combo = self.ACCENT_COMPOSE[dead].get(ch)
+            self._emit_char(combo if combo is not None else dead + ch)
+            self._paint()
+            return
+        self._emit_char(ch)
+
+    def _emit_char(self, ch):
+        """Um caractere no entry do Nexus ou na janela em foco (apps)."""
         try:
             ent = self.entry
             if ent is not None and ent.winfo_exists():
@@ -649,6 +749,10 @@ class NexusKeyboard:
         self._type_global(ch)
 
     def _erase(self):
+        if getattr(self, "dead", None) is not None:
+            self.dead = None
+            self._paint()
+            return
         try:
             ent = self.entry
             if ent is not None and ent.winfo_exists():

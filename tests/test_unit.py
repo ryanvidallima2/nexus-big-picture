@@ -98,19 +98,20 @@ kb = kb_cls(app, tk.Entry(root))
 app.kb_window = kb
 root.update()
 rows = kb.cells
-check(len(rows) == 5, "A1 fileiras 10/10/9/9/5")
-check([len(r) for r in rows] == [10, 10, 9, 9, 5], "A2 larguras")
+check(len(rows) == 5, "A1 fileiras 10/10/9/9/6")
+check([len(r) for r in rows] == [10, 10, 9, 9, 6], "A2 larguras")
 pad_q = kb.row_frames[1].pack_info().get('padx')
 pad_a = kb.row_frames[2].pack_info().get('padx')
 pad_q = (pad_q, pad_q) if isinstance(pad_q, int) else tuple(pad_q)
 pad_a = (pad_a, pad_a) if isinstance(pad_a, int) else tuple(pad_a)
 check(pad_a[0] > pad_q[0], "A3 asdf indentada")
 labels = [b.cget('text') for _k, b in rows[4]]
-check(labels[0] == '?123' and labels[2] == '' and labels[4] == '\u2713',
-      "A4 action row (?123, espaco em branco, check)")
+check(labels[0] == '?123' and labels[1] == 'BR' and labels[2] == '🙂'
+      and labels[3] == '' and labels[4] == '.' and labels[5] == '✓',
+      "A4 action row (?123, BR, emoji, espaco, ponto, check)")
 root.update()
-w_space = rows[4][2][1].winfo_width()
-w_dot = rows[4][3][1].winfo_width()
+w_space = rows[4][3][1].winfo_width()
+w_dot = rows[4][4][1].winfo_width()
 check(w_space > 3 * w_dot, "A5 flex espaco domina")
 W = kb.win.winfo_width()
 scale = W / 691.0
@@ -118,7 +119,7 @@ exp_w = (W - 2 * 8 * scale - 9 * 7 * scale) / 10
 w_q = rows[1][0][1].winfo_width()
 check(abs(w_q - exp_w) < 6, "A6 largura exata por flex")
 kb.press_key('?123')
-check(kb.numeric and [len(r) for r in kb.cells] == [10, 10, 10, 10, 5],
+check(kb.numeric and [len(r) for r in kb.cells] == [10, 10, 10, 10, 6],
       "A7 ?123 vira simbolos 4x10")
 syms = [k for r in kb.cells[:4] for k, _b in r]
 check(all(s in syms for s in ('!', '@', '#', '$', '%', '&', '*', '(', ')')),
@@ -144,6 +145,62 @@ check(kb.docked, "A13 A no dock ancora")
 kb.set_docked(False)
 root.update()
 kb.close()
+
+# ================= A14) layout BR/US + tecla morta =================
+import nexus.keyboard as KBMOD  # noqa: E402
+_saved_kb = []
+_orig_kb_save = KBMOD.save_settings
+KBMOD.save_settings = lambda s: _saved_kb.append(dict(s))
+try:
+    appL = StubApp()
+    kbL = kb_cls(appL, tk.Entry(root))
+    appL.kb_window = kbL
+    root.update()
+    check(getattr(kbL, "layout", "us") == "us", "A14 layout padrao us")
+    check([len(r) for r in kbL.cells] == [10, 10, 9, 9, 6],
+          "A15 alpha us + action 6")
+    kbL.press_key("lang")
+    check(kbL.layout == "br", "A16 alterna p/ br")
+    check([len(r) for r in kbL.cells] == [10, 10, 10, 9, 3, 6],
+          "A17 br: home com Ç + fileira de acentos")
+    check("Ç" in [k for k, _b in kbL.cells[2]], "A18 Ç na home")
+    check("´" in [k for k, _b in kbL.cells[4]], "A19 fileira ´ ^ ~")
+    check(_saved_kb and _saved_kb[-1].get("kb_layout") == "br",
+          "A20 persiste kb_layout")
+    ent = kbL.entry
+    ent.delete(0, "end")
+    kbL.press_key("´")
+    kbL.press_key("a")
+    kbL.press_key("~")
+    kbL.press_key("o")
+    kbL.press_key("C")
+    check(ent.get() == "áõc", "A21 morto compoe + Ç minusculo")
+    kbL.press_key("⇧")
+    kbL.press_key("Ç")
+    kbL.press_key("^")
+    kbL.press_key("E")
+    kbL.press_key("⇧")
+    check(ent.get() == "áõcÇÊ", "A22 shift + maiuscula com ^")
+    kbL.press_key("´")
+    kbL.press_key("b")
+    kbL.press_key("~")
+    kbL.press_key("~")
+    check(ent.get() == "áõcÇÊ´b~", "A23 sem-combinacao, duplo vira literal")
+    kbL.press_key("´")
+    kbL.press_key("⌫")
+    check(ent.get() == "áõcÇÊ´b~" and kbL.dead is None,
+          "A24 backspace cancela o morto")
+    kbL.press_key("lang")
+    check(kbL.layout == "us"
+          and [len(r) for r in kbL.cells] == [10, 10, 9, 9, 6],
+          "A25 volta p/ us")
+    kbG = kb_cls(appL, None)  # modo global (apps): layout vale sem entry
+    kbG.press_key("lang")
+    check(kbG.layout == "br", "A26 global alterna p/ br")
+    kbG.close()
+    kbL.close()
+finally:
+    KBMOD.save_settings = _orig_kb_save
 
 # ================= B) remoto com teclado =================
 import pygame  # noqa: E402

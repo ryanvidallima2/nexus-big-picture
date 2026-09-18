@@ -354,7 +354,7 @@ class AppViewsMixin:
         elif getattr(self, "flipped", None) is not None:
             self.unflip_card()
         elif self.nav_level == "form":
-            self.switch_tab(self.current_tab)
+            self.switch_tab(self.current_tab, force=True)
         elif self.nav_level == "items":
             self.nav_level = "tabs"
             self.update_all_focus()
@@ -493,9 +493,11 @@ class AppViewsMixin:
                 scroll_pos = max(0, (y - canvas_h // 3)) / total_h
                 self.sidebar_canvas.yview_moveto(min(1.0, scroll_pos))
 
-    def switch_tab(self, tab):
+    def switch_tab(self, tab, force=False):
         tabs = TABS
         changed = (tab != self.current_tab)
+        if not changed and not force:
+            return
         self.current_tab = tab
         self.focus_mgr.reset()
         self.nav_level = "tabs"

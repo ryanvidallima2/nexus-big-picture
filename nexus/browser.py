@@ -6,12 +6,24 @@ import subprocess
 import sys
 import urllib.parse
 
-try:
-    import webview as _pywebview  # noqa: F401
+# Import tardio de proposito: webview puxa pythonnet (~130ms) e so faz
+# falta ao abrir o Site. browser_available()/open importam sob demanda.
+_pywebview = None
+WEBVIEW_AVAILABLE = False
+
+
+def _ensure_webview():
+    """Importa o pywebview na primeira necessidade. True se disponivel."""
+    global _pywebview, WEBVIEW_AVAILABLE
+    if WEBVIEW_AVAILABLE:
+        return True
+    try:
+        import webview as _mod
+    except ImportError:
+        return False
+    _pywebview = _mod
     WEBVIEW_AVAILABLE = True
-except ImportError:
-    _pywebview = None
-    WEBVIEW_AVAILABLE = False
+    return True
 
 from .paths import NEXUS_BROWSER_EXE, NEXUS_BROWSER_FILE, nexus_profile_dir
 
@@ -22,7 +34,7 @@ from .paths import NEXUS_BROWSER_EXE, NEXUS_BROWSER_FILE, nexus_profile_dir
 def browser_available():
     if os.path.exists(NEXUS_BROWSER_EXE):
         return True  # release .exe: navegador ja compilado
-    return bool(WEBVIEW_AVAILABLE) and os.path.exists(NEXUS_BROWSER_FILE)
+    return bool(_ensure_webview()) and os.path.exists(NEXUS_BROWSER_FILE)
 
 
 def python_for_browser():
