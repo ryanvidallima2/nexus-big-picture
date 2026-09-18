@@ -877,6 +877,48 @@ kbY.close()
 GMOD2.tap_key = _t2
 GMOD2.mouse_click = _c2
 
+# A no remoto clica e loga (acao + cursor + aparelho)
+_t3, _c3 = GMOD2.tap_key, GMOD2.mouse_click
+clicksA = []
+GMOD2.tap_key = lambda vk: None
+GMOD2.mouse_click = lambda right=False: clicksA.append(right)
+appR = StubApp()
+appR.remote_action_for = lambda logical: "click_left" if logical == "south" else None
+appR.browser_nav_active = lambda: False
+appR.kb_window = None
+mgrR = GM.__new__(GM)
+mgrR.app = appR
+mgrR.joystick = FakeJS()
+mgrR.joystick.get_name = lambda: "Xbox 360 Controller"
+mgrR.dpad_sources = [("hat", 0)]
+mgrR.raw_to_logical = {0: "south"}
+mgrR.logical_to_raw = {}
+mgrR.hat_debounce = {}
+mgrR.prev_buttons = {}
+mgrR.remote_cal = None
+mgrR.remote_off = [0.0, 0.0, 0.0, 0.0]
+mgrR.remote_kb_time = 0.0
+mgrR.remote_enter_time = 0.0
+mgrR.remote_service = ""
+mgrR.remote_hwnd = None
+mgrR.remote_watch_list = []
+mgrR.remote_watch_count = 0
+mgrR.remote_watch_seen = False
+mgrR.remote_watch_missed = 0
+mgrR._maybe_hotplug = lambda: None
+mgrR.joystick.btns = {0}
+GM._poll_remote(mgrR)
+_logA = ""
+try:
+    _logA = open(os.path.join(BASE, 'nexus_debug.log'),
+                 encoding='utf-8').read()
+except Exception:
+    pass
+check(clicksA == [False] and 'A remoto: click_left' in _logA
+      and 'Xbox 360 Controller' in _logA, "J5 A remoto clica + loga")
+GMOD2.tap_key = _t3
+GMOD2.mouse_click = _c3
+
 print("PARTE 4 OK (%d checks)" % COUNT[0], flush=True)
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:

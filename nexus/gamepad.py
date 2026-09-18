@@ -306,6 +306,22 @@ class GamepadManager:
                 pass
         return out
 
+    @staticmethod
+    def _debug_cursor_pos():
+        """Posicao atual do cursor p/ diagnostico (sem falhar)."""
+        try:
+            import ctypes
+
+            class _PT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+            pt = _PT()
+            if ctypes.windll.user32.GetCursorPos(ctypes.byref(pt)):
+                return (pt.x, pt.y)
+        except Exception:
+            pass
+        return None
+
     def pressed_logical(self):
         return {self.logical_for_raw(i) for i in self._pressed_raw()}
 
@@ -692,6 +708,26 @@ class GamepadManager:
                 else:
                     action = self.app.remote_action_for(logical)
                     if action == "click_left":
+                        try:
+                            _pos = self._debug_cursor_pos()
+                        except Exception:
+                            _pos = None
+                        try:
+                            _dev = ""
+                            _js = getattr(self, "joystick", None)
+                            if _js is not None:
+                                _dev = _js.get_name()
+                        except Exception:
+                            _dev = ""
+                        try:
+                            _bnav = bool(self.app.browser_nav_active())
+                        except Exception:
+                            _bnav = None
+                        try:
+                            _debug_log("A remoto: click_left bnav=%r pos=%r dev=%r" % (
+                                _bnav, _pos, _dev))
+                        except Exception:
+                            pass
                         if self.app.browser_nav_active():
                             tap_key(VK_RETURN)  # modo console: A abre o quadro
                         else:
