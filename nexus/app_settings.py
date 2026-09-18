@@ -43,7 +43,7 @@ class AppSettingsMixin:
                             activebackground=Config.ACCENT, activeforeground="white",
                             font=("Segoe UI", 12), bd=0)
             menu.add_command(label=f"\u25B6 {t('ctx_open', self.lang)}", command=lambda: self.on_card_click(None, name))
-            if name in self.settings.get("favorites", []):
+            if self.is_favorite(name):
                 menu.add_command(label=f"\u2716 {t('ctx_remove_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
             else:
                 menu.add_command(label=f"\u2B50 {t('ctx_add_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
@@ -83,7 +83,7 @@ class AppSettingsMixin:
                         activebackground=Config.ACCENT, activeforeground="white",
                         font=("Segoe UI", 12), bd=0)
         menu.add_command(label=f"\u25B6 {t('ctx_open', self.lang)}", command=lambda: self.on_card_click(None, name))
-        if name in self.settings.get("favorites", []):
+        if self.is_favorite(name):
             menu.add_command(label=f"\u2716 {t('ctx_remove_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
         else:
             menu.add_command(label=f"\u2B50 {t('ctx_add_fav', self.lang)}", command=lambda: self.toggle_favorite(name))
@@ -96,13 +96,70 @@ class AppSettingsMixin:
                              self.get_all_services().get(name, {}).get("url", "")))
         menu.tk_popup(event.x_root, event.y_root)
 
+    def is_game_name(self, name):
+        """Nome e jogo (pasta, atalho .exe ou plataforma)?"""
+        try:
+            return bool(self.game_folder(name) or self.game_is_external(name)
+                        or self.game_is_platform(name))
+        except Exception:
+            return False
+
+    def game_favorites(self):
+        try:
+            return list(self.settings.get("game_favorites", []) or [])
+        except Exception:
+            return []
+
+    def is_favorite(self, name):
+        """Estrela: consulta a lista certa (jogos x aplicativos)."""
+        try:
+            if self.is_game_name(name):
+                return name in (self.settings.get("game_favorites", []) or [])
+            return name in (self.settings.get("favorites", []) or [])
+        except Exception:
+            return False
+
+    def _migrate_favorites(self):
+        """Uma vez: jogos que cairam em favorites mudam p/ game_favorites."""
+        try:
+            favs = list(self.settings.get("favorites", []) or [])
+            gfavs = list(self.settings.get("game_favorites", []) or [])
+            moved = False
+            for n in list(favs):
+                try:
+                    if self.is_game_name(n):
+                        favs.remove(n)
+                        if n not in gfavs:
+                            gfavs.append(n)
+                        moved = True
+                except Exception:
+                    continue
+            if moved:
+                self.settings["favorites"] = favs
+                self.settings["game_favorites"] = gfavs
+                save_settings(self.settings)
+        except Exception:
+            pass
+
     def toggle_favorite(self, name):
-        favs = self.settings.get("favorites", [])
+        if self.is_game_name(name):
+            favs = list(self.settings.get("game_favorites", []) or [])
+            key, other = "game_favorites", "favorites"
+        else:
+            favs = list(self.settings.get("favorites", []) or [])
+            key, other = "favorites", "game_favorites"
         if name in favs:
             favs.remove(name)
         else:
             favs.append(name)
-        self.settings["favorites"] = favs
+            try:
+                wrong = list(self.settings.get(other, []) or [])
+                if name in wrong:
+                    wrong.remove(name)
+                    self.settings[other] = wrong
+            except Exception:
+                pass
+        self.settings[key] = favs
         save_settings(self.settings)
         self.refresh_ui()
 

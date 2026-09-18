@@ -18,6 +18,7 @@ WS_EX_DLGMODALFRAME = 0x00000001
 WS_EX_WINDOWEDGE = 0x00000100
 WS_EX_CLIENTEDGE = 0x00000200
 WS_EX_STATICEDGE = 0x00020000
+WS_EX_APPWINDOW = 0x00040000
 SWP_FRAMECHANGED = 0x0020
 SWP_SHOWWINDOW = 0x0040
 
@@ -254,3 +255,94 @@ def force_topmost_noactivate(widget):
         return bool(_SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags))
     except Exception:
         return False
+
+
+GWLP_HWNDPARENT = -8
+SW_HIDE = 0
+SW_SHOW = 5
+SW_MINIMIZE = 6
+SW_RESTORE = 9
+
+
+def find_window_by_title(title):
+    """HWND da janela top-level com o titulo exato (ou None)."""
+    try:
+        if _WIN32_OK and title:
+            _FindWindowW = ctypes.windll.user32.FindWindowW
+            _FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+            _FindWindowW.restype = ctypes.c_void_p
+            hwnd = _FindWindowW(None, title)
+            if hwnd:
+                return hwnd
+    except Exception:
+        pass
+    return None
+
+
+def find_window_by_title_pid(title, pid):
+    """Como acima, mas so aceita se o PID bater (titulos duplicados:
+    outra instancia, janela velha de teste)."""
+    try:
+        if not (_WIN32_OK and title and pid):
+            return None
+        found = []
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def _cb(hwnd, _lparam):
+            try:
+                buf = ctypes.create_unicode_buffer(256)
+                if _GetWindowTextW(hwnd, buf, 256) > 0 and buf.value == title:
+                    _pid = ctypes.c_ulong()
+                    _GetWindowThreadProcessId(hwnd, ctypes.byref(_pid))
+                    if int(_pid.value) == int(pid):
+                        found.append(hwnd)
+            except Exception:
+                pass
+            return True
+
+        _EnumWindows(_cb, None)
+        if found:
+            return found[0]
+    except Exception:
+        pass
+    return None
+
+
+def is_window_visible(hwnd):
+    try:
+        if _WIN32_OK and hwnd:
+            return bool(_IsWindowVisible(hwnd))
+    except Exception:
+        pass
+    return False
+
+
+def show_window(hwnd, cmd):
+    """ShowWindow generico (SW_RESTORE/SW_SHOW/SW_MINIMIZE)."""
+    try:
+        if _WIN32_OK and hwnd:
+            _ShowWindow = ctypes.windll.user32.ShowWindow
+            _ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            _ShowWindow.restype = ctypes.c_bool
+            return bool(_ShowWindow(hwnd, int(cmd)))
+    except Exception:
+        pass
+    return False
+
+
+def set_owner_window(child_hwnd, owner_hwnd):
+    """Torna a janela owned (some do Alt+Tab e minimiza/restaura junto
+    do dono, sem virar filha: input, foco e F11 intactos)."""
+    if not _WIN32_OK or not child_hwnd or not owner_hwnd:
+        return False
+    try:
+        _SetWindowLongPtrW(child_hwnd, GWLP_HWNDPARENT, owner_hwnd)
+    except Exception:
+        return False
+    try:
+        exstyle = int(_GetWindowLongPtrW(child_hwnd, GWL_EXSTYLE))
+        exstyle &= ~WS_EX_APPWINDOW  # APPWINDOW furaria o owned no Alt+Tab
+        _SetWindowLongPtrW(child_hwnd, GWL_EXSTYLE, exstyle)
+    except Exception:
+        pass
+    return True

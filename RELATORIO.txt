@@ -138,3 +138,21 @@ Fixes no caminho:
    quit) via _browser_closing; fechamento rapido tambem sai do remoto.
 5. Watchdog do browser: wait(timeout=6000) unico derrubava o remoto aos
    ~100min com o browser vivo. Rearmado em fatias de 600s.
+
+---
+
+## 9. ADENDO v5.7.0 (18/09/2026) - Busca, favoritos de jogos, Alt+Tab unico
+
+Busca: barra abaixo dos modos de exibicao em todas as abas, com
+placeholder ("Buscar aplicativo..."/"Buscar jogo..."). Filtra ao digitar
+(mouse, teclado fisico e virtual), sem acento/maiuscula, com foco e
+cursor restaurados; limpa ao trocar de aba. Sem hotkeys de letra (Y/X/N
+removidos; setas/Enter/espaco nao reagem digitando).
+Favoritos: lista game_favorites separada; toggle roteia pelo tipo, com
+migracao unica do misto antigo e cura de lista errada. Nova aba Jogos
+Favoritos (so jogos); aba Favoritos filtra jogos fora. Estrela, menus,
+renomear/remover/detectar e ordenacao usam a lista certa.
+Alt+Tab unico: navegador vira owned do Nexus (some do Alt+Tab e da
+tarefa dupla) + APPWINDOW removido; botao _ esconde o browser e minimiza
+o Nexus junto; voltar pela tarefa restaura tudo (tick de visibilidade
+por borda). Sem reparentar: input, foco e F11 intactos.
