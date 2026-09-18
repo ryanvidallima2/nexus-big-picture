@@ -797,7 +797,7 @@ check(detect_pad_layout('Xbox 360 Controller') == 'xbox'
 calls_f = []
 _real_fit = NINPUT.focused_is_text_field
 NINPUT.focused_is_text_field = lambda: calls_f.append(True) or False
-NINPUT._FOCUS_CACHE.update(t=0.0, v=False)
+NINPUT._FOCUS_CACHE.update(t=None, v=False)
 NINPUT.focused_is_text_field_cached()
 NINPUT.focused_is_text_field_cached()
 check(len(calls_f) == 1, "I10 foco com cache (1 consulta)")
@@ -806,6 +806,78 @@ check(len(calls_f) == 2, "I11 ttl=0 reconsulta")
 NINPUT.focused_is_text_field = _real_fit
 
 print("PARTE 3 OK (%d checks)" % COUNT[0], flush=True)
+
+# ================= J) Y-guard ponta a ponta =================
+import nexus.gamepad as GMOD2  # noqa: E402
+_t2, _c2 = GMOD2.tap_key, GMOD2.mouse_click
+tapsY = []
+GMOD2.tap_key = lambda vk: tapsY.append(vk)
+GMOD2.mouse_click = lambda right=False: None
+
+appY = StubApp()
+appY.remote_action_for = lambda logical: "fullscreen" if logical == "north" else None
+kbY = kb_cls(appY, tk.Entry(root))
+appY.kb_window = kbY
+typedY = []
+kbY.press_key = lambda ch: typedY.append(ch)
+root.update()
+mgrY = GM.__new__(GM)
+mgrY.app = appY
+mgrY.joystick = FakeJS()
+mgrY.dpad_sources = [("hat", 0)]
+mgrY.raw_to_logical = {0: "south", 1: "east", 3: "north"}
+mgrY.logical_to_raw = {}
+mgrY.hat_debounce = {}
+mgrY.prev_buttons = {}
+mgrY.remote_cal = None
+mgrY.remote_off = [0.0, 0.0, 0.0, 0.0]
+mgrY.remote_kb_time = 0.0
+mgrY.remote_enter_time = 0.0
+mgrY.remote_service = ""
+mgrY.remote_hwnd = None
+mgrY.remote_watch_list = []
+mgrY.remote_watch_count = 0
+mgrY.remote_watch_seen = False
+mgrY.remote_watch_missed = 0
+mgrY._maybe_hotplug = lambda: None
+
+# H2: A com teclado aberto digita 1x, sem clique e sem NameError
+kbY.set_cursor(0, 0)
+mgrY.joystick.btns = {0}
+GM._poll_remote(mgrY)
+check(typedY == ['1'], "J1 A digita 1x com kb aberto")
+mgrY.prev_buttons = {}
+mgrY.joystick.btns = {1}
+GM._poll_remote(mgrY)
+check(kbY.closed, "J2 B fecha kb (sem cair no dispatch)")
+
+# H4: Y em campo bloqueia F e loga a decisao; fora do campo, manda F
+NINPUT.focused_is_text_field = lambda: True
+NINPUT._FOCUS_CACHE.update(t=None, v=False)
+mgrY.prev_buttons = {}
+mgrY.joystick.btns = {3}
+GM._poll_remote(mgrY)
+tail = ""
+try:
+    _loglines = open(os.path.join(BASE, 'nexus_debug.log'),
+                     encoding='utf-8').read().splitlines()
+    tail = _loglines[-1] if _loglines else ""
+except Exception:
+    tail = ""
+check(tapsY == [] and 'guard(fullscreen)' in tail and 'False' in tail,
+      "J3 Y em campo bloqueia + loga")
+NINPUT.focused_is_text_field = lambda: False
+NINPUT._FOCUS_CACHE.update(t=None, v=False)
+mgrY.prev_buttons = {}
+mgrY.joystick.btns = {3}
+GM._poll_remote(mgrY)
+check(tapsY == [GMOD2.VK_F], "J4 Y fora do campo manda F")
+NINPUT.focused_is_text_field = _real_fit
+kbY.close()
+GMOD2.tap_key = _t2
+GMOD2.mouse_click = _c2
+
+print("PARTE 4 OK (%d checks)" % COUNT[0], flush=True)
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:
     print("FALHAS:", fails, flush=True)

@@ -378,17 +378,19 @@ def remote_button_allowed(action):
         return True
 
 
-_FOCUS_CACHE = {"t": 0.0, "v": False}
+_FOCUS_CACHE = {"t": None, "v": False}
 
 
 def focused_is_text_field_cached(ttl=1.0):
-    """Versao com cache p/ caminho sincrono (loop do gamepad)."""
+    """Versao com cache p/ caminho sincrono (loop do gamepad).
+    t=None na primeira vez: sempre roda a checagem real, nunca o default."""
     try:
         now = time.monotonic()
     except Exception:
         return focused_is_text_field()
     try:
-        if now - _FOCUS_CACHE["t"] < ttl:
+        _t = _FOCUS_CACHE["t"]
+        if _t is not None and now - _t < ttl:
             return _FOCUS_CACHE["v"]
     except Exception:
         pass

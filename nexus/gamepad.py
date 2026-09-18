@@ -15,8 +15,8 @@ from .i18n import t
 from .input import (
     VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_RETURN, VK_ESCAPE, VK_SPACE,
     VK_F, VK_VOL_DOWN, VK_VOL_UP, VK_MEDIA_NEXT, VK_MEDIA_PREV,
-    VK_MEDIA_PLAY_PAUSE, focused_is_text_field, mouse_click, mouse_move,
-    mouse_wheel, remote_button_allowed, stick_response, tap_key,
+    VK_MEDIA_PLAY_PAUSE, _debug_log, focused_is_text_field, mouse_click,
+    mouse_move, mouse_wheel, remote_button_allowed, stick_response, tap_key,
 )
 from .keyboard import NexusKeyboard
 from .pad import (
@@ -670,13 +670,15 @@ class GamepadManager:
                 logical = self.logical_for_raw(btn_id)
                 kb = self.app.kb_window
                 if _modal_alive(kb) and logical in ("south", "east"):
-                    # Teclado aberto sobre o app: A digita, B fecha
+                    # Teclado aberto sobre o app: A digita, B fecha.
+                    # Continue: o botao ja foi tratado; sem isso o codigo
+                    # abaixo usaria `top` de outra iteracao (ou NameError).
                     if logical == "south":
                         kb.press_focused()
                     else:
                         kb.close()
-                else:
-                    top = top_modal(self.app)
+                    continue
+                top = top_modal(self.app)
                 if isinstance(top, NexusKeyboard):
                     if logical == "south":
                         top.press_focused()
@@ -706,7 +708,16 @@ class GamepadManager:
                     elif action == "space":
                         tap_key(VK_SPACE)
                     elif action == "fullscreen":
-                        if remote_button_allowed("fullscreen"):
+                        try:
+                            _allowed = remote_button_allowed("fullscreen")
+                        except Exception:
+                            _allowed = True
+                        try:
+                            _debug_log("Y remoto: guard(fullscreen) -> %r"
+                                       % (_allowed,))
+                        except Exception:
+                            pass
+                        if _allowed:
                             tap_key(VK_F)
                     elif action == "vol_down":
                         tap_key(VK_VOL_DOWN)
