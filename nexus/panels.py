@@ -972,8 +972,10 @@ class IdiomaPanel(SidePanel):
 
     def render(self):
         app = self.app
-        for code, label in (("pt-br", "\U0001F1E7\U0001F1F7  Portugues (BR)"),
-                            ("en", "\U0001F1EC\U0001F1E7  English")):
+        # Sigla de IDIOMA em texto (BR/EN): emoji de bandeira vira "BR"/"GB"
+        # em maquina sem fonte emoji, e GB e pais, nao idioma.
+        for code, label in (("pt-br", "BR  Portugues (BR)"),
+                            ("en", "EN  English")):
             mark = "\u2713 " if code == app.lang else ""
             self.button(mark + label, lambda c=code: app.set_language(c))
 
