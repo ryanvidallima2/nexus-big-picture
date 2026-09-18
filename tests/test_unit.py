@@ -906,6 +906,7 @@ mgrR.remote_watch_count = 0
 mgrR.remote_watch_seen = False
 mgrR.remote_watch_missed = 0
 mgrR._maybe_hotplug = lambda: None
+mgrR._maybe_open_kb_for_focus = lambda: None
 mgrR.joystick.btns = {0}
 GM._poll_remote(mgrR)
 _logA = ""
@@ -1117,11 +1118,13 @@ GMOD2.focused_is_text_field = _real_gfit
 
 print("PARTE 5 OK (%d checks)" % COUNT[0], flush=True)
 
-# ================= L) 1 clique abre (retry) =================
+# ================= M) 1 clique abre (retry) =================
 import nexus.gamepad as _GM  # noqa: E402
 _real_fit2 = _GM.focused_is_text_field
 seq = iter([False, True])
 _calls = []
+
+
 def _seq_check():
     v = next(seq, True)
     _calls.append(v)
@@ -1137,13 +1140,13 @@ mgrL.remote_kb_time = 0.0
 mgrL.remote_enter_time = 0.0
 mgrL._focus_check_thread()
 root.update()
-check(appL.opened == [True], "L1 foco lento abre sozinho")
-check(_calls == [False, True], "L2 2a chance apos 1o negativo")
+check(appL.opened == [True], "M1 foco lento abre sozinho")
+check(_calls == [False, True], "M2 2a chance apos 1o negativo")
 _GM.focused_is_text_field = lambda: True
 appL.opened.clear()
 mgrL._focus_check_thread()
 root.update()
-check(appL.opened == [True], "L3 foco rapido abre")
+check(appL.opened == [True], "M3 foco rapido abre")
 _GM.focused_is_text_field = _real_fit2
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:

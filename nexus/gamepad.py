@@ -850,7 +850,8 @@ class GamepadManager:
     def _focus_check_thread(self):
         # Duas fases: campo com foco imediato (0,45s) e pagina que foca com
         # atraso via JS (busca com resultado instantaneo). Segunda fase so
-        # se o teclado ainda nao abriu.
+        # se o teclado ainda nao abriu. Com isso, 1 clique basta mesmo em
+        # pagina lenta.
         try:
             time.sleep(0.45)
             is_text = focused_is_text_field()
@@ -860,18 +861,10 @@ class GamepadManager:
                         return
                 except Exception:
                     pass
-                time.sleep(0.8)
+                time.sleep(1.0)
                 is_text = focused_is_text_field()
         except Exception:
             is_text = False
-        if not is_text:
-            # Pagina lenta: o foco assenta depois do clique. Segunda
-            # chance automatica (~1,6s) p/ abrir com 1 clique so.
-            try:
-                time.sleep(1.2)
-                is_text = focused_is_text_field()
-            except Exception:
-                is_text = False
         if is_text:
             try:
                 self.app.root.after(0, self._open_kb_global)
