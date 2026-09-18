@@ -920,6 +920,87 @@ GMOD2.tap_key = _t3
 GMOD2.mouse_click = _c3
 
 print("PARTE 4 OK (%d checks)" % COUNT[0], flush=True)
+
+# ================= K) mapa por aparelho + Y livre =================
+from nexus.pad import (  # noqa: E402
+    DEFAULT_PAD_DEADZONE, DEFAULT_PAD_SCROLL, DEFAULT_PAD_SENSITIVITY,
+    DEFAULT_REMOTE_MAP, REMOTE_ACTION_ORDER, normalize_pad_value,
+)
+check("fullscreen" not in DEFAULT_REMOTE_MAP, "K1 Y livre de fabrica")
+check("fullscreen" in REMOTE_ACTION_ORDER, "K2 fullscreen remapeavel")
+_ar = open(os.path.join(BASE, 'nexus', 'app_remote.py'), encoding='utf-8').read()
+_nsR = {'save_settings': lambda s: None,
+        'DEFAULT_NEXUS_MAP': {}, 'DEFAULT_REMOTE_MAP': DEFAULT_REMOTE_MAP,
+        'DEFAULT_PAD_SENSITIVITY': DEFAULT_PAD_SENSITIVITY,
+        'DEFAULT_PAD_SCROLL': DEFAULT_PAD_SCROLL,
+        'DEFAULT_PAD_DEADZONE': DEFAULT_PAD_DEADZONE,
+        'LOGICAL_BUTTONS': (), 'normalize_pad_value': normalize_pad_value,
+        '_modal_alive': lambda w: False}
+for _mark in ('    def _pad_lookup(self, base_map, settings_key, btn_or_logical):',
+              '    def remote_action_for(self, btn_or_logical):',
+              '    def pad_profile_snapshot(self):',
+              '    def device_profiles(self):',
+              '    def store_device_profile(self, guid):',
+              '    def adopt_device_profile(self, prev_guid):',
+              '    def store_current_device(self):',
+              '    def finish_pad_capture(self, btn_or_logical):'):
+    _s = _ar.index(_mark)
+    _e = _ar.index('\n    def ', _s + 10)
+    exec(textwrap.dedent(_ar[_s:_e]), _nsR)
+for _k, _v in _nsR.items():
+    if isinstance(_v, type(lambda: 0)):
+        setattr(StubApp, _k,
+                lambda self, *a, _f=_v, **k2: _f(self, *a, **k2))
+_gp = open(os.path.join(BASE, 'nexus', 'gamepad.py'), encoding='utf-8').read()
+_sg = _gp.index('    def current_guid(self):')
+_eg = _gp.index('\n    def ', _sg + 10)
+_nsG2 = {}
+exec(textwrap.dedent(_gp[_sg:_eg]), _nsG2)
+
+
+class GPStub:
+    def __init__(self, devs, joy_name):
+        self.devices = devs
+        self.joystick = SimpleNamespace(get_name=lambda: joy_name) \
+            if joy_name else None
+
+
+GPStub.current_guid = _nsG2['current_guid']
+appK = StubApp()
+appK.settings = {"pad_nexus": {"select": "south"}, "pad_remote": {},
+                 "pad_sensitivity": 15, "pad_scroll": 9, "pad_deadzone": 25}
+appK.gamepad = GPStub([{"name": "A", "guid": "A"},
+                       {"name": "B", "guid": "B"}], "A")
+appK.pad_window = None
+check(appK.remote_action_for("north") is None, "K3 Y sem acao padrao")
+appK.adopt_device_profile("")
+check(appK.settings.get("pad_per_device", {}).get("A", {}).get(
+    "nexus") == {"select": "south"}, "K4 boot semeia aparelho")
+appK.gamepad = GPStub([{"name": "A", "guid": "A"},
+                       {"name": "B", "guid": "B"}], "B")
+appK.adopt_device_profile("A")
+_slots = appK.settings.get("pad_per_device", {})
+check(_slots.get("A", {}).get("sensitivity") == 15
+      and appK.settings.get("pad_nexus") == {}
+      and appK.settings.get("pad_sensitivity") == DEFAULT_PAD_SENSITIVITY,
+      "K5 troca guarda A e zera B")
+appK.settings["pad_sensitivity"] = 20
+appK.gamepad = GPStub([{"name": "A", "guid": "A"},
+                       {"name": "B", "guid": "B"}], "A")
+appK.adopt_device_profile("B")
+check(appK.settings.get("pad_nexus") == {"select": "south"}
+      and appK.settings.get("pad_sensitivity") == 15,
+      "K6 voltar restaura A")
+appK.pad_capture = {"section": "nexus", "action": "cards"}
+appK.finish_pad_capture("west")
+_slots = appK.settings.get("pad_per_device", {})
+check(appK.settings["pad_nexus"].get("cards") == "west"
+      and _slots.get("A", {}).get("nexus", {}).get("cards") == "west",
+      "K7 remap carimba aparelho")
+check(GPStub([{"name": "B", "guid": "B"}], "B").current_guid() == "B"
+      and GPStub([], None).current_guid() == "", "K8 guid atual")
+
+print("PARTE 5 OK (%d checks)" % COUNT[0], flush=True)
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:
     print("FALHAS:", fails, flush=True)

@@ -84,6 +84,10 @@ class GamepadManager:
     # ---------- dispositivos ----------
     def refresh_devices(self):
         """Re-enumera controles (hot-plug). Mantem o escolhido ou o salvo."""
+        try:
+            prev_guid = self.current_guid()
+        except Exception:
+            prev_guid = ""
         lst = []
         try:
             for i in range(pygame.joystick.get_count()):
@@ -126,6 +130,10 @@ class GamepadManager:
             self.attach(lst[min(pick, len(lst) - 1)]["index"])
         else:
             self._detach()
+        try:
+            self.app.adopt_device_profile(prev_guid)
+        except Exception:
+            pass
 
     def _detach(self):
         try:
@@ -225,12 +233,20 @@ class GamepadManager:
         """Escolhe o controle pela posicao na lista. Persiste por GUID."""
         if not self.devices or pos < 0 or pos >= len(self.devices):
             return False
+        try:
+            prev_guid = self.current_guid()
+        except Exception:
+            prev_guid = ""
         d = self.devices[pos]
         if not self.attach(d["index"]):
             return False
         try:
             self.app.settings["pad_device_guid"] = d["guid"]
             save_settings(self.app.settings)
+        except Exception:
+            pass
+        try:
+            self.app.adopt_device_profile(prev_guid)
         except Exception:
             pass
         return True
@@ -256,6 +272,19 @@ class GamepadManager:
             return ""
         tag = PAD_LAYOUT_LABEL.get(self.layout, "")
         return "%s (%s)" % (name, tag) if tag else name
+
+    def current_guid(self):
+        """GUID do aparelho anexado agora ("" se nenhum)."""
+        try:
+            if self.joystick is None:
+                return ""
+            name = self.joystick.get_name()
+            for d in self.devices:
+                if d.get("name") == name:
+                    return d.get("guid", "") or ""
+        except Exception:
+            pass
+        return ""
 
     def connection_info(self):
         """'Cabo' se o pygame reporta wired; senao nivel de bateria."""

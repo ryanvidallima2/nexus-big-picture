@@ -104,11 +104,13 @@ def parse_sdl_mapping(mapping):
     return out
 
 # Acao -> botao. Usuario pode trocar em Configuracoes > Gamepad.
+# Y (north) vem LIVRE de fabrica: fullscreen nao e universal
+# (vira letra em campo de texto) - quem quiser, remapeia.
 DEFAULT_NEXUS_MAP = {"select": 0, "back": 1, "cards": 2,
                      "sidebar": 3, "tab_prev": 4, "tab_next": 5,
                      "notif": 7}
 DEFAULT_REMOTE_MAP = {"click_left": 0, "back": 1, "click_right": 2,
-                       "fullscreen": 3, "app_tab_prev": 4, "app_tab_next": 5,
+                       "app_tab_prev": 4, "app_tab_next": 5,
                        "space": 8, "enter": 9, "play_pause": 6,
                        "vol_down": "l2", "vol_up": "r2"}
 NEXUS_ACTION_ORDER = ["select", "back", "cards", "sidebar", "tab_prev", "tab_next",

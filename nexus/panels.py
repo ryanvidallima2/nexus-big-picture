@@ -364,6 +364,7 @@ class GamepadConfigWindow:
             self.app.settings["pad_scroll"] = int(self.scroll_var.get())
             self.app.settings["pad_deadzone"] = int(self.dead_var.get())
             save_settings(self.app.settings)
+            self.app.store_current_device()
         except Exception:
             pass
 
@@ -371,6 +372,7 @@ class GamepadConfigWindow:
         try:
             self.app.settings[settings_key] = {}
             save_settings(self.app.settings)
+            self.app.store_current_device()
         except Exception:
             pass
         self.refresh()
@@ -958,6 +960,7 @@ class ControlesPanel(SidePanel):
             if isinstance(self.app.settings, dict):
                 self.app.settings[key] = int(val)
                 save_settings(self.app.settings)
+                self.app.store_current_device()
         except Exception:
             pass
 

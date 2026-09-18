@@ -204,9 +204,78 @@ class AppRemoteMixin:
             self.settings["pad_deadzone"] = snap.get("deadzone", DEFAULT_PAD_DEADZONE)
             self.settings["pad_profile_active"] = slot
             save_settings(self.settings)
+            self.store_current_device()
             if _modal_alive(self.pad_window):
                 self.pad_window.refresh()
             return True
+        except Exception:
+            return False
+
+    # ---------- perfis por aparelho (cada controle guarda o seu mapa) ----------
+    def device_profiles(self):
+        try:
+            d = self.settings.get("pad_per_device", {})
+            return dict(d) if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+
+    def store_device_profile(self, guid):
+        """Guarda o mapa atual como sendo do aparelho guid."""
+        if not guid:
+            return False
+        try:
+            snap = self.pad_profile_snapshot()
+            profs = self.device_profiles()
+            profs[guid] = snap
+            self.settings["pad_per_device"] = profs
+            save_settings(self.settings)
+            return True
+        except Exception:
+            return False
+
+    def adopt_device_profile(self, prev_guid):
+        """Troca de aparelho: guarda o mapa no anterior e aplica o do atual.
+        Boot (prev vazio): semeia o slot com o mapa do arquivo. Aparelho
+        novo: comeca do padrao de fabrica. Mesmo aparelho: nao faz nada."""
+        try:
+            gp = self.gamepad
+            cur = gp.current_guid() if gp else ""
+        except Exception:
+            cur = ""
+        try:
+            if prev_guid and prev_guid != cur:
+                self.store_device_profile(prev_guid)
+            if not cur or prev_guid == cur:
+                return True
+            if not prev_guid:
+                self.store_device_profile(cur)
+                return True
+            snap = self.device_profiles().get(cur) or {}
+            if snap:
+                self.settings["pad_nexus"] = dict(snap.get("nexus", {}) or {})
+                self.settings["pad_remote"] = dict(snap.get("remote", {}) or {})
+                self.settings["pad_sensitivity"] = snap.get(
+                    "sensitivity", DEFAULT_PAD_SENSITIVITY)
+                self.settings["pad_scroll"] = snap.get(
+                    "scroll", DEFAULT_PAD_SCROLL)
+                self.settings["pad_deadzone"] = snap.get(
+                    "deadzone", DEFAULT_PAD_DEADZONE)
+            else:
+                self.settings["pad_nexus"] = {}
+                self.settings["pad_remote"] = {}
+                self.settings["pad_sensitivity"] = DEFAULT_PAD_SENSITIVITY
+                self.settings["pad_scroll"] = DEFAULT_PAD_SCROLL
+                self.settings["pad_deadzone"] = DEFAULT_PAD_DEADZONE
+            save_settings(self.settings)
+            return True
+        except Exception:
+            return False
+
+    def store_current_device(self):
+        """Guarda o mapa atual no aparelho anexado (pos-remap/sliders)."""
+        try:
+            gp = self.gamepad
+            return self.store_device_profile(gp.current_guid() if gp else "")
         except Exception:
             return False
 
@@ -243,6 +312,7 @@ class AppRemoteMixin:
             cur[action] = logical
             self.settings[key] = cur
             save_settings(self.settings)
+            self.store_current_device()
         except Exception:
             pass
         if self.pad_window is not None:
