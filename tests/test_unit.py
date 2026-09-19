@@ -98,19 +98,20 @@ kb = kb_cls(app, tk.Entry(root))
 app.kb_window = kb
 root.update()
 rows = kb.cells
-check(len(rows) == 5, "A1 fileiras 10/10/9/9/5")
-check([len(r) for r in rows] == [10, 10, 9, 9, 5], "A2 larguras")
+check(len(rows) == 5, "A1 fileiras 10/10/9/9/6")
+check([len(r) for r in rows] == [10, 10, 9, 9, 6], "A2 larguras")
 pad_q = kb.row_frames[1].pack_info().get('padx')
 pad_a = kb.row_frames[2].pack_info().get('padx')
 pad_q = (pad_q, pad_q) if isinstance(pad_q, int) else tuple(pad_q)
 pad_a = (pad_a, pad_a) if isinstance(pad_a, int) else tuple(pad_a)
 check(pad_a[0] > pad_q[0], "A3 asdf indentada")
 labels = [b.cget('text') for _k, b in rows[4]]
-check(labels[0] == '?123' and labels[2] == '' and labels[4] == '\u2713',
-      "A4 action row (?123, espaco em branco, check)")
+check(labels[0] == '?123' and labels[1] == 'BR' and labels[2] == '🙂'
+      and labels[3] == '' and labels[4] == '.' and labels[5] == '✓',
+      "A4 action row (?123, BR, emoji, espaco, ponto, check)")
 root.update()
-w_space = rows[4][2][1].winfo_width()
-w_dot = rows[4][3][1].winfo_width()
+w_space = rows[4][3][1].winfo_width()
+w_dot = rows[4][4][1].winfo_width()
 check(w_space > 3 * w_dot, "A5 flex espaco domina")
 W = kb.win.winfo_width()
 scale = W / 691.0
@@ -118,7 +119,7 @@ exp_w = (W - 2 * 8 * scale - 9 * 7 * scale) / 10
 w_q = rows[1][0][1].winfo_width()
 check(abs(w_q - exp_w) < 6, "A6 largura exata por flex")
 kb.press_key('?123')
-check(kb.numeric and [len(r) for r in kb.cells] == [10, 10, 10, 10, 5],
+check(kb.numeric and [len(r) for r in kb.cells] == [10, 10, 10, 10, 6],
       "A7 ?123 vira simbolos 4x10")
 syms = [k for r in kb.cells[:4] for k, _b in r]
 check(all(s in syms for s in ('!', '@', '#', '$', '%', '&', '*', '(', ')')),
@@ -144,6 +145,62 @@ check(kb.docked, "A13 A no dock ancora")
 kb.set_docked(False)
 root.update()
 kb.close()
+
+# ================= A14) layout BR/US + tecla morta =================
+import nexus.keyboard as KBMOD  # noqa: E402
+_saved_kb = []
+_orig_kb_save = KBMOD.save_settings
+KBMOD.save_settings = lambda s: _saved_kb.append(dict(s))
+try:
+    appL = StubApp()
+    kbL = kb_cls(appL, tk.Entry(root))
+    appL.kb_window = kbL
+    root.update()
+    check(getattr(kbL, "layout", "us") == "us", "A14 layout padrao us")
+    check([len(r) for r in kbL.cells] == [10, 10, 9, 9, 6],
+          "A15 alpha us + action 6")
+    kbL.press_key("lang")
+    check(kbL.layout == "br", "A16 alterna p/ br")
+    check([len(r) for r in kbL.cells] == [10, 10, 10, 9, 3, 6],
+          "A17 br: home com Ç + fileira de acentos")
+    check("Ç" in [k for k, _b in kbL.cells[2]], "A18 Ç na home")
+    check("´" in [k for k, _b in kbL.cells[4]], "A19 fileira ´ ^ ~")
+    check(_saved_kb and _saved_kb[-1].get("kb_layout") == "br",
+          "A20 persiste kb_layout")
+    ent = kbL.entry
+    ent.delete(0, "end")
+    kbL.press_key("´")
+    kbL.press_key("a")
+    kbL.press_key("~")
+    kbL.press_key("o")
+    kbL.press_key("C")
+    check(ent.get() == "áõc", "A21 morto compoe + Ç minusculo")
+    kbL.press_key("⇧")
+    kbL.press_key("Ç")
+    kbL.press_key("^")
+    kbL.press_key("E")
+    kbL.press_key("⇧")
+    check(ent.get() == "áõcÇÊ", "A22 shift + maiuscula com ^")
+    kbL.press_key("´")
+    kbL.press_key("b")
+    kbL.press_key("~")
+    kbL.press_key("~")
+    check(ent.get() == "áõcÇÊ´b~", "A23 sem-combinacao, duplo vira literal")
+    kbL.press_key("´")
+    kbL.press_key("⌫")
+    check(ent.get() == "áõcÇÊ´b~" and kbL.dead is None,
+          "A24 backspace cancela o morto")
+    kbL.press_key("lang")
+    check(kbL.layout == "us"
+          and [len(r) for r in kbL.cells] == [10, 10, 9, 9, 6],
+          "A25 volta p/ us")
+    kbG = kb_cls(appL, None)  # modo global (apps): layout vale sem entry
+    kbG.press_key("lang")
+    check(kbG.layout == "br", "A26 global alterna p/ br")
+    kbG.close()
+    kbL.close()
+finally:
+    KBMOD.save_settings = _orig_kb_save
 
 # ================= B) remoto com teclado =================
 import pygame  # noqa: E402
@@ -1115,6 +1172,57 @@ GM._focus_check_thread(mgrT)
 root.update()
 check(openedT == [True], "L6 foco tardio abre o teclado")
 GMOD2.focused_is_text_field = _real_gfit
+
+# ================= PARTE 6: busca + favoritos segregados =================
+import nexus.app_settings as SETMOD  # noqa: E402
+import nexus.app_views as VIEWMOD  # noqa: E402
+from nexus.app_games import AppGamesMixin as _GMX  # noqa: E402
+_orig_set_save = SETMOD.save_settings
+SETMOD.save_settings = lambda s: None
+try:
+    for _k in ("is_game_name", "game_favorites", "is_favorite",
+               "_migrate_favorites", "toggle_favorite"):
+        setattr(StubApp, _k, getattr(SETMOD.AppSettingsMixin, _k))
+    setattr(StubApp, "_match_search", VIEWMOD.AppViewsMixin._match_search)
+    for _k in ("game_folder", "game_is_external", "game_is_platform"):
+        setattr(StubApp, _k, getattr(_GMX, _k))
+    StubApp.refresh_ui = lambda self: None
+
+    g = StubApp()
+    g.settings = {"favorites": [],
+                  "external_games": {"ZZJogo": {"exe": "x"}},
+                  "game_favorites": []}
+    g.search_query = ""
+    check(g.is_game_name("ZZJogo") is True, "M1 jogo detectado")
+    check(g.is_game_name("Netflix") is False, "M2 app nao e jogo")
+    g.toggle_favorite("ZZJogo")
+    check("ZZJogo" in g.settings["game_favorites"]
+          and "ZZJogo" not in g.settings["favorites"],
+          "M3 toggle jogo vai p/ game_favorites")
+    g.toggle_favorite("Netflix")
+    check("Netflix" in g.settings["favorites"], "M4 toggle app vai p/ favorites")
+    g.toggle_favorite("ZZJogo")
+    check("ZZJogo" not in g.settings["game_favorites"], "M5 toggle remove jogo")
+    g2 = StubApp()
+    g2.settings = {"favorites": ["Netflix", "ZZJogo2"],
+                   "external_games": {"ZZJogo2": {"exe": "x"}},
+                   "game_favorites": []}
+    g2.search_query = ""
+    g2._migrate_favorites()
+    check("ZZJogo2" not in g2.settings["favorites"]
+          and "ZZJogo2" in g2.settings["game_favorites"]
+          and "Netflix" in g2.settings["favorites"], "M6 migracao separa")
+    check(g2.is_favorite("ZZJogo2") and g2.is_favorite("Netflix")
+          and not g2.is_favorite("Nada"), "M7 is_favorite roteia")
+    g2.search_query = ""
+    check(g2._match_search("Netflix") is True, "M8 match vazio passa")
+    g2.search_query = "net"
+    check(g2._match_search("Netflix") is True
+          and g2._match_search("YouTube") is False, "M9 match filtra")
+    g2.search_query = "pokemon"
+    check(g2._match_search("Pokémon") is True, "M10 match sem acento")
+finally:
+    SETMOD.save_settings = _orig_set_save
 
 print("PARTE 5 OK (%d checks)" % COUNT[0], flush=True)
 

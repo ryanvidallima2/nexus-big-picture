@@ -77,6 +77,14 @@ def run():
         tk_errors.append(str(val))
 
     tk.Tk.report_callback_exception = _rep
+    import threading
+    thread_errors = []
+    _orig_thehook = threading.excepthook
+
+    def _thehook(args):
+        thread_errors.append(str(args.exc_value))
+
+    threading.excepthook = _thehook
     root = tk.Tk()
     root.withdraw()
     app = None
@@ -87,6 +95,9 @@ def run():
 
         from nexus.app import BigPictureApp as App2
         check(B.BigPictureApp is App2, "entry usa nexus.app")
+        check("webview" not in sys.modules, "webview lazy (fora do boot)")
+        from nexus.browser import browser_available
+        check(browser_available() is True, "browser disponivel (lazy ok)")
 
         for lang, title_all, tag in (("pt-br", "Todos os Streamings", "FILMES"),
                                      ("en", "All Streamings", "MOVIES")):
@@ -103,6 +114,64 @@ def run():
             root.update()
             texts = collect_texts(app.scroll_frame)
             check(title_all in texts and tag in texts, "render %s" % lang)
+
+        app.lang = "pt-br"
+        app.render_tab("all")
+        root.update()
+        check(getattr(app.search_entry, "_hint_on", False) is True
+              and app.search_entry.get() == "Buscar aplicativo...",
+              "busca placeholder app")
+        app.render_tab("games")
+        root.update()
+        check(app.search_entry.get() == "Buscar jogo...",
+              "busca placeholder jogo")
+        app.lang = "en"
+        app.render_tab("all")
+        root.update()
+        check(app.search_entry.get() == "Search apps...",
+              "busca placeholder en")
+        app.lang = "pt-br"
+        app.search_query = "net"
+        app.render_tab("all")
+        root.update()
+        texts = collect_texts(app.scroll_frame)
+        check("Netflix" in texts and "YouTube" not in texts, "busca filtra")
+        app.search_query = ""
+        app.render_tab("all")
+        root.update()
+
+        _fav_bak = list(app.settings.get("favorites", []) or [])
+        _gfav_bak = list(app.settings.get("game_favorites", []) or [])
+        _ext_bak = dict(app.settings.get("external_games", {}) or {})
+        try:
+            app.settings["favorites"] = ["Netflix"]
+            app.settings["game_favorites"] = []
+            app.settings["external_games"] = dict(
+                _ext_bak, **{"ZZJogo": {"exe": "x"}})
+            app.render_tab("favorites")
+            root.update()
+            texts = collect_texts(app.scroll_frame)
+            check("Netflix" in texts, "favoritos mostra app")
+            app.toggle_favorite("ZZJogo")
+            app.render_tab("favorites")
+            root.update()
+            texts = collect_texts(app.scroll_frame)
+            check("ZZJogo" not in texts, "favoritos nao mostra jogo")
+            check("ZZJogo" in app.settings.get("game_favorites", []),
+                  "toggle jogo segrega")
+            for lang, title in (("pt-br", "Jogos Favoritos"),
+                                ("en", "Favorite Games")):
+                app.lang = lang
+                app.render_tab("gamefavorites")
+                root.update()
+                check(title in collect_texts(app.scroll_frame),
+                      "gamefavorites %s" % lang)
+            app.lang = "pt-br"
+        finally:
+            app.settings["favorites"] = _fav_bak
+            app.settings["game_favorites"] = _gfav_bak
+            app.settings["external_games"] = _ext_bak
+        app.search_query = ""
 
         for d in ("up", "down", "left", "right"):
             app._nav(d)
@@ -268,7 +337,21 @@ def run():
         check(True, "games scan+render")
     finally:
         try:
+            import time as _time
+            for _ in range(8):
+                try:
+                    root.update()
+                except Exception:
+                    pass
+                _time.sleep(0.5)
+        except Exception:
+            pass
+        try:
             tk.Tk.report_callback_exception = _orig_rep
+        except Exception:
+            pass
+        try:
+            threading.excepthook = _orig_thehook
         except Exception:
             pass
         try:
@@ -279,6 +362,8 @@ def run():
             pass
     if tk_errors:
         print("WARN callbacks Tk com erro (%d): %s" % (len(tk_errors), tk_errors[:3]))
+    for _te in thread_errors[:3]:
+        check(False, "thread sem excecao (teve: %s)" % (_te[:100],))
     return 0 if not fails else 1
 
 

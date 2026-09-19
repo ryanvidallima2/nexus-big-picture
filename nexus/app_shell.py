@@ -85,6 +85,10 @@ class AppShellMixin:
         self.form_focus = []
         self.form_idx = 0
         self.lang = self.settings.get("language", "pt-br")
+        self.search_query = ""
+        self._search_refocus = False
+        self.search_entry = None
+        self._migrate_favorites()
 
         self.build_ui()
         self.setup_keybinds()
@@ -334,6 +338,7 @@ class AppShellMixin:
             (t("tab_videos", self.lang), "videos"),
             (t("tab_all", self.lang), "all"),
             (t("tab_games", self.lang), "games"),
+            (t("tab_gamefavorites", self.lang), "gamefavorites"),
         ]
         for idx, (text, tid) in enumerate(tabs):
             if tid == "games":

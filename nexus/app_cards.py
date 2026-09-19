@@ -209,7 +209,7 @@ class AppCardsMixin:
                          fg=Config.TEXT_SECONDARY, bg=Config.BG_CARD, cursor="hand2",
                          anchor="w").pack(anchor="w", pady=(4, 0))
 
-        if name in self.settings.get("favorites", []):
+        if self.is_favorite(name):
             tk.Label(card, text="\u2B50", font=("Segoe UI", 10),
                      fg="#ffd700", bg=Config.BG_CARD).place(relx=0.92, rely=0.03, anchor="ne")
 
@@ -414,10 +414,10 @@ class AppCardsMixin:
             if os.path.commonpath([base, target]) != base or target == base:
                 return False
             shutil.rmtree(target)
-            favs = self.settings.get("favorites", [])
+            favs = self.settings.get("game_favorites", [])
             if name in favs:
                 favs.remove(name)
-                self.settings["favorites"] = favs
+                self.settings["game_favorites"] = favs
                 save_settings(self.settings)
             return True
         except Exception:

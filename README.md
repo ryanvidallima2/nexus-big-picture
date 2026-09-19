@@ -1,4 +1,4 @@
-# Nexus - Big Picture v5.5.0
+# Nexus - Big Picture v5.7.0
 
 Interface de streaming inspirada no Steam Big Picture Mode.
 
@@ -13,17 +13,17 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **Gamepad**: Suporte universal (Xbox, PlayStation, Switch, genericos) via pygame + SDL - deteccao automatica do tipo com nomes de botoes de cada familia (A vs. X vs. B...), D-pad por hat ou botoes conforme o controle
 - **Seletor de controle**: Configuracoes > Controles lista todos os conectados (cabo, Bluetooth, 2.4GHz, virtuais) com tipo e conexao/bateria; troca com 1 clique, hot-plug e memoria por aparelho
 - **Otimizacao por conexao**: zona morta ajustavel (ideal p/ drift no Bluetooth), calibracao automatica, polling 60Hz; dongle 2.4GHz aparece como Cabo (latencia minima)
-- **Abas**: Home, Favoritos, Filmes, Musica, Videos, Todos
-- **Busca**: Pesquisa por nome em tempo real
+- **Abas**: Favoritos, Filmes, Musica, Videos, Todos, Jogos, Jogos Favoritos
+- **Busca**: Barra de pesquisa em todas as abas com filtro em tempo real ("Buscar aplicativo..."/"Buscar jogo...")
 - **Logos**: Sistema automatico de busca por `{nome}_logo.{ext}` na pasta `streaming_images`
 - **Trocar logo**: Clique direito > Trocar Logo
 - **Adicionar streaming**: Formulario completo com nome, URL, categoria e logo
-- **Favoritos**: Adicionar/remover com clique direito
-- **Navegador embutido**: botao Site abre o servico em tela cheia sem bordas numa janela do proprio Nexus (WebView2), com transicao e mesmo icone na barra de tarefas - parece um app so. Barra discreta com minimizar/fechar, F11 p/ tela cheia e confirmacao de saida
+- **Favoritos**: Adicionar/remover com clique direito; aba Favoritos so p/ aplicativos e aba Jogos Favoritos so p/ jogos
+- **Navegador embutido**: botao Site abre o servico em tela cheia sem bordas numa janela do proprio Nexus (WebView2), com transicao e mesmo icone na barra de tarefas - parece um app so. Barra discreta com minimizar/fechar, F11 p/ tela cheia e confirmacao de saida. Janela unica no Alt+Tab: minimizar leva tudo junto e voltar pela tarefa restaura tudo
 - **Logins salvos**: perfil persistente mantem logins, cookies e senhas entre sessoes; limpeza em Configuracoes > Limpar logins e cache
 - **Apps em tela cheia**: botao App forca o aplicativo a fullscreen sem bordas (modo big picture); ao fechar, o Nexus volta em ~0,5s e sempre maximizado
 - **Leitura rapida**: logos com cache de caminho e miniaturas otimizadas; abertura de sites ~2x mais rapida
-- **Teclado virtual**: ⌨ na sidebar e nos campos de texto - analogico/setas movem, confirmar tecla; tecla de verdade onde o foco estiver (vale nos logins do navegador). Abre sozinho ao clicar no campo; detecta numerico (123) vs letras, com alternador manual
+- **Teclado virtual**: ⌨ na sidebar e nos campos de texto - analogico/setas movem, confirmar tecla; tecla de verdade onde o foco estiver (vale nos logins do navegador). Abre sozinho ao clicar no campo; detecta numerico (123) vs letras, com alternador manual. Tecla BR/US troca o layout ABNT2 (com Ç) e US; no BR, a fileira ´ ^ ~ acentua a vogal seguinte (tecla morta). Vale nos campos do Nexus e nos apps
 - **Foco unificado**: cursor do mouse e selecao sao uma coisa so - navegar com controle/teclado leva o cursor junto; apontar com o mouse leva o foco junto
 - **Modo console nos sites**: no navegador embutido, setas/analogico selecionam os quadros (filmes, series) com anel roxo como num videogame, rolando o catalogo sozinho; A abre, B volta. R1/L1 percorrem as abas de categoria; modal flutuante (ex. preview Netflix) ganha prioridade automatica
 - **Bola no menu principal**: pergunta sair ou nao sair do aplicativo

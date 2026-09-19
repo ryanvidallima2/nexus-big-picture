@@ -2,7 +2,7 @@
 """Versao e repositorio (sem dependencias internas)."""
 
 
-APP_VERSION = "5.5.0"
+APP_VERSION = "5.7.0"
 GITHUB_REPO = "ryanvidallima2/nexus-big-picture"
 UPDATE_URL = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest"
 
