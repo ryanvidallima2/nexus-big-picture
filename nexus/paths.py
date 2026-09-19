@@ -6,6 +6,7 @@ Extraido de bigpicture.py sem mudar comportamento.
 
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -84,6 +85,63 @@ def browser_profile_size():
     except Exception:
         pass
     return total
+
+
+def service_key(name):
+    """Slug seguro p/ pasta do perfil (a-z0-9, resto vira _)."""
+    try:
+        slug = re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+        return slug[:48] or "app"
+    except Exception:
+        return "app"
+
+
+def service_profile_dir(service):
+    """Perfil SOLO do servico (logins/cookies isolados, limpavel sozinho).
+    Sem servico: o compartilhado de sempre (compat)."""
+    base = nexus_profile_dir()
+    try:
+        if service:
+            d = os.path.join(base, service_key(service))
+            try:
+                os.makedirs(d, exist_ok=True)
+            except Exception:
+                pass
+            return d
+    except Exception:
+        pass
+    return base
+
+
+def service_profile_size(service):
+    total = 0
+    try:
+        d = service_profile_dir(service)
+        for dirpath, _dirnames, files in os.walk(d):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, f))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return total
+
+
+def clear_service_profile(service):
+    """Apaga logins/cookies/cache SO deste servico. False se em uso."""
+    if browser_running():
+        return False
+    try:
+        d = service_profile_dir(service)
+        base = os.path.abspath(nexus_profile_dir())
+        if os.path.abspath(d) == base:
+            return False  # sem slug: nunca apagar a base por aqui
+        shutil.rmtree(d, ignore_errors=True)
+        os.makedirs(d, exist_ok=True)
+        return True
+    except Exception:
+        return False
 
 
 def browser_running():

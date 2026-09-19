@@ -25,7 +25,10 @@ def _ensure_webview():
     WEBVIEW_AVAILABLE = True
     return True
 
-from .paths import NEXUS_BROWSER_EXE, NEXUS_BROWSER_FILE, nexus_profile_dir
+from .paths import (
+    NEXUS_BROWSER_EXE, NEXUS_BROWSER_FILE, nexus_profile_dir,
+    service_profile_dir,
+)
 
 
 # O botao Site abre o servico numa janela do proprio Nexus (pywebview +
@@ -49,8 +52,10 @@ def python_for_browser():
     return None
 
 
-def open_in_nexus_browser(url, title="Nexus", pad_label=""):
-    """Abre a URL no navegador embutido. Retorna o Popen ou None."""
+def open_in_nexus_browser(url, title="Nexus", pad_label="", service=""):
+    """Abre a URL no navegador embutido. Retorna o Popen ou None.
+    Com service, o perfil (logins/cookies) e solo por aplicativo e pode
+    ser limpo individualmente; sem service, o compartilhado de sempre."""
     if not browser_available():
         return None
     try:
@@ -61,9 +66,10 @@ def open_in_nexus_browser(url, title="Nexus", pad_label=""):
         return None  # WebView2 nao aceita outros esquemas -> navegador externo
     # Propaga o perfil configurado (disco D) p/ o processo filho
     try:
+        prof = service_profile_dir(service) if service else nexus_profile_dir()
         child_env = dict(os.environ)
-        child_env["NEXUS_PROFILE_DIR"] = nexus_profile_dir()
-        child_env["WEBVIEW2_USER_DATA_FOLDER"] = nexus_profile_dir()
+        child_env["NEXUS_PROFILE_DIR"] = prof
+        child_env["WEBVIEW2_USER_DATA_FOLDER"] = prof
     except Exception:
         child_env = None
     if os.path.exists(NEXUS_BROWSER_EXE):
