@@ -1362,6 +1362,53 @@ check(bool(played_ws) and played_ws[-1] == NINPUT._nav_tick_wav(90),
       "W2 ultimo conta")
 NINPUT._winsound = _real_ws
 NINPUT._TICK_STATE.update(playing=False, pending=None, last=0.0)
+# ================= X) preset em jogos =================
+_g = open(os.path.join(BASE, 'nexus', 'app_games.py'), encoding='utf-8').read()
+_s = _g.index('    def launch_game(')
+_e = _g.index('\n    def ', _s + 10)
+_popen_calls = []
+
+
+class _FakePopen:
+    def __init__(self, *a, **k):
+        _popen_calls.append((a, k))
+
+
+_nsX = {'os': os, 'subprocess': SimpleNamespace(Popen=_FakePopen),
+        'find_game_exe': lambda folder: 'C:\\g\\g.exe',
+        't': lambda k, lang='pt': k}
+exec(textwrap.dedent(_g[_s:_e]), _nsX)
+for _k, _v in _nsX.items():
+    if isinstance(_v, type(lambda: 0)):
+        setattr(StubApp, _k,
+                lambda self, *a, _f=_v, **k2: _f(self, *a, **k2))
+_sv = _g.index('    def _game_volume_preset(self):')
+_ev = _g.index('\n    def ', _sv + 10)
+_nsV2 = {}
+exec(textwrap.dedent(_g[_sv:_ev]), _nsV2)
+StubApp._game_volume_preset = _nsV2['_game_volume_preset']
+appX = StubApp()
+appX.lang = 'pt-br'
+appX.game_is_platform = lambda n: False
+appX.game_is_external = lambda n: False
+appX.game_folder = lambda n: 'C:\\g'
+appX.db = SimpleNamespace(add_history=lambda n: None)
+appX.show_info_message = lambda *a: None
+appX.applied = []
+appX._apply_default_volume = lambda: appX.applied.append(True)
+appX.launch_game('Doom')
+check(_popen_calls and appX.applied == [True], "X1 jogo aplica preset")
+_popen_calls.clear()
+appX.applied.clear()
+_nsX['find_game_exe'] = lambda folder: None
+_src2 = _g[_s:_e]
+_nsX2 = {'os': os, 'subprocess': SimpleNamespace(Popen=_FakePopen),
+         'find_game_exe': lambda folder: None,
+         't': lambda k, lang='pt': k}
+exec(textwrap.dedent(_src2), _nsX2)
+appX.launch_game = lambda name, _f=_nsX2['launch_game']: _f(appX, name)
+appX.launch_game('Vazio')
+check(_popen_calls == [] and appX.applied == [], "X2 sem exe sem preset")
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:
     print("FALHAS:", fails, flush=True)

@@ -782,6 +782,7 @@ class AppGamesMixin:
             try:
                 if self.launch_platform(self.game_platform_data(name)):
                     self.db.add_history(name)
+                    self._game_volume_preset()
                 else:
                     self.show_info_message(name, t("games_noexe", self.lang))
             except Exception:
@@ -795,6 +796,7 @@ class AppGamesMixin:
             try:
                 subprocess.Popen([exe], cwd=os.path.dirname(exe) or None)
                 self.db.add_history(name)
+                self._game_volume_preset()
             except Exception:
                 self.show_info_message(name, t("games_exe_missing", self.lang))
             return
@@ -808,8 +810,16 @@ class AppGamesMixin:
         try:
             subprocess.Popen([exe], cwd=os.path.dirname(exe))
             self.db.add_history(name)
+            self._game_volume_preset()
         except Exception:
             self.show_info_message(name, t("games_noexe", self.lang))
+
+    def _game_volume_preset(self):
+        """Jogos nao entram no remoto: aplica o volume padrao direto."""
+        try:
+            self._apply_default_volume()
+        except Exception:
+            pass
 
     def launch_platform(self, data):
         """Abre jogo de plataforma (Steam/Epic/Xbox). True se disparou."""
