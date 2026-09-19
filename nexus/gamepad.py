@@ -676,8 +676,16 @@ class GamepadManager:
                         hide_cursor_for_gamepad()
                     except Exception:
                         pass
+                    try:
+                        ov = getattr(self.app, "remote_overlay", None)
+                        ov_open = (ov is not None and not ov.closed
+                                   and ov.win.winfo_exists())
+                    except Exception:
+                        ov, ov_open = None, False
                     kb = self.app.kb_window
-                    if _modal_alive(kb):
+                    if ov_open:
+                        ov.on_hat(hat)
+                    elif _modal_alive(kb):
                         kb.on_hat(hat)
                     elif hat == (0, 1):
                         tap_key(VK_UP)
@@ -777,6 +785,26 @@ class GamepadManager:
                                 kb.close()
                             except Exception:
                                 pass
+                    continue
+                try:
+                    ov = getattr(self.app, "remote_overlay", None)
+                    ov_open = (ov is not None and not ov.closed
+                               and ov.win.winfo_exists())
+                except Exception:
+                    ov, ov_open = None, False
+                if ov_open:
+                    # Overlay aberto: A confirma, B fecha, resto some.
+                    if logical == "south":
+                        ov.press("south")
+                    elif logical == "east":
+                        ov.close()
+                    continue
+                if logical == "start":
+                    # Start sozinho no remoto: abre/fecha o overlay.
+                    try:
+                        self.app.toggle_remote_overlay()
+                    except Exception:
+                        pass
                     continue
                 top = top_modal(self.app)
                 if isinstance(top, NexusKeyboard):

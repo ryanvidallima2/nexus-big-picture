@@ -45,7 +45,9 @@ GUIDE_CATS = [
             "Lá dentro, seu controle vira controle remoto: analógico "
             "direito é o mouse, esquerdo rola a tela, A clica.\n"
             "Para voltar ao Nexus de qualquer lugar: segure Back + Start, "
-            "como um passe de mágica."
+            "como um passe de mágica.\n"
+            "Start sozinho abre o menu rápido: som, janela e imagem sem "
+            "sair do app."
         ),
         "body_en": (
             "See a pretty card? Press A (or click) and it flips like a "
@@ -56,7 +58,8 @@ GUIDE_CATS = [
             "tries to install it for you (kindness breeds kindness).\n"
             "Inside, your gamepad becomes a remote: right stick is the "
             "mouse, left stick scrolls, A clicks.\n"
-            "Back to Nexus from anywhere: hold Back + Start, like a spell."
+            "Back to Nexus from anywhere: hold Back + Start, like a spell.\n"
+            "Start alone opens the quick menu: sound, window and picture."
         ),
     },
     {

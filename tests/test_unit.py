@@ -1514,6 +1514,74 @@ check(mov == [] and shw == [], "Z8 parado nao mexe")
 _GMZ.hide_cursor_for_gamepad = _h0
 _GMZ.show_cursor_for_mouse = _s0
 _GMZ.mouse_move = _m0
+# ================= AA) overlay remoto =================
+from nexus import remote_overlay as ROV  # noqa: E402
+_vols = []
+_real_avol = ROV.audio_set_master
+ROV.audio_set_master = lambda v: _vols.append(round(float(v), 2)) or True
+_brights = []
+_real_bri = ROV.set_brightness
+ROV.set_brightness = lambda v: _brights.append(int(v)) or True
+
+
+class GPOV:
+    def __init__(self):
+        self.remote_service = "Netflix"
+        self.remote_hwnd = None
+
+
+appO = StubApp()
+appO.gamepad = GPOV()
+appO.settings = {}
+appO.close_sidebar = lambda: None
+try:
+    from nexus.app_settings import AppSettingsMixin
+    appO.THEME_COLORS = AppSettingsMixin.THEME_COLORS
+except Exception:
+    appO.THEME_COLORS = [("#7c4dff", "P"), ("#e94560", "R")]
+appO.applied_theme = []
+appO.apply_theme = lambda c: appO.applied_theme.append(c)
+appO.exited = []
+appO.exit_remote_mode = lambda: appO.exited.append(True)
+appO.sounds = []
+appO.play_open_sound = lambda: appO.sounds.append('open')
+appO.play_back_sound = lambda: appO.sounds.append('back')
+appO.play_tick = lambda: appO.sounds.append('tick')
+ov = ROV.RemoteOverlay(appO)
+root.update()
+check(appO.remote_overlay is ov and not ov.closed, "AA1 overlay abre")
+check([f['kind'] for f in ov.items] == ['slider', 'button', 'slider',
+      'button', 'button'], "AA2 secoes (som/janela/brilho/tema/voltar)")
+ov.set_focus(4)
+ov.press("south")
+check(appO.exited == [True] and ov.closed, "AA3 voltar ao Nexus")
+ov2 = ROV.RemoteOverlay(appO)
+root.update()
+ov2.set_focus(0)
+ov2.on_hat((1, 0))
+check(_vols and _vols[-1] <= 1.0, "AA4 volume ao vivo")
+ov2.set_focus(2)
+ov2.on_hat((1, 0))
+check(bool(_brights) and _brights[-1] == 100, "AA5 brilho ajusta")
+ov2.set_focus(3)
+_before = list(appO.applied_theme)
+ov2.on_hat((1, 0))
+check(len(appO.applied_theme) == len(_before) + 1, "AA6 tema troca")
+ov2.on_hat((0, -1))
+ov2.on_hat((0, -1))
+ov2.press("east")
+check(ov2.closed, "AA7 B fecha")
+ov3 = ROV.RemoteOverlay(appO)
+root.update()
+ov3.press("east")
+check(ov3.closed, "AA8 east fecha")
+ROV.audio_set_master = _real_avol
+ROV.set_brightness = _real_bri
+ov3.close()
+try:
+    ov.close()
+except Exception:
+    pass
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:
     print("FALHAS:", fails, flush=True)

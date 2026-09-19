@@ -318,6 +318,23 @@ class AppRemoteMixin:
         except Exception:
             return False
 
+    def toggle_remote_overlay(self):
+        """Start no remoto: abre/fecha o menu rapido sobre o app."""
+        try:
+            ov = getattr(self, "remote_overlay", None)
+            if ov is not None and not ov.closed:
+                try:
+                    ov.win.winfo_exists()
+                    ov.close()
+                    return True
+                except Exception:
+                    pass
+            from .remote_overlay import RemoteOverlay
+            RemoteOverlay(self)
+            return True
+        except Exception:
+            return False
+
     def _ensure_service_volumes(self, service):
         """Volume por programa: a sessao nasce quando o app toca algo,
         entao tenta em thread por alguns segundos ( web = navegadores)."""
@@ -446,6 +463,12 @@ class AppRemoteMixin:
     def exit_remote_mode(self):
         # O navegador embutido e parte do Nexus: fecha junto (Back+Start
         # ou retorno). Apps externos (Spotify etc.) continuam abertos.
+        try:
+            ov = getattr(self, "remote_overlay", None)
+            if ov is not None:
+                ov.close()
+        except Exception:
+            pass
         try:
             self.browser_hwnd = None
         except Exception:

@@ -169,7 +169,103 @@ def _hwnd_alive(hwnd):
     try:
         return bool(_WIN32_OK and hwnd and _IsWindow(hwnd))
     except Exception:
+        pass
+    return False
+
+
+def is_borderless(hwnd):
+    """True se a janela ja esta sem moldura (sem WS_CAPTION)."""
+    try:
+        if not _WIN32_OK or not hwnd:
+            return False
+        style = int(_GetWindowLongPtrW(hwnd, GWL_STYLE))
+        return (style & WS_CAPTION) == 0
+    except Exception:
         return False
+
+
+def restore_windowed(hwnd):
+    """Devolve moldura padrao e restaura a janela. Best-effort."""
+    if not _WIN32_OK or not hwnd:
+        return False
+    try:
+        style = int(_GetWindowLongPtrW(hwnd, GWL_STYLE))
+        style |= (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX
+                  | WS_MAXIMIZEBOX)
+        _SetWindowLongPtrW(hwnd, GWL_STYLE, style)
+        exstyle = int(_GetWindowLongPtrW(hwnd, GWL_EXSTYLE))
+        exstyle |= WS_EX_WINDOWEDGE
+        exstyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE)
+        _SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exstyle)
+        try:
+            _ShowWindow = ctypes.windll.user32.ShowWindow
+            _ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            _ShowWindow.restype = ctypes.c_bool
+            _ShowWindow(hwnd, 9)
+        except Exception:
+            pass
+        try:
+            _SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+                          SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE
+                          | SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+_gamma_orig = None
+
+
+def set_brightness(level):
+    """Brilho 0-100 via rampa gamma (funciona em desktop). True se aplicou.
+    100 = rampa original exata."""
+    try:
+        level = max(5, min(100, int(level)))
+    except Exception:
+        return False
+    if not _WIN32_OK:
+        return False
+    global _gamma_orig
+    try:
+        gdi = ctypes.windll.gdi32
+        gdi.GetDC.argtypes = [ctypes.c_void_p]
+        gdi.GetDC.restype = ctypes.c_void_p
+        gdi.GetDeviceGammaRamp.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        gdi.GetDeviceGammaRamp.restype = ctypes.c_bool
+        gdi.SetDeviceGammaRamp.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        gdi.SetDeviceGammaRamp.restype = ctypes.c_bool
+        hdc = gdi.GetDC(None)
+        if not hdc:
+            return False
+        try:
+            Ramp = (ctypes.c_ushort * 256) * 3
+            if _gamma_orig is None:
+                cur = Ramp()
+                if gdi.GetDeviceGammaRamp(hdc, cur):
+                    _gamma_orig = [list(cur[0]), list(cur[1]), list(cur[2])]
+            if level >= 100 and _gamma_orig is not None:
+                orig = Ramp()
+                for c in range(3):
+                    for i in range(256):
+                        orig[c][i] = _gamma_orig[c][i]
+                return bool(gdi.SetDeviceGammaRamp(hdc, orig))
+            base = _gamma_orig or [[i * 257 for i in range(256)]] * 3
+            f = 0.25 + 0.75 * (level / 100.0)
+            ramp = Ramp()
+            for c in range(3):
+                for i in range(256):
+                    ramp[c][i] = max(0, min(65535, int(base[c][i] * f)))
+            return bool(gdi.SetDeviceGammaRamp(hdc, ramp))
+        finally:
+            try:
+                gdi.ReleaseDC(None, hdc)
+            except Exception:
+                pass
+    except Exception:
+        return False
+    return False
 
 
 def bring_to_front(hwnd):

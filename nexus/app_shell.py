@@ -77,6 +77,7 @@ class AppShellMixin:
         self.pad_capture = None
         self.pad_window = None
         self.kb_window = None
+        self.remote_overlay = None
         self.browser_remote = None
         # Procs do navegador que o Nexus matou de proposito (Back+Start,
         # quit): a morte deles nao e crash e nao cai no fallback externo.
