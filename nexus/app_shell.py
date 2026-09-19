@@ -513,6 +513,7 @@ class AppShellMixin:
             (t("settings_language", self.lang), self.open_idioma, "\U0001F310"),
             (t("sidebar_add", self.lang), self.open_adicionar, "\U0001F4FA"),
             (t("settings_system", self.lang), self.open_sistema, "\u2699"),
+            (t("settings_guide", self.lang), self.open_guia, "\U0001F4D6"),
         ]
 
         for text, cmd, icon in settings_items:

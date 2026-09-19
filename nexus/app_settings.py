@@ -14,7 +14,7 @@ from tkinter import filedialog
 
 from .config import Config, save_settings
 from .dialogs import (
-    NexusMenuWindow, NexusTextDialog,
+    GuideWindow, NexusMenuWindow, NexusTextDialog,
     _modal_alive, sniff_numeric_entry, top_modal,
 )
 from .games import GAME_COVER_SIZE
@@ -810,6 +810,10 @@ class AppSettingsMixin:
 
     def open_sistema(self):
         SistemaPanel(self).open()
+
+    def open_guia(self):
+        self.close_sidebar()
+        GuideWindow(self)
 
     # ===================== LANGUAGE =====================
     def open_language_picker(self):

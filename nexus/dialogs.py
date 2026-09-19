@@ -10,6 +10,7 @@ from tkinter import filedialog
 from .apps import open_app_for_service, open_store_search, try_install_service
 from .browser import open_in_nexus_browser
 from .config import Config
+from .guide import GUIDE_CATS, guide_cat_body, guide_cat_title, guide_title
 from .i18n import t
 from .pad import BROWSER_WATCH
 from .paths import BROWSER_PROCS
@@ -135,48 +136,6 @@ class NexusTextDialog:
             self.win.destroy()
         except Exception:
             pass
-
-
-# (util do teclado virtual; a classe NexusKeyboard viaja na fase 2c)
-def sniff_numeric_entry(entry):
-    """Conteudo com cara de numero (porta, ano, telefone...) -> numérico."""
-    try:
-        txt = (entry.get() or "").strip()
-    except Exception:
-        return False
-    return bool(txt) and re.match(r"^[\d\s\.\,\+\-\(\)/:]+$", txt) is not None
-
-
-# (helpers de modal; usados pelos dialogos e pelo GamepadManager)
-def _modal_alive(w):
-    """Janela modal realmente aberta (nao so flag: sem zumbis destruidos)."""
-    try:
-        if w is None or getattr(w, "closed", True):
-            return False
-        win = getattr(w, "win", None)
-        return bool(win is not None and win.winfo_exists())
-    except Exception:
-        return False
-
-
-def top_modal(app):
-    """A janela modal mais nova ainda aberta (dialogo, menu, texto, teclado)."""
-    cands = []
-    try:
-        d = app.open_dialog
-        if _modal_alive(d):
-            cands.append(d)
-        m = app.active_menu
-        if _modal_alive(m):
-            cands.append(m)
-        k = getattr(app, "kb_window", None)
-        if _modal_alive(k):
-            cands.append(k)
-    except Exception:
-        pass
-    if not cands:
-        return None
-    return max(cands, key=lambda w: getattr(w, "born", 0))
 
 
 # ===================== NEXUS MENU WINDOW =====================
@@ -359,3 +318,154 @@ class NexusMenuWindow:
             self.win.destroy()
         except Exception:
             pass
+
+# ===================== GUIDE WINDOW =====================
+class GuideWindow(NexusMenuWindow):
+    """Manual de uso: categorias a esquerda, guia a direita.
+    Mouse, teclado e controle: cima/baixo trocam de categoria."""
+
+    WIN_W, WIN_H = 740, 540
+
+    def __init__(self, app):
+        self.cat_btns = []
+        self.body_title = None
+        self.body_text = None
+        NexusMenuWindow.__init__(self, app, guide_title(app.lang), [],
+                                 icon="\U0001F4D6", width=self.WIN_W)
+        try:
+            for w in self.body.winfo_children():
+                w.destroy()
+        except Exception:
+            pass
+        left = tk.Frame(self.body, bg=Config.BG_SIDEBAR, width=220)
+        left.pack(side="left", fill="y", padx=(0, 8))
+        left.pack_propagate(False)
+        right = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+        right.pack(side="left", fill="both", expand=True)
+        self.body_title = tk.Label(right, text="", font=("Segoe UI", 16, "bold"),
+                                   fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
+                                   anchor="w", justify="left")
+        self.body_title.pack(fill="x", pady=(2, 8))
+        self.body_text = tk.Label(right, text="", font=("Segoe UI", 12),
+                                  fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR,
+                                  anchor="nw", justify="left",
+                                  wraplength=self.WIN_W - 300)
+        self.body_text.pack(fill="both", expand=True)
+        for i, cat in enumerate(GUIDE_CATS):
+            b = tk.Button(left, text="%s  %s" % (
+                              cat.get("icon", ""),
+                              guide_cat_title(cat, app.lang)),
+                          font=("Segoe UI", 12, "bold"),
+                          relief="flat", bd=0, cursor="hand2", anchor="w",
+                          padx=12, highlightthickness=3,
+                          command=lambda idx=i: self.select(idx))
+            b.pack(fill="x", pady=2)
+            b.bind("<Enter>", lambda e, idx=i: self.select(idx))
+            self.cat_btns.append(b)
+        try:
+            self.win.geometry(f"{self.WIN_W}x{self.WIN_H}+{self.win_x}+{self.win_y}")
+        except Exception:
+            pass
+        self.btns = list(self.cat_btns)
+        self.select(0)
+
+    def set_options(self, options, opt_font=14):
+        # Chamado pela base no __init__: corpo proprio vem depois.
+        try:
+            self.focus_idx = 0
+        except Exception:
+            pass
+
+    def select(self, idx):
+        if self.closed or not self.cat_btns:
+            return
+        new = idx % len(self.cat_btns)
+        changed = (new != self.focus_idx)
+        self.focus_idx = new
+        try:
+            cat = GUIDE_CATS[self.focus_idx]
+            self.body_title.configure(text="%s  %s" % (
+                cat.get("icon", ""), guide_cat_title(cat, self.app.lang)))
+            self.body_text.configure(text=guide_cat_body(cat, self.app.lang))
+        except Exception:
+            pass
+        self._paint()
+        if changed:
+            try:
+                self.app.play_tick()
+            except Exception:
+                pass
+
+    def _paint(self):
+        for i, b in enumerate(self.cat_btns):
+            try:
+                if i == self.focus_idx:
+                    b.configure(bg=Config.ACCENT, fg="white",
+                                highlightbackground="white",
+                                highlightcolor="white")
+                else:
+                    b.configure(bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                highlightbackground=Config.BORDER,
+                                highlightcolor=Config.BORDER)
+            except Exception:
+                pass
+
+    def set_focus(self, idx):
+        self.select(idx)
+
+    def on_hat(self, hat):
+        if hat in ((0, 1), (-1, 0)):
+            self.select(self.focus_idx - 1)
+        elif hat in ((0, -1), (1, 0)):
+            self.select(self.focus_idx + 1)
+
+    def move(self, dh, dv):
+        d = dv if dv != 0 else dh
+        self.select(self.focus_idx + d)
+
+    def confirm(self):
+        if not self.closed:
+            self.select(self.focus_idx)
+
+# (util do teclado virtual; a classe NexusKeyboard viaja na fase 2c)
+def sniff_numeric_entry(entry):
+    """Conteudo com cara de numero (porta, ano, telefone...) -> numérico."""
+    try:
+        txt = (entry.get() or "").strip()
+    except Exception:
+        return False
+    return bool(txt) and re.match(r"^[\d\s\.\,\+\-\(\)/:]+$", txt) is not None
+
+
+# (helpers de modal; usados pelos dialogos e pelo GamepadManager)
+def _modal_alive(w):
+    """Janela modal realmente aberta (nao so flag: sem zumbis destruidos)."""
+    try:
+        if w is None or getattr(w, "closed", True):
+            return False
+        win = getattr(w, "win", None)
+        return bool(win is not None and win.winfo_exists())
+    except Exception:
+        return False
+
+
+def top_modal(app):
+    """A janela modal mais nova ainda aberta (dialogo, menu, texto, teclado)."""
+    cands = []
+    try:
+        d = app.open_dialog
+        if _modal_alive(d):
+            cands.append(d)
+        m = app.active_menu
+        if _modal_alive(m):
+            cands.append(m)
+        k = getattr(app, "kb_window", None)
+        if _modal_alive(k):
+            cands.append(k)
+    except Exception:
+        pass
+    if not cands:
+        return None
+    return max(cands, key=lambda w: getattr(w, "born", 0))
+
+
