@@ -32,7 +32,7 @@ class RemoteOverlay:
         self.items = []
         self.vol_item = None
         self.bright_item = None
-        self.theme_idx = 0
+        self.win_item = None
         lang = app.lang
 
         try:
@@ -85,8 +85,8 @@ class RemoteOverlay:
 
         self.body = tk.Frame(win, bg=Config.BG_SIDEBAR)
         self.body.pack(fill="both", expand=True)
-        self._build_config()
-        self._build_back()
+        self.page = "menu"
+        self._show_page("menu")
 
         hint = tk.Label(win, text=t("ov_hint", lang), font=("Segoe UI", 10),
                         fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR)
@@ -198,26 +198,47 @@ class RemoteOverlay:
         except Exception:
             pass
 
-    # ---------- secoes ----------
-    def _build_config(self):
+    # ---------- paginas ----------
+    def _show_page(self, page):
+        if self.closed:
+            return
+        self.page = page
+        self.focus = 0
+        self.items = []
+        try:
+            for w in self.body.winfo_children():
+                w.destroy()
+        except Exception:
+            return
+        if page == "config":
+            self._page_config()
+        else:
+            self._page_menu()
+        self.paint()
+
+    def _page_menu(self):
+        lang = self.app.lang
+        self._section(t("ov_menu", lang))
+        self._button(t("ov_config", lang),
+                     lambda: self._show_page("config"))
+        self._button("\u2190 " + t("ov_back", lang), self.back_to_nexus)
+
+    def _page_config(self):
         lang = self.app.lang
         self._section(t("ov_config", lang))
         self.vol_item = self._slider(
             t("ov_sound", lang), 0, 100, self._get_vol, self._put_vol, step=5)
-        self.win_item = self._button("", self._toggle_window)
-        self._paint_window()
-        self._bright_val = 100
+        self._section(t("ov_image", lang))
+        self._bright_val = getattr(self, "_bright_val", 100)
         self.bright_item = self._slider(
             t("ov_bright", lang), 5, 100, lambda: self._bright_val,
             self._put_bright, step=5)
-        self.theme_btn = self._button("", self._cycle_theme)
-        self._paint_theme()
+        self.win_item = self._button("", self._toggle_window)
+        self._paint_window()
+        self._button("\u2190 " + t("ov_menu", lang),
+                     lambda: self._show_page("menu"))
 
-    def _build_back(self):
-        self.back_btn = self._button(
-            "\u2190 " + t("ov_back", self.app.lang), self.back_to_nexus)
-
-    # ---------- som ----------
+    # ---------- secoes ----------
     def _get_vol(self):
         try:
             v = audio_get_master()
@@ -289,46 +310,6 @@ class RemoteOverlay:
             pass
 
     # ---------- imagem ----------
-    def _paint_theme(self):
-        try:
-            colors = self.app.THEME_COLORS
-        except Exception:
-            colors = [("#7c4dff", "")]
-        try:
-            cur = Config.ACCENT
-        except Exception:
-            cur = ""
-        idx = 0
-        for i, (c, _lbl) in enumerate(colors):
-            if str(c).lower() == str(cur).lower():
-                idx = i
-                break
-        self.theme_idx = idx
-        self._theme_label()
-
-    def _theme_label(self):
-        try:
-            colors = self.app.THEME_COLORS
-            c, _lbl = colors[self.theme_idx % len(colors)]
-            self.theme_btn["widget"].configure(
-                text="\U0001F3A8 %s: \u25A0" % t("ov_theme", self.app.lang),
-                fg=c)
-        except Exception:
-            pass
-
-    def _cycle_theme(self, d=1):
-        try:
-            colors = self.app.THEME_COLORS
-            self.theme_idx = (self.theme_idx + d) % len(colors)
-            c, _lbl = colors[self.theme_idx]
-            self.app.apply_theme(c)
-            self._theme_label()
-            try:
-                self.app.play_tick()
-            except Exception:
-                pass
-        except Exception:
-            pass
 
     # ---------- acoes ----------
     def back_to_nexus(self):
@@ -431,8 +412,6 @@ class RemoteOverlay:
             except Exception:
                 return
             self.refresh_slider(item, tick=True)
-        elif item is getattr(self, "theme_btn", None):
-            self._cycle_theme(d)
 
     def on_hat(self, hat):
         if self.closed:
@@ -450,7 +429,10 @@ class RemoteOverlay:
         if self.closed:
             return
         if logical == "east":
-            self.close()
+            if getattr(self, "page", "menu") == "menu":
+                self.close()
+            else:
+                self._show_page("menu")
             return
         if logical != "south" or not self.items:
             return
