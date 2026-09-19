@@ -313,6 +313,10 @@ class AppCardsMixin:
             except Exception:
                 return
             _set_cursor_pos(x, y)
+            try:
+                self.note_synthetic_mouse(0.35)
+            except Exception:
+                pass
         except Exception:
             pass
 

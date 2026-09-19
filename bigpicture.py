@@ -58,6 +58,11 @@ if __name__ == "__main__":
                     _audio.audio_set_master(pre)
             except Exception:
                 pass
+            try:
+                from nexus.win32 import ensure_cursor_visible
+                ensure_cursor_visible()
+            except Exception:
+                pass
 
         _atexit.register(_restore_vol_at_exit)
     except Exception:

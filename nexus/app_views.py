@@ -2,6 +2,7 @@
 """Navegacao, abas e renderizacao base (extraido sem alteracao)."""
 
 import os
+import time
 import tkinter as tk
 import unicodedata
 import urllib.parse
@@ -15,6 +16,7 @@ from .games import PLATFORM_LABEL
 from .i18n import cat_label, t
 from .input import _play_nav_tick
 from .util import _norm
+from .win32 import show_cursor_for_mouse
 
 
 class AppViewsMixin:
@@ -35,8 +37,37 @@ class AppViewsMixin:
         self.root.bind("<FocusIn>", lambda e: self._on_focus_in())
         # Modalidade de entrada: controle x mouse/teclado (teclado virtual
         # so abre quando o foco veio do controle)
-        self.root.bind("<Button-1>", lambda e: setattr(self, "using_gamepad", False), add="+")
+        self._motion_quiet_until = 0.0
+        self.root.bind("<Button-1>", lambda e: self._on_mouse_click(), add="+")
+        self.root.bind("<Motion>", lambda e: self._on_mouse_motion(), add="+")
         self.root.bind("<Key>", lambda e: setattr(self, "using_gamepad", False), add="+")
+
+    def _on_mouse_click(self):
+        try:
+            self.using_gamepad = False
+            show_cursor_for_mouse()
+        except Exception:
+            pass
+
+    def _on_mouse_motion(self):
+        """Mouse fisico mexeu: mostra o cursor. Ignora warp/sintetico."""
+        try:
+            if time.monotonic() < float(getattr(self, "_motion_quiet_until", 0.0)):
+                return
+        except Exception:
+            pass
+        try:
+            self.using_gamepad = False
+            show_cursor_for_mouse()
+        except Exception:
+            pass
+
+    def note_synthetic_mouse(self, quiet=0.25):
+        """Marca movimento de cursor feito pelo app (warp/controle)."""
+        try:
+            self._motion_quiet_until = time.monotonic() + quiet
+        except Exception:
+            pass
 
     def _typing(self):
         """Foco num campo de texto (ex.: busca): a tecla e dele, o app

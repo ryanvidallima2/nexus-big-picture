@@ -226,6 +226,10 @@ class NexusKeyboard:
 
         self._paint()
         win.bind("<Escape>", lambda e: self.close())
+        try:
+            win.bind("<Motion>", lambda e: app._on_mouse_motion(), add="+")
+        except Exception:
+            pass
         win.protocol("WM_DELETE_WINDOW", self.close)
         app.kb_window = self
 

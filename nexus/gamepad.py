@@ -23,7 +23,9 @@ from .pad import (
     REMOTE_WATCH, XBOX_RAW, PAD_LAYOUT_LABEL, detect_pad_layout,
     parse_sdl_mapping, DEFAULT_PAD_SENSITIVITY, DEFAULT_PAD_SCROLL,
 )
-from .win32 import _hwnd_alive
+from .win32 import (
+    _hwnd_alive, hide_cursor_for_gamepad, show_cursor_for_mouse,
+)
 
 try:
     import pygame
@@ -499,6 +501,10 @@ class GamepadManager:
                 self.stick_nav_next = now
             if now >= self.stick_nav_next:
                 self.stick_nav_next = now + 0.22
+                try:
+                    hide_cursor_for_gamepad()
+                except Exception:
+                    pass
                 self._stick_nav_action(ndir)
         else:
             self.stick_nav_dir = (0, 0)
@@ -510,6 +516,11 @@ class GamepadManager:
             except Exception:
                 sens = float(DEFAULT_PAD_SENSITIVITY)
             mouse_move(sens * nx, sens * ny)
+            try:
+                self.app.note_synthetic_mouse(0.25)
+                show_cursor_for_mouse()
+            except Exception:
+                pass
 
     def poll(self):
         if not self.running:
@@ -538,6 +549,10 @@ class GamepadManager:
                 if hat not in self.hat_debounce or (now - self.hat_debounce[hat]) > 0.15:
                     self.hat_debounce[hat] = now
                     self.app.using_gamepad = True
+                    try:
+                        hide_cursor_for_gamepad()
+                    except Exception:
+                        pass
                     top = top_modal(self.app)
                     if isinstance(top, NexusMenuWindow):
                         top.on_hat(hat)
@@ -587,6 +602,10 @@ class GamepadManager:
                     continue
                 self.prev_buttons[btn_id] = True
                 self.app.using_gamepad = True
+                try:
+                    hide_cursor_for_gamepad()
+                except Exception:
+                    pass
                 logical = self.logical_for_raw(btn_id)
                 is_confirm = (logical == "south")
                 is_cancel = (logical == "east")
@@ -653,6 +672,10 @@ class GamepadManager:
                 if hat not in self.hat_debounce or (now - self.hat_debounce[hat]) > 0.15:
                     self.hat_debounce[hat] = now
                     self.app.using_gamepad = True
+                    try:
+                        hide_cursor_for_gamepad()
+                    except Exception:
+                        pass
                     kb = self.app.kb_window
                     if _modal_alive(kb):
                         kb.on_hat(hat)
@@ -731,6 +754,10 @@ class GamepadManager:
                     continue
                 self.prev_buttons[btn_id] = True
                 self.app.using_gamepad = True
+                try:
+                    hide_cursor_for_gamepad()
+                except Exception:
+                    pass
                 logical = self.logical_for_raw(btn_id)
                 kb = self.app.kb_window
                 if _modal_alive(kb) and logical in ("south", "east", "start"):
@@ -1002,6 +1029,10 @@ class GamepadManager:
             n = int(self.remote_wheel_acc[i])
             if n:
                 self.remote_wheel_acc[i] -= n
+                try:
+                    hide_cursor_for_gamepad()
+                except Exception:
+                    pass
                 if is_vert:
                     mouse_wheel(v_notches=n)
                 else:
@@ -1021,6 +1052,11 @@ class GamepadManager:
         except Exception:
             sens = float(DEFAULT_PAD_SENSITIVITY)
         mouse_move(sens * nx, sens * ny)
+        try:
+            self.app.note_synthetic_mouse(0.25)
+            show_cursor_for_mouse()
+        except Exception:
+            pass
 
     def _remote_watch_tick(self):
         # Caminho rapido: janela do app rastreada (IsWindow e barato).

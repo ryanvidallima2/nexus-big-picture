@@ -208,6 +208,50 @@ def _set_cursor_pos(x, y):
     return False
 
 
+try:
+    _ShowCursor = _user32.ShowCursor
+    _ShowCursor.argtypes = [ctypes.c_bool]
+    _ShowCursor.restype = ctypes.c_int
+    _WIN32_CURSOR_OK = True
+except Exception:
+    _WIN32_CURSOR_OK = False
+
+_cursor_hidden_by_us = False
+
+
+def hide_cursor_for_gamepad():
+    """Esconde o cursor (1x, com trava): controle em uso."""
+    global _cursor_hidden_by_us
+    try:
+        if _cursor_hidden_by_us:
+            return True
+        if _WIN32_CURSOR_OK:
+            _ShowCursor(False)
+        _cursor_hidden_by_us = True
+        return True
+    except Exception:
+        return False
+
+
+def show_cursor_for_mouse():
+    """Mostra o cursor de volta (1x, com trava): mouse em uso."""
+    global _cursor_hidden_by_us
+    try:
+        if not _cursor_hidden_by_us:
+            return True
+        if _WIN32_CURSOR_OK:
+            _ShowCursor(True)
+        _cursor_hidden_by_us = False
+        return True
+    except Exception:
+        return False
+
+
+def ensure_cursor_visible():
+    """Garante cursor visivel (saida/crash: nao some no Windows)."""
+    return show_cursor_for_mouse()
+
+
 def foreground_hwnd():
     try:
         if _WIN32_OK:

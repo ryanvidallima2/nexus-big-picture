@@ -60,6 +60,10 @@ class NexusTextDialog:
         # O grab bloqueia os binds do root: limpa o latch aqui dentro
         win.bind("<Button-1>", lambda e: setattr(app, "using_gamepad", False), add="+")
         win.bind("<Key>", lambda e: setattr(app, "using_gamepad", False), add="+")
+        try:
+            win.bind("<Motion>", lambda e: app._on_mouse_motion(), add="+")
+        except Exception:
+            pass
 
         tk.Label(win, text=f"\U0001F517 {title}", font=("Segoe UI", 18, "bold"),
                  fg=Config.ACCENT, bg=Config.BG_SIDEBAR).pack(pady=(18, 4))
@@ -194,6 +198,10 @@ class NexusMenuWindow:
         win.bind("<KP_Enter>", lambda e: self.confirm())
         win.bind("<space>", lambda e: self.confirm())
         win.bind("<Escape>", lambda e: self.close())
+        try:
+            win.bind("<Motion>", lambda e: app._on_mouse_motion(), add="+")
+        except Exception:
+            pass
         win.protocol("WM_DELETE_WINDOW", self.close)
         win.grab_set()
         try:

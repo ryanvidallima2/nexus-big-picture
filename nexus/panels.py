@@ -105,6 +105,10 @@ class GamepadConfigWindow:
         win.bind("<Down>", lambda e: self.move_focus(1))
         win.bind("<Return>", lambda e: self.activate_focused())
         win.bind("<KP_Enter>", lambda e: self.activate_focused())
+        try:
+            win.bind("<Motion>", lambda e: app._on_mouse_motion(), add="+")
+        except Exception:
+            pass
         win.protocol("WM_DELETE_WINDOW", self.close)
         app.pad_window = self
 

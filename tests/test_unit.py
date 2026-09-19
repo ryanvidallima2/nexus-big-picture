@@ -1448,6 +1448,72 @@ check(AUD.ensure_app_volumes([], 0.7) == []
       and AUD.ensure_app_volumes(["z.exe"], 0.7, tries=2,
                                  _set=lambda e, l: False) == ["z.exe"],
       "Y5 vazio e esgotamento")
+# ================= Z) cursor some no controle =================
+import nexus.win32 as W32  # noqa: E402
+_real_show = W32._ShowCursor
+shown = []
+W32._ShowCursor = lambda vis: shown.append(bool(vis)) or 1
+W32._cursor_hidden_by_us = False
+W32.hide_cursor_for_gamepad()
+W32.hide_cursor_for_gamepad()
+check(shown == [False], "Z1 esconder 1x com trava")
+W32.show_cursor_for_mouse()
+W32.show_cursor_for_mouse()
+check(shown == [False, True], "Z2 mostrar 1x com trava")
+W32._cursor_hidden_by_us = True
+W32.ensure_cursor_visible()
+check(shown[-1] is True and W32._cursor_hidden_by_us is False,
+      "Z3 saida garante visivel")
+W32._ShowCursor = _real_show
+
+_vs = open(os.path.join(BASE, 'nexus', 'app_views.py'), encoding='utf-8').read()
+_s = _vs.index('    def _on_mouse_click(self):')
+_e = _vs.index('    def _typing(self):')
+_nsM = {'show_cursor_for_mouse': lambda: shown.append('m'),
+        'time': time}
+exec(textwrap.dedent(_vs[_s:_e]), _nsM)
+for _k, _v in _nsM.items():
+    if isinstance(_v, type(lambda: 0)):
+        setattr(StubApp, _k,
+                lambda self, *a, _f=_v, **k2: _f(self, *a, **k2))
+appZ = StubApp()
+appZ.using_gamepad = True
+appZ._motion_quiet_until = 0.0
+shown.clear()
+appZ._on_mouse_motion()
+check(appZ.using_gamepad is False and shown == ['m'], "Z4 mouse mostra")
+appZ.using_gamepad = True
+appZ.note_synthetic_mouse(10.0)
+shown.clear()
+appZ._on_mouse_motion()
+check(appZ.using_gamepad is True and shown == [], "Z5 warp nao mostra")
+appZ._on_mouse_click()
+check(appZ.using_gamepad is False, "Z6 clique limpa latch")
+
+import nexus.gamepad as _GMZ  # noqa: E402
+_h0, _s0, _m0 = (_GMZ.hide_cursor_for_gamepad, _GMZ.show_cursor_for_mouse,
+                 _GMZ.mouse_move)
+hre, shw, mov = [], [], []
+_GMZ.hide_cursor_for_gamepad = lambda: hre.append(True)
+_GMZ.show_cursor_for_mouse = lambda: shw.append(True)
+_GMZ.mouse_move = lambda dx, dy: mov.append((dx, dy))
+mgrZ = GM.__new__(GM)
+mgrZ.app = StubApp()
+mgrZ.app.pad_deadzone = lambda: 0.22
+mgrZ.app.pad_sensitivity = lambda: 12.0
+mgrZ.app.noted = []
+mgrZ.app.note_synthetic_mouse = lambda q=0.25: mgrZ.app.noted.append(q)
+GM._remote_stick_mouse(mgrZ, 0.8, 0.0)
+check(mov and mgrZ.app.noted == [0.25] and shw == [True],
+      "Z7 mira mostra cursor")
+mov.clear()
+shw.clear()
+mgrZ.app.noted.clear()
+GM._remote_stick_mouse(mgrZ, 0.0, 0.0)
+check(mov == [] and shw == [], "Z8 parado nao mexe")
+_GMZ.hide_cursor_for_gamepad = _h0
+_GMZ.show_cursor_for_mouse = _s0
+_GMZ.mouse_move = _m0
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:
     print("FALHAS:", fails, flush=True)
