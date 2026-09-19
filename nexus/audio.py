@@ -41,6 +41,10 @@ _IID_IAudioEndpointVolume = _makeguid("5CDF2C82-841E-4546-9722-0CF74078229A")
 _IID_IAudioSessionManager2 = _makeguid("77aa99a0-1bd6-484f-8bc7-2c654c9a9b6f")
 _IID_IAudioSessionControl2 = _makeguid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D")
 _IID_ISimpleAudioVolume = _makeguid("87CE5498-68D6-44E5-9215-6DA47EF883D8")
+_CLSID_CPolicyConfigClient = _makeguid("870af99c-171d-4f9e-af0d-e63df40c2bc9")
+_IID_IPolicyConfig = _makeguid("f8679f50-850a-41cf-9c72-430f290290c8")
+_PKEY_Device_FriendlyName = ("A45C254E-DF1C-4EFD-8020-67D146A850E0", 14)
+_DEVICE_STATE_ACTIVE = 0x1
 _CLSCTX_INPROC_SERVER = 0x1
 _E_RENDER = 0
 _E_MULTIMEDIA = 1
@@ -406,3 +410,213 @@ def ensure_app_volumes(exes, level, tries=12, _set=None):
         except Exception:
             break
     return remaining
+
+
+class _PROPERTYKEY(ctypes.Structure):
+    _fields_ = [("guid", _GUID),
+                ("pid", ctypes.c_ulong)]
+
+
+class _PROPVARIANT(ctypes.Structure):
+    _fields_ = [("vt", ctypes.c_ushort),
+                ("r1", ctypes.c_ushort),
+                ("r2", ctypes.c_ushort),
+                ("r3", ctypes.c_ushort),
+                ("data", ctypes.c_void_p)]
+
+_VT_LPWSTR = 31
+
+
+def _device_id(dev):
+    try:
+        dvt = ctypes.cast(dev.value, ctypes.POINTER(
+            ctypes.POINTER(ctypes.c_void_p)))
+        fn_id = ctypes.WINFUNCTYPE(_HRESULT, _LPVOID,
+                                   ctypes.POINTER(ctypes.c_wchar_p))(dvt[0][5])
+        wid = ctypes.c_wchar_p()
+        if fn_id(dev, ctypes.byref(wid)) != 0:
+            return ""
+        return wid.value or ""
+    except Exception:
+        return ""
+
+
+def _device_name(dev):
+    try:
+        dvt = ctypes.cast(dev.value, ctypes.POINTER(
+            ctypes.POINTER(ctypes.c_void_p)))
+        fn_store = ctypes.WINFUNCTYPE(_HRESULT, _LPVOID, ctypes.c_int,
+                                      ctypes.POINTER(_LPVOID))(dvt[0][4])
+        store = _LPVOID()
+        if fn_store(dev, 0, ctypes.byref(store)) != 0:
+            return ""
+        try:
+            svt = ctypes.cast(store.value, ctypes.POINTER(
+                ctypes.POINTER(ctypes.c_void_p)))
+            fn_val = ctypes.WINFUNCTYPE(_HRESULT, _LPVOID,
+                                        ctypes.POINTER(_PROPERTYKEY),
+                                        ctypes.POINTER(_PROPVARIANT))(svt[0][5])
+            gg, pp = _PKEY_Device_FriendlyName
+            key = _PROPERTYKEY()
+            key.guid = _makeguid(gg)
+            key.pid = pp
+            prop = _PROPVARIANT()
+            if fn_val(store, ctypes.byref(key), ctypes.byref(prop)) != 0:
+                return ""
+            try:
+                if prop.vt != _VT_LPWSTR or not prop.data:
+                    return ""
+                return ctypes.wstring_at(prop.data) or ""
+            finally:
+                try:
+                    ole32 = ctypes.WinDLL("ole32", use_last_error=True)
+                    ole32.PropVariantClear.argtypes = [
+                        ctypes.POINTER(_PROPVARIANT)]
+                    ole32.PropVariantClear(ctypes.byref(prop))
+                except Exception:
+                    pass
+        finally:
+            pass
+    except Exception:
+        return ""
+
+
+def _enum_devices():
+    """[(id, nome)] das saidas ativas (ou [])."""
+    out = []
+    try:
+        ole32 = _ole32()
+        if ole32 is None:
+            return out
+        if ole32.CoInitializeEx(None, 0x2) not in (0, 1, 0x80010106):
+            return out
+        WINFUNCTYPE = ctypes.WINFUNCTYPE
+        enum = _LPVOID()
+        hr = ole32.CoCreateInstance(
+            ctypes.byref(_CLSID_MMDeviceEnumerator), None,
+            _CLSCTX_INPROC_SERVER,
+            ctypes.byref(_IID_IMMDeviceEnumerator),
+            ctypes.byref(enum))
+        if hr != 0:
+            hr = ole32.CoCreateInstance(
+                ctypes.byref(_CLSID_MMDeviceEnumerator), None,
+                _CLSCTX_INPROC_SERVER,
+                ctypes.byref(_IID_IMMDeviceEnumerator_ALT),
+                ctypes.byref(enum))
+            if hr != 0:
+                return out
+        vtbl = ctypes.cast(enum.value, ctypes.POINTER(
+            ctypes.POINTER(ctypes.c_void_p)))
+        fn_list = WINFUNCTYPE(_HRESULT, _LPVOID, ctypes.c_int, ctypes.c_int,
+                              ctypes.POINTER(_LPVOID))(vtbl[0][3])
+        coll = _LPVOID()
+        if fn_list(enum, _E_RENDER, _DEVICE_STATE_ACTIVE,
+                   ctypes.byref(coll)) != 0:
+            return out
+        cvt = ctypes.cast(coll.value, ctypes.POINTER(
+            ctypes.POINTER(ctypes.c_void_p)))
+        fn_count = WINFUNCTYPE(_HRESULT, _LPVOID,
+                               ctypes.POINTER(ctypes.c_int))(cvt[0][3])
+        fn_item = WINFUNCTYPE(_HRESULT, _LPVOID, ctypes.c_int,
+                              ctypes.POINTER(_LPVOID))(cvt[0][4])
+        n = ctypes.c_int()
+        if fn_count(coll, ctypes.byref(n)) != 0:
+            return out
+        for i in range(max(0, min(int(n.value), 16))):
+            try:
+                dev = _LPVOID()
+                if fn_item(coll, i, ctypes.byref(dev)) != 0:
+                    continue
+                did = _device_id(dev)
+                if did:
+                    out.append((did, _device_name(dev) or did))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
+
+
+def audio_outputs():
+    """[{"id","name","default"}] das saidas de audio ativas."""
+    try:
+        devs = _enum_devices()
+    except Exception:
+        return []
+    if not devs:
+        return []
+    try:
+        ole32 = _ole32()
+        if ole32 is None:
+            return [{"id": did, "name": nm, "default": False}
+                    for did, nm in devs]
+        if ole32.CoInitializeEx(None, 0x2) not in (0, 1, 0x80010106):
+            return [{"id": did, "name": nm, "default": False}
+                    for did, nm in devs]
+        WINFUNCTYPE = ctypes.WINFUNCTYPE
+        enum = _LPVOID()
+        hr = ole32.CoCreateInstance(
+            ctypes.byref(_CLSID_MMDeviceEnumerator), None,
+            _CLSCTX_INPROC_SERVER,
+            ctypes.byref(_IID_IMMDeviceEnumerator),
+            ctypes.byref(enum))
+        if hr != 0:
+            return [{"id": did, "name": nm, "default": False}
+                    for did, nm in devs]
+        vtbl = ctypes.cast(enum.value, ctypes.POINTER(
+            ctypes.POINTER(ctypes.c_void_p)))
+        fn_default = WINFUNCTYPE(_HRESULT, _LPVOID, ctypes.c_int,
+                                 ctypes.c_int,
+                                 ctypes.POINTER(_LPVOID))(vtbl[0][4])
+        cur = ""
+        for role in (0, 1):
+            dev = _LPVOID()
+            try:
+                if fn_default(enum, _E_RENDER, role,
+                              ctypes.byref(dev)) == 0:
+                    cur = _device_id(dev)
+                    if cur:
+                        break
+            except Exception:
+                pass
+        return [{"id": did, "name": nm, "default": (did == cur)}
+                for did, nm in devs]
+    except Exception:
+        return [{"id": did, "name": nm, "default": False}
+                for did, nm in devs]
+
+
+def audio_set_output(device_id):
+    """Troca a saida padrao (console + multimidia). True se aceito."""
+    try:
+        did = (device_id or "").strip()
+        if not did:
+            return False
+        ole32 = _ole32()
+        if ole32 is None:
+            return False
+        if ole32.CoInitializeEx(None, 0x2) not in (0, 1, 0x80010106):
+            return False
+        WINFUNCTYPE = ctypes.WINFUNCTYPE
+        pc = _LPVOID()
+        hr = ole32.CoCreateInstance(
+            ctypes.byref(_CLSID_CPolicyConfigClient), None,
+            _CLSCTX_INPROC_SERVER,
+            ctypes.byref(_IID_IPolicyConfig),
+            ctypes.byref(pc))
+        if hr != 0:
+            return False
+        pvt = ctypes.cast(pc.value, ctypes.POINTER(
+            ctypes.POINTER(ctypes.c_void_p)))
+        fn_set = WINFUNCTYPE(_HRESULT, _LPVOID, ctypes.c_wchar_p,
+                             ctypes.c_int)(pvt[0][13])
+        ok = True
+        for role in (0, 1):
+            try:
+                if fn_set(pc, did, role) != 0:
+                    ok = False
+            except Exception:
+                ok = False
+        return ok
+    except Exception:
+        return False

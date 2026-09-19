@@ -15,7 +15,6 @@ from .i18n import t
 from .win32 import (
     _hwnd_alive, bring_to_front, force_borderless_fullscreen,
     force_topmost_noactivate, is_borderless, restore_windowed,
-    set_brightness,
 )
 
 
@@ -120,17 +119,18 @@ class RemoteOverlay:
                  fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
                  anchor="w").pack(fill="x", padx=16, pady=(8, 2))
 
-    def _button(self, text, cmd):
+    def _button(self, text, cmd, red=False):
         b = tk.Button(self.body, text=text, font=("Segoe UI", 13),
-                      fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
-                      activebackground=Config.BG_CARD_HOVER,
-                      activeforeground=Config.TEXT_PRIMARY,
+                      fg="white" if red else Config.TEXT_PRIMARY,
+                      bg="#e94560" if red else Config.BG_CARD,
+                      activebackground="#e94560" if red else Config.BG_CARD_HOVER,
+                      activeforeground="white",
                       relief="flat", bd=0, cursor="hand2", anchor="w",
                       padx=18, pady=7, highlightthickness=1,
                       highlightbackground=Config.BORDER,
                       command=cmd)
         b.pack(fill="x", padx=16, pady=2)
-        item = {"kind": "button", "widget": b, "cmd": cmd}
+        item = {"kind": "button", "widget": b, "cmd": cmd, "red": bool(red)}
         self.items.append(item)
         idx = len(self.items) - 1
         b.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
@@ -212,6 +212,8 @@ class RemoteOverlay:
             return
         if page == "config":
             self._page_config()
+        elif page == "confirm":
+            self._page_confirm()
         else:
             self._page_menu()
         self.paint()
@@ -221,22 +223,112 @@ class RemoteOverlay:
         self._section(t("ov_menu", lang))
         self._button(t("ov_config", lang),
                      lambda: self._show_page("config"))
-        self._button("\u2190 " + t("ov_back", lang), self.back_to_nexus)
+        self._button("\u2190 " + t("ov_back", lang),
+                     lambda: self._show_page("confirm"), red=True)
+
+    def _page_confirm(self):
+        lang = self.app.lang
+        self._section(t("ov_back", lang) + "?")
+        self._button("\u2713 " + t("ov_yes", lang), self.back_to_nexus,
+                     red=True)
+        self._button("\u2190 " + t("ov_no", lang),
+                     lambda: self._show_page("menu"))
+
+    def _page_confirm(self):
+        lang = self.app.lang
+        self._section(t("ov_back", lang) + "?")
+        self._button("\u2713 " + t("ov_yes", lang), self.back_to_nexus,
+                     red=True)
+        self._button("\u2190 " + t("ov_no", lang),
+                     lambda: self._show_page("menu"))
 
     def _page_config(self):
         lang = self.app.lang
         self._section(t("ov_config", lang))
         self.vol_item = self._slider(
             t("ov_sound", lang), 0, 100, self._get_vol, self._put_vol, step=5)
+        self._outputs_list()
+        self._section(t("ov_window", lang))
+        self._window_options()
         self._section(t("ov_image", lang))
-        self._bright_val = getattr(self, "_bright_val", 100)
-        self.bright_item = self._slider(
-            t("ov_bright", lang), 5, 100, lambda: self._bright_val,
-            self._put_bright, step=5)
-        self.win_item = self._button("", self._toggle_window)
-        self._paint_window()
+        self._button("\U0001F506 " + t("ov_brightpc", lang),
+                     self._open_bright_settings)
         self._button("\u2190 " + t("ov_menu", lang),
                      lambda: self._show_page("menu"))
+
+    def _outputs_list(self):
+        try:
+            outs = self.app.audio_outputs() if hasattr(self.app, "audio_outputs") \
+                else []
+        except Exception:
+            outs = []
+        if not outs:
+            try:
+                from .audio import audio_outputs
+                outs = audio_outputs()
+            except Exception:
+                outs = []
+        for o in outs:
+            try:
+                mark = "\u2713 " if o.get("default") else ""
+                self._button(mark + (o.get("name") or o.get("id", "?")),
+                             lambda _id=o.get("id", ""): self._pick_output(_id))
+            except Exception:
+                pass
+
+    def _pick_output(self, device_id):
+        try:
+            from .audio import audio_set_output
+            audio_set_output(device_id)
+        except Exception:
+            pass
+        try:
+            self._show_page("config")
+        except Exception:
+            pass
+
+    def _window_options(self):
+        lang = self.app.lang
+        try:
+            hwnd = self._remote_hwnd()
+        except Exception:
+            hwnd = None
+        if not hwnd:
+            self._button("\U0001F5BC " + t("ov_window", lang)
+                         + " — " + t("ov_nosupport", lang), lambda: None)
+            return
+        try:
+            full = is_borderless(hwnd)
+        except Exception:
+            full = False
+        self._button(("\u2713 " if full else "") + t("ov_full", lang),
+                     lambda: self._set_window_mode(True))
+        self._button(("\u2713 " if not full else "") + t("ov_win", lang),
+                     lambda: self._set_window_mode(False))
+
+    def _set_window_mode(self, fullscreen):
+        try:
+            hwnd = self._remote_hwnd()
+            if not hwnd:
+                return
+            if fullscreen:
+                force_borderless_fullscreen(hwnd)
+            else:
+                restore_windowed(hwnd)
+            try:
+                self.app.play_tick()
+            except Exception:
+                pass
+            self._show_page("config")
+        except Exception:
+            pass
+
+    def _open_bright_settings(self):
+        try:
+            import os as _os
+            _os.startfile("ms-settings:display")
+        except Exception:
+            pass
 
     # ---------- secoes ----------
     def _get_vol(self):
@@ -254,17 +346,6 @@ class RemoteOverlay:
         except Exception:
             pass
 
-    def _put_bright(self, v):
-        try:
-            v = max(5, min(100, int(v)))
-        except Exception:
-            return
-        try:
-            if set_brightness(v):
-                self._bright_val = v
-        except Exception:
-            pass
-
     # ---------- janela ----------
     def _remote_hwnd(self):
         try:
@@ -276,36 +357,20 @@ class RemoteOverlay:
             pass
         return None
 
-    def _paint_window(self):
-        try:
-            hwnd = self._remote_hwnd()
-            if not hwnd:
-                self.win_item["widget"].configure(
-                    text="\U0001F5BC " + t("ov_window", self.app.lang)
-                    + " — " + t("ov_nosupport", self.app.lang))
-                return
-            if is_borderless(hwnd):
-                txt = "\u2713 " + t("ov_full", self.app.lang)
-            else:
-                txt = "\u2713 " + t("ov_win", self.app.lang)
-            self.win_item["widget"].configure(text=txt)
-        except Exception:
-            pass
-
-    def _toggle_window(self):
+    def _set_window_mode(self, fullscreen):
         try:
             hwnd = self._remote_hwnd()
             if not hwnd:
                 return
-            if is_borderless(hwnd):
-                restore_windowed(hwnd)
-            else:
+            if fullscreen:
                 force_borderless_fullscreen(hwnd)
-            self._paint_window()
+            else:
+                restore_windowed(hwnd)
             try:
                 self.app.play_tick()
             except Exception:
                 pass
+            self._show_page("config")
         except Exception:
             pass
 
@@ -381,7 +446,12 @@ class RemoteOverlay:
                         else Config.TEXT_PRIMARY)
                 else:
                     b = item["widget"]
-                    if i == self.focus:
+                    if item.get("red"):
+                        b.configure(bg="#e94560", fg="white",
+                                    highlightbackground="white" if i == self.focus
+                                    else "#e94560",
+                                    highlightthickness=3 if i == self.focus else 1)
+                    elif i == self.focus:
                         b.configure(bg=Config.ACCENT, fg="white",
                                     highlightbackground="white",
                                     highlightthickness=3)
@@ -391,10 +461,6 @@ class RemoteOverlay:
                                     highlightthickness=1)
             except Exception:
                 pass
-        try:
-            self._paint_window()
-        except Exception:
-            pass
 
     def adjust(self, d):
         if self.closed or not self.items:

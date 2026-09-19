@@ -1519,9 +1519,6 @@ from nexus import remote_overlay as ROV  # noqa: E402
 _vols = []
 _real_avol = ROV.audio_set_master
 ROV.audio_set_master = lambda v: _vols.append(round(float(v), 2)) or True
-_brights = []
-_real_bri = ROV.set_brightness
-ROV.set_brightness = lambda v: _brights.append(int(v)) or True
 
 
 class GPOV:
@@ -1547,6 +1544,15 @@ appO.sounds = []
 appO.play_open_sound = lambda: appO.sounds.append('open')
 appO.play_back_sound = lambda: appO.sounds.append('back')
 appO.play_tick = lambda: appO.sounds.append('tick')
+import nexus.audio as _AUDMOD  # noqa: E402
+_real_outs = _AUDMOD.audio_outputs
+_real_setout = _AUDMOD.audio_set_output
+outs_set = []
+_AUDMOD.audio_outputs = lambda: [{"id": "a", "name": "Caixa A",
+                                  "default": True},
+                                 {"id": "b", "name": "Fone B",
+                                  "default": False}]
+_AUDMOD.audio_set_output = lambda did: outs_set.append(did) or True
 ov = ROV.RemoteOverlay(appO)
 root.update()
 check(appO.remote_overlay is ov and not ov.closed, "AA1 overlay abre")
@@ -1554,41 +1560,74 @@ check(ov.page == "menu"
       and [b["widget"].cget("text") if b.get("kind") == "button" else None
            for b in ov.items] == ["Configurações", "← Voltar para o Nexus"],
       "AA2 menu (config + voltar)")
+check(ov.items[1].get("red") is True
+      and ov.items[1]["widget"].cget("bg") == "#e94560",
+      "AA3 voltar vermelho")
 ov.set_focus(1)
 ov.press("south")
-check(appO.exited == [True] and ov.closed, "AA3 voltar para o Nexus")
+root.update()
+check(ov.page == "confirm"
+      and [b["widget"].cget("text") if b.get("kind") == "button" else None
+           for b in ov.items] == ["✓ Sim", "← Não"],
+      "AA4 confirma Sim/Nao")
+ov.set_focus(0)
+ov.press("south")
+check(appO.exited == [True] and ov.closed, "AA5 Sim volta ao Nexus")
 ov2 = ROV.RemoteOverlay(appO)
 root.update()
 ov2.set_focus(0)
 ov2.press("south")
 root.update()
 check(ov2.page == "config"
-      and [f['kind'] for f in ov2.items] == ['slider', 'slider',
-                                             'button', 'button'],
-      "AA4 config (som/brilho/janela/voltar)")
+      and [f['kind'] for f in ov2.items] == ['slider', 'button', 'button',
+                                             'button', 'button', 'button'],
+      "AA6 config (som+saidas+janela+imagem+voltar)")
 ov2.set_focus(0)
 ov2.on_hat((1, 0))
-check(_vols and _vols[-1] <= 1.0, "AA5 volume ao vivo")
-ov2.set_focus(1)
-ov2.on_hat((1, 0))
-check(bool(_brights) and _brights[-1] == 100, "AA6 brilho ajusta")
-ov2.set_focus(3)
+check(_vols and _vols[-1] <= 1.0, "AA7 volume ao vivo")
+outs_set.clear()
+_dev_btns = [f for f in ov2.items
+             if f.get("kind") == "button" and "Fone B" in f["widget"].cget("text")]
+check(len(_dev_btns) == 1, "AA8 lista saidas")
+ov2.set_focus(ov2.items.index(_dev_btns[0]))
 ov2.press("south")
-check(ov2.page == "menu", "AA7 voltar volta ao menu")
+root.update()
+check(outs_set == ["b"], "AA9 trocar saida")
+ov2.set_focus(0)
+ov2.press("south")
+root.update()
 ov2.press("east")
-check(ov2.closed, "AA8 B fecha no menu")
-ov3 = ROV.RemoteOverlay(appO)
+check(ov2.page == "menu" and not ov2.closed, "AA10 B na config volta")
+ov2.press("east")
+check(ov2.closed, "AA11 B no menu fecha")
+import os as _osmod  # noqa: E402
+_real_startfile = getattr(_osmod, "startfile", None)
+_started = []
+_osmod.startfile = lambda x: _started.append(x)
+ov4 = ROV.RemoteOverlay(appO)
 root.update()
-ov3.set_focus(0)
-ov3.press("south")
+ov4.set_focus(0)
+ov4.press("south")
 root.update()
-ov3.press("east")
-check(ov3.page == "menu" and not ov3.closed, "AA9 B na config volta")
-ov3.press("east")
-check(ov3.closed, "AA10 B no menu fecha")
+_bri = [f for f in ov4.items
+        if f.get("kind") == "button" and "Brilho" in f["widget"].cget("text")]
+check(len(_bri) == 1, "AA12 brilho abre Windows")
+ov4.set_focus(ov4.items.index(_bri[0]))
+ov4.press("south")
+check(_started == ["ms-settings:display"], "AA13 sem janela propria")
+if _real_startfile is not None:
+    _osmod.startfile = _real_startfile
+_win = [f for f in ov4.items
+        if f.get("kind") == "button" and "Não suportado" in f["widget"].cget("text")]
+check(len(_win) == 1, "AA14 janela sem hwnd avisa")
+_AUDMOD.audio_outputs = _real_outs
+_AUDMOD.audio_set_output = _real_setout
 ROV.audio_set_master = _real_avol
-ROV.set_brightness = _real_bri
-ov3.close()
+ov4.close()
+try:
+    ov2.close()
+except Exception:
+    pass
 try:
     ov.close()
 except Exception:
