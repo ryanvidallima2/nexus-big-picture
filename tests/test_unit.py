@@ -687,7 +687,7 @@ fh.nav_level = 'items'
 fh.using_gamepad = False
 fh.kb_window = None
 CF.BROWSER_PROCS = []
-CF.open_in_nexus_browser = lambda url, name, pad: SimpleNamespace(
+CF.open_in_nexus_browser = lambda url, name, pad, service="": SimpleNamespace(
     poll=lambda: None)
 
 
@@ -696,7 +696,7 @@ class _Proc:
         return None
 
 
-CF.open_in_nexus_browser = lambda url, name, pad: _Proc()
+CF.open_in_nexus_browser = lambda url, name, pad, service="": _Proc()
 _stat = []
 fh.launch_site_flow('N', status_cb=lambda x: _stat.append(x),
                      done_cb=lambda: fh.calls.append('done'))
@@ -1223,6 +1223,37 @@ try:
     check(g2._match_search("Pokémon") is True, "M10 match sem acento")
 finally:
     SETMOD.save_settings = _orig_set_save
+
+# ================= PARTE 6: perfil por aplicativo =================
+import shutil
+import tempfile
+from nexus import paths as _PTH
+_tmpbase = tempfile.mkdtemp(prefix="nxprof_")
+_old_env = os.environ.get("NEXUS_PROFILE_DIR")
+os.environ["NEXUS_PROFILE_DIR"] = _tmpbase
+try:
+    check(_PTH.service_key("Disney+") == "disney", "P1 slug disney")
+    check(_PTH.service_key("A&B C") == "a_b_c", "P2 slug simbolos")
+    check(_PTH.service_key("") == "app", "P3 slug vazio")
+    dn = _PTH.service_profile_dir("Netflix")
+    check(os.path.isdir(dn) and os.path.abspath(dn).startswith(
+        os.path.abspath(_tmpbase)), "P4 dir aninhada na base")
+    open(os.path.join(dn, "x.dat"), "w").write("12345")
+    dy = _PTH.service_profile_dir("YouTube")
+    open(os.path.join(dy, "y.dat"), "w").write("1234567890")
+    check(_PTH.service_profile_size("Netflix") == 5, "P5 size solo")
+    check(_PTH.browser_profile_size() >= 15, "P6 size global soma")
+    check(_PTH.clear_service_profile("Netflix") is True, "P7 clear solo")
+    check(not os.path.exists(os.path.join(dn, "x.dat")), "P8 arquivo sumiu")
+    check(os.path.exists(os.path.join(dy, "y.dat")), "P9 outro intacto")
+    check(_PTH.clear_service_profile("") is False, "P10 sem slug nao apaga base")
+    check(os.path.isdir(_tmpbase), "P11 base intacta")
+finally:
+    if _old_env is None:
+        os.environ.pop("NEXUS_PROFILE_DIR", None)
+    else:
+        os.environ["NEXUS_PROFILE_DIR"] = _old_env
+    shutil.rmtree(_tmpbase, ignore_errors=True)
 
 print("PARTE 5 OK (%d checks)" % COUNT[0], flush=True)
 

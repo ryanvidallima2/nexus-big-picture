@@ -210,8 +210,12 @@ def run():
               "borda neon na cor do card")
         app.flip_show_page("config")
         root.update()
-        check(app.flipped["page"] == "config" and len(app.flipped["opts"]) == 8,
-              "verso config (8 acoes)")
+        check(app.flipped["page"] == "config" and len(app.flipped["opts"]) == 9,
+              "verso config (9 acoes)")
+        from nexus.i18n import t as _t
+        check(any(_t("cache_app_clear", app.lang) in b.cget("text")
+                    for b, _c in app.flipped["opts"]),
+              "verso config tem limpar app")
         app.flip_opt_move(1)
         check(app.flipped["idx"] == 1, "opcao navega")
         app.flip_show_page("color")

@@ -18,7 +18,8 @@ from .paths import BROWSER_PROCS
 from .win32 import (
     _top_level_windows, force_borderless_fullscreen, find_window_by_title,
     find_window_by_title_pid, is_window_visible, set_owner_window,
-    show_window, SW_HIDE, SW_SHOW,
+    show_window, ensure_fullscreen_top, kill_process_tree, SW_HIDE, SW_SHOW,
+    SW_MAXIMIZE,
 )
 
 
@@ -382,7 +383,7 @@ class AppRemoteMixin:
                 if proc.poll() is None:
                     if closing is not None:
                         closing.add(proc)
-                    proc.terminate()
+                    kill_process_tree(proc)
             except Exception:
                 pass
             try:
@@ -512,10 +513,10 @@ class AppRemoteMixin:
             hwnd = find_window_by_title("Nexus - %s" % service)
         if hwnd:
             # Dono tem que ser top-level: winfo_id e o filho interno, o
-            # top-level de verdade e o wm_frame() (ou o pai do winfo_id).
+            # top-level de verdade e o wm_frame() (hex) ou o pai do winfo_id.
             root_hw = None
             try:
-                root_hw = int(self.root.wm_frame())
+                root_hw = int(self.root.wm_frame(), 16)
             except Exception:
                 root_hw = None
             if not root_hw:
@@ -534,6 +535,14 @@ class AppRemoteMixin:
                     if set_owner_window(hwnd, root_hw):
                         self.browser_hwnd = hwnd
                         try:
+                            show_window(hwnd, SW_MAXIMIZE)
+                        except Exception:
+                            pass
+                        try:
+                            ensure_fullscreen_top(hwnd)
+                        except Exception:
+                            pass
+                        try:
                             self.root.after(
                                 500, self._browser_visibility_tick)
                         except Exception:
@@ -541,12 +550,11 @@ class AppRemoteMixin:
                         return
                 except Exception:
                     pass
-        if tries < 30:
-            try:
-                self.root.after(500, lambda: self._own_browser_tick(
-                    proc, service, tries + 1))
-            except Exception:
-                pass
+        try:
+            self.root.after(500, lambda: self._own_browser_tick(
+                proc, service, tries + 1))
+        except Exception:
+            pass
 
     def _browser_visibility_tick(self):
         """Sincronia Nexus <-> navegador owned (poll 500ms).

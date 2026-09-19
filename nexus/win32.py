@@ -21,6 +21,9 @@ WS_EX_STATICEDGE = 0x00020000
 WS_EX_APPWINDOW = 0x00040000
 SWP_FRAMECHANGED = 0x0020
 SWP_SHOWWINDOW = 0x0040
+SWP_NOMOVE = 0x0002
+SWP_NOSIZE = 0x0001
+SWP_NOACTIVATE = 0x0010
 
 try:
     _user32 = ctypes.windll.user32
@@ -121,7 +124,9 @@ def _monitor_rect(hwnd=None):
 
 
 def force_borderless_fullscreen(hwnd, monitor_hwnd=None):
-    """Tira bordas e estica a janela p/ tela cheia. Best-effort por app."""
+    """Tira bordas e estica a janela p/ tela cheia. Best-effort por app.
+    Igual a receita do F11 (Maximized + DWM sem cantos): cobre a tarefa
+    desde o primeiro abrir, sem precisar alternar."""
     if not _WIN32_OK or not hwnd:
         return False
     try:
@@ -132,9 +137,30 @@ def force_borderless_fullscreen(hwnd, monitor_hwnd=None):
         exstyle = int(exstyle) & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE
                                    | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE)
         _SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exstyle)
+        try:
+            _DwmAttr = ctypes.windll.dwmapi.DwmSetWindowAttribute
+            _DwmAttr.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                 ctypes.c_void_p, ctypes.c_uint]
+            _DwmAttr.restype = ctypes.c_long
+            _DwmAttr(hwnd, 33, ctypes.byref(ctypes.c_int(1)),
+                     ctypes.sizeof(ctypes.c_int))
+            _DwmAttr(hwnd, 34, ctypes.byref(ctypes.c_int(0xFFFFFFFE)),
+                     ctypes.sizeof(ctypes.c_int))
+        except Exception:
+            pass
         x, y, w, h = _monitor_rect(monitor_hwnd)
-        return bool(_SetWindowPos(hwnd, None, x, y, w, h,
-                                  SWP_FRAMECHANGED | SWP_SHOWWINDOW))
+        if not bool(_SetWindowPos(hwnd, None, x, y, w, h,
+                                  SWP_FRAMECHANGED | SWP_SHOWWINDOW)):
+            return False
+        try:
+            _ShowWindow = ctypes.windll.user32.ShowWindow
+            _ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            _ShowWindow.restype = ctypes.c_bool
+            _ShowWindow(hwnd, 3)
+        except Exception:
+            pass
+        ensure_fullscreen_top(hwnd)
+        return True
     except Exception:
         return False
 
@@ -151,6 +177,22 @@ def bring_to_front(hwnd):
         if _WIN32_OK and hwnd:
             ctypes.windll.user32.SetForegroundWindow(hwnd)
             return True
+    except Exception:
+        pass
+    return False
+
+
+def ensure_fullscreen_top(hwnd):
+    """Flash topmost SEM roubar foco: cobre a tarefa em fullscreen.
+    O topmost e retirado em seguida; a posicao no z-order permanece."""
+    if not _WIN32_OK or not hwnd:
+        return False
+    try:
+        _SetWindowPos(hwnd, ctypes.c_void_p(-1), 0, 0, 0, 0,
+                      SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        _SetWindowPos(hwnd, ctypes.c_void_p(-2), 0, 0, 0, 0,
+                      SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        return True
     except Exception:
         pass
     return False
@@ -173,6 +215,32 @@ def foreground_hwnd():
     except Exception:
         pass
     return None
+
+
+def kill_process_tree(proc):
+    """Mata o proc E os filhos (WebView2 orfa trava o perfil e o clear
+    apos sair falha em silencio). Best-effort, nunca levanta."""
+    try:
+        pid = int(getattr(proc, "pid", 0) or 0)
+    except Exception:
+        pid = 0
+    if pid:
+        try:
+            import subprocess as _sp
+            _sp.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True, timeout=15,
+                    creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
+        except Exception:
+            pass
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        pass
+    return True
 
 
 # Barra de titulo escura (DWM) das janelas tkinter (extraido sem alteracao).
@@ -261,6 +329,7 @@ GWLP_HWNDPARENT = -8
 SW_HIDE = 0
 SW_SHOW = 5
 SW_MINIMIZE = 6
+SW_MAXIMIZE = 3
 SW_RESTORE = 9
 
 

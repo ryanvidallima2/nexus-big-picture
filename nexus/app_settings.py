@@ -26,10 +26,11 @@ from .panels import (
 )
 from .paths import (
     BROWSER_PROCS, IMAGES_DIR, browser_profile_size, browser_running,
-    clear_browser_profile,
+    clear_browser_profile, service_profile_size, clear_service_profile,
 )
 from .update import fetch_latest_release
 from .version import APP_VERSION, ver_tuple
+from .win32 import kill_process_tree
 
 
 class AppSettingsMixin:
@@ -513,6 +514,33 @@ class AppSettingsMixin:
             t("msg_success", self.lang) if ok else t("msg_warning", self.lang),
             t("cache_cleared", self.lang) if ok else t("cache_in_use", self.lang))
 
+    def confirm_clear_service_profile(self, name):
+        self.close_sidebar()
+        if browser_running():
+            self.show_info_message(t("msg_warning", self.lang),
+                                   t("cache_in_use", self.lang))
+            return
+        try:
+            size_mb = service_profile_size(name) / 1048576.0
+        except Exception:
+            size_mb = 0.0
+        menu = NexusMenuWindow(self, name, [],
+                               subtitle=t("cache_confirm", self.lang) % size_mb,
+                               icon="\U0001F9F9", width=480)
+        menu.set_options([(t("cache_clear_yes", self.lang),
+                           lambda: self.do_clear_service_profile(name, menu)),
+                          (t("sidebar_close", self.lang), menu.close)])
+
+    def do_clear_service_profile(self, name, menu):
+        ok = clear_service_profile(name)
+        try:
+            menu.close()
+        except Exception:
+            pass
+        self.show_info_message(
+            t("msg_success", self.lang) if ok else t("msg_warning", self.lang),
+            t("cache_cleared", self.lang) if ok else t("cache_in_use", self.lang))
+
     # ===================== ADD STREAMING =====================
     def browse_image(self, entry):
         fp = filedialog.askopenfilename(
@@ -789,8 +817,8 @@ class AppSettingsMixin:
         menu = NexusMenuWindow(self, t("lang_title", self.lang),
                                [], icon="\U0001F310", width=420)
         languages = [
-            ("pt-br", "\U0001F1E7\U0001F1F7  Portugues (BR)"),
-            ("en", "\U0001F1EC\U0001F1E7  English"),
+            ("pt-br", "BR  Portugues (BR)"),
+            ("en", "EN  English"),
         ]
         opts = [((("\u2713 " if code == self.lang else "") + label),
                  lambda c=code: self.set_language(c, menu)) for code, label in languages]
@@ -874,7 +902,7 @@ class AppSettingsMixin:
                         closing.add(proc)
                     except Exception:
                         pass
-                    proc.terminate()
+                    kill_process_tree(proc)
             except Exception:
                 pass
         try:

@@ -354,6 +354,9 @@ class CardFlipMixin:
              lambda: self._flip_copy_url(name)),
             ((f"\U0001F5D1 {t('ctx_delete', lang)}"),
              lambda: self.flip_show_page("delete")),
+            ((f"\U0001F9F9 {t('cache_app_clear', lang)}"),
+             lambda: self.cfg_keep_flip(name, False, "config",
+                                        lambda: self.confirm_clear_service_profile(name))),
             ((f"\u2190 {t('dlg_back', lang)}"),
              lambda: self.flip_show_page("main")),
         ]
@@ -477,7 +480,7 @@ class CardFlipMixin:
                     os.environ.pop("NEXUS_PARENT_HWND", None)
                 except Exception:
                     pass
-            proc = open_in_nexus_browser(url, name, pad_label)
+            proc = open_in_nexus_browser(url, name, pad_label, service=name)
         try:
             self.db.add_history(name)
         except Exception:
