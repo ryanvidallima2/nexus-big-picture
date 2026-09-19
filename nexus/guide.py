@@ -134,8 +134,8 @@ GUIDE_CATS = [
     {
         "key": "ajustes",
         "icon": "\u2699",
-        "title_pt": "Controles e Som",
-        "title_en": "Controls and Sound",
+        "title_pt": "Configurações",
+        "title_en": "Settings",
         "body_pt": (
             "Menu > Controles: veja seus aparelhos conectados, troque "
             "entre eles, remapeie qualquer botão e ajuste a sensibilidade "
