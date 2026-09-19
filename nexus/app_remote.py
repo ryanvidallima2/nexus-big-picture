@@ -5,7 +5,9 @@ import threading
 import time
 import tkinter as tk
 
-from .audio import audio_get_master, audio_set_master
+from .audio import (
+    audio_get_master, audio_set_master, ensure_app_volumes,
+)
 from .config import Config, save_settings
 from .dialogs import _modal_alive
 from .i18n import t
@@ -316,6 +318,42 @@ class AppRemoteMixin:
         except Exception:
             return False
 
+    def _ensure_service_volumes(self, service):
+        """Volume por programa: a sessao nasce quando o app toca algo,
+        entao tenta em thread por alguns segundos ( web = navegadores)."""
+        try:
+            import threading as _th
+        except Exception:
+            return False
+        try:
+            level = self.default_volume() / 100.0
+        except Exception:
+            return False
+        try:
+            cands = list(REMOTE_WATCH.get(service, []) or [])
+        except Exception:
+            cands = []
+        try:
+            for _b in (BROWSER_WATCH or []):
+                if _b not in cands:
+                    cands.append(_b)
+        except Exception:
+            pass
+        if not cands:
+            return False
+
+        def _run():
+            try:
+                ensure_app_volumes(cands, level, tries=12)
+            except Exception:
+                pass
+
+        try:
+            _th.Thread(target=_run, daemon=True).start()
+            return True
+        except Exception:
+            return False
+
     def start_pad_capture(self, section, action):
         self.pad_capture = {"section": section, "action": action}
         if self.pad_window is not None:
@@ -395,6 +433,10 @@ class AppRemoteMixin:
             gp.prev_buttons.clear()
             try:
                 self._apply_default_volume()
+            except Exception:
+                pass
+            try:
+                self._ensure_service_volumes(service)
             except Exception:
                 pass
             self.root.iconify()

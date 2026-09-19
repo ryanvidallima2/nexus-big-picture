@@ -122,6 +122,65 @@ class AppViewsMixin:
         except Exception as e:
             return False, str(e)[:120]
 
+    def _sound_vol(self):
+        """Volume + gate compartilhados pelos sons (mesmo do blip)."""
+        try:
+            vol = 10
+            sonar = True
+            if isinstance(self.settings, dict):
+                try:
+                    vol = int(self.settings.get("sound_volume", 10))
+                except Exception:
+                    vol = 10
+                sonar = bool(self.settings.get("nav_sound", True))
+            if not sonar or vol <= 0:
+                return None
+            return vol
+        except Exception:
+            return 10
+
+    def play_confirm_sound(self):
+        """Confirmar (A): duas notas subindo."""
+        try:
+            from .input import _play_confirm
+        except Exception:
+            return False, "sem motor"
+        vol = self._sound_vol()
+        if vol is None:
+            return False, "mudo"
+        try:
+            return _play_confirm(vol)
+        except Exception as e:
+            return False, str(e)[:120]
+
+    def play_back_sound(self):
+        """Voltar (B): duas notas descendo."""
+        try:
+            from .input import _play_back
+        except Exception:
+            return False, "sem motor"
+        vol = self._sound_vol()
+        if vol is None:
+            return False, "mudo"
+        try:
+            return _play_back(vol)
+        except Exception as e:
+            return False, str(e)[:120]
+
+    def play_open_sound(self):
+        """Abrir app/site/jogo: arpejo rapido."""
+        try:
+            from .input import _play_open
+        except Exception:
+            return False, "sem motor"
+        vol = self._sound_vol()
+        if vol is None:
+            return False, "mudo"
+        try:
+            return _play_open(vol)
+        except Exception as e:
+            return False, str(e)[:120]
+
     def _nav(self, direction):
         if self.sidebar_visible:
             if direction == "up":
@@ -331,11 +390,9 @@ class AppViewsMixin:
                 cur = getattr(self, "flipped", None)
                 if cur is not None and cur.get("widget") == w:
                     self.flip_opt_activate()
-                    return
-            except Exception:
-                pass
-            try:
-                self.flip_card(w, name, is_game)
+                else:
+                    self.flip_card(w, name, is_game)
+                self.play_confirm_sound()
             except Exception:
                 pass
 
@@ -375,6 +432,10 @@ class AppViewsMixin:
                     and not _modal_alive(self.pad_window)):
                 self.confirm_quit()
                 return
+        except Exception:
+            pass
+        try:
+            self.play_back_sound()
         except Exception:
             pass
         self.go_back()

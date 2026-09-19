@@ -177,16 +177,21 @@ def _play_nav_tick(vol=10):
         data = _nav_tick_wav(vol)
     except Exception as e:
         return False, str(e)[:120]
+    return (True, "") if _enqueue_tone(data) else (False, "fila cheia")
+
+
+def _enqueue_tone(data):
+    """Enfileira um som no worker unico (ultimo conta)."""
     try:
         with _TICK_LOCK:
             _TICK_STATE["pending"] = data
             if _TICK_STATE["playing"]:
-                return True, ""
+                return True
             _TICK_STATE["playing"] = True
         threading.Thread(target=_tick_worker, daemon=True).start()
-        return True, ""
-    except Exception as e:
-        return False, str(e)[:120]
+        return True
+    except Exception:
+        return False
 
 
 def _tick_worker():
@@ -229,6 +234,63 @@ def _play_test_tone():
         return True, ""
     except Exception as e:
         return False, str(e)[:120]
+
+
+_TONE_CACHE = {}
+
+
+def _tone_wav(notes, amp=0.4):
+    """Jingle curto (lista de (freq, ms)) com cache por notas+amp."""
+    import math
+    import struct
+    key = (tuple(notes), amp)
+    if key in _TONE_CACHE:
+        return _TONE_CACHE[key]
+    rate = 22050
+    frames = bytearray()
+    for freq, ms in notes:
+        n = rate * ms // 1000
+        for i in range(n):
+            t = i / rate
+            env = min(1.0, t * 60.0) * math.exp(-t * 6.0)
+            s = math.sin(2.0 * math.pi * freq * t) * env * amp
+            frames += struct.pack("<h", int(s * 32767))
+    head = (b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
+            b"data" + struct.pack("<I", len(frames)))
+    data = head + bytes(frames)
+    _TONE_CACHE[key] = data
+    return data
+
+
+def _play_confirm(vol=10):
+    """Confirmar (A): duas notas subindo."""
+    return _play_tone([(660.0, 50), (990.0, 70)], vol)
+
+
+def _play_back(vol=10):
+    """Voltar (B): duas notas descendo."""
+    return _play_tone([(440.0, 50), (300.0, 70)], vol)
+
+
+def _play_open(vol=10):
+    """Abrir app/site/jogo: arpejo rapido."""
+    return _play_tone([(523.0, 60), (659.0, 60), (784.0, 90)], vol)
+
+
+def _play_tone(notes, vol=10):
+    """Toca um jingle pelo worker unico (coalesce). Retorna (ok, erro)."""
+    try:
+        vol = max(0, min(100, int(vol)))
+    except Exception:
+        return False, "volume invalido"
+    try:
+        if _winsound is None:
+            return False, "winsound indisponivel"
+        data = _tone_wav(notes, 0.5 * (vol / 100.0))
+    except Exception as e:
+        return False, str(e)[:120]
+    return (True, "") if _enqueue_tone(data) else (False, "fila cheia")
 
 
 def _nav_test_wav():
@@ -316,10 +378,13 @@ _EDIT_CLASS_NAMES = frozenset([
 
 
 def _debug_log(msg):
-    """Log temporario de diagnostico (bug Y->F). Nao falha o app se der erro."""
+    """Log temporario de diagnostico (bug Y->F). So grava com NEXUS_DEBUG=1
+    (senao o arquivo cresceria sem fim). Nunca falha o app."""
     try:
-        import datetime
         import os
+        if os.environ.get("NEXUS_DEBUG", "") != "1":
+            return
+        import datetime
         base = os.path.dirname(os.path.realpath(__file__))
         path = os.path.join(base, "..", "nexus_debug.log")
         with open(path, "a", encoding="utf-8") as f:

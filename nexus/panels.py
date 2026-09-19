@@ -910,6 +910,16 @@ class ControlesPanel(SidePanel):
             if d["name"] == active_name:
                 text = "\u2713 " + text + ("  \u2022  " + conn if conn else "")
             self.button(text, lambda p=pos: self._pick(p))
+        try:
+            mapped = bool(getattr(gp, "sdl_mapped", True))
+        except Exception:
+            mapped = True
+        tk.Label(self.body,
+                 text=t("ctrl_sdl_ok", lang) if mapped else t("ctrl_sdl_fix", lang),
+                 font=("Segoe UI", 11),
+                 fg=Config.TEXT_SECONDARY if mapped else "#e94560",
+                 bg=Config.BG_SIDEBAR, anchor="w", justify="left",
+                 wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=(2, 0))
         self.button("\u21BB " + t("pad_rescan", lang),
                     lambda: self._rescan())
         self.section("\U0001F3AE " + t("ctrl_pad_sec", lang))

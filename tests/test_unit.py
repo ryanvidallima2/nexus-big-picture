@@ -909,20 +909,29 @@ GM._poll_remote(mgrY)
 check(kbY.closed, "J2 B fecha kb (sem cair no dispatch)")
 
 # H4: Y em campo bloqueia F e loga a decisao; fora do campo, manda F
-NINPUT.focused_is_text_field = lambda: True
-NINPUT._FOCUS_CACHE.update(t=None, v=False)
-mgrY.prev_buttons = {}
-mgrY.joystick.btns = {3}
-GM._poll_remote(mgrY)
-tail = ""
+import os as _os
+_os.environ["NEXUS_DEBUG"] = "1"
 try:
-    _loglines = open(os.path.join(BASE, 'nexus_debug.log'),
-                     encoding='utf-8').read().splitlines()
-    tail = _loglines[-1] if _loglines else ""
-except Exception:
+    try:
+        _os.remove(os.path.join(BASE, 'nexus_debug.log'))
+    except Exception:
+        pass
+    NINPUT.focused_is_text_field = lambda: True
+    NINPUT._FOCUS_CACHE.update(t=None, v=False)
+    mgrY.prev_buttons = {}
+    mgrY.joystick.btns = {3}
+    GM._poll_remote(mgrY)
     tail = ""
-check(tapsY == [] and 'guard(fullscreen)' in tail and 'False' in tail,
-      "J3 Y em campo bloqueia + loga")
+    try:
+        _loglines = open(os.path.join(BASE, 'nexus_debug.log'),
+                         encoding='utf-8').read().splitlines()
+        tail = _loglines[-1] if _loglines else ""
+    except Exception:
+        tail = ""
+    check(tapsY == [] and 'guard(fullscreen)' in tail and 'False' in tail,
+          "J3 Y em campo bloqueia + loga")
+finally:
+    _os.environ.pop("NEXUS_DEBUG", None)
 NINPUT.focused_is_text_field = lambda: False
 NINPUT._FOCUS_CACHE.update(t=None, v=False)
 mgrY.prev_buttons = {}
@@ -965,15 +974,23 @@ mgrR.remote_watch_missed = 0
 mgrR._maybe_hotplug = lambda: None
 mgrR._maybe_open_kb_for_focus = lambda: None
 mgrR.joystick.btns = {0}
-GM._poll_remote(mgrR)
-_logA = ""
+_os.environ["NEXUS_DEBUG"] = "1"
 try:
-    _logA = open(os.path.join(BASE, 'nexus_debug.log'),
-                 encoding='utf-8').read()
-except Exception:
-    pass
-check(clicksA == [False] and 'A remoto: click_left' in _logA
-      and 'Xbox 360 Controller' in _logA, "J5 A remoto clica + loga")
+    try:
+        _os.remove(os.path.join(BASE, 'nexus_debug.log'))
+    except Exception:
+        pass
+    GM._poll_remote(mgrR)
+    _logA = ""
+    try:
+        _logA = open(os.path.join(BASE, 'nexus_debug.log'),
+                     encoding='utf-8').read()
+    except Exception:
+        pass
+    check(clicksA == [False] and 'A remoto: click_left' in _logA
+          and 'Xbox 360 Controller' in _logA, "J5 A remoto clica + loga")
+finally:
+    _os.environ.pop("NEXUS_DEBUG", None)
 GMOD2.tap_key = _t3
 GMOD2.mouse_click = _c3
 
@@ -1409,6 +1426,28 @@ exec(textwrap.dedent(_src2), _nsX2)
 appX.launch_game = lambda name, _f=_nsX2['launch_game']: _f(appX, name)
 appX.launch_game('Vazio')
 check(_popen_calls == [] and appX.applied == [], "X2 sem exe sem preset")
+# ================= Y) volume por programa =================
+from nexus import audio as AUD  # noqa: E402
+check(isinstance(AUD.audio_sessions(), list), "Y1 sessoes lista")
+check(AUD.session_set_volume("nao-existe-xyz.exe", 0.7) is False,
+      "Y2 exe ausente False")
+_made = []
+
+
+def _fake_set(exe, level):
+    _made.append(exe)
+    return exe == "a.exe"
+
+
+check(AUD.ensure_app_volumes(["a.exe", "b.exe"], 0.7, tries=5,
+                             _set=_fake_set) == ["b.exe"],
+      "Y3 retry ate acertar")
+check(_made.count("a.exe") == 1 and _made.count("b.exe") == 5,
+      "Y4 para no acerto, insiste no resto")
+check(AUD.ensure_app_volumes([], 0.7) == []
+      and AUD.ensure_app_volumes(["z.exe"], 0.7, tries=2,
+                                 _set=lambda e, l: False) == ["z.exe"],
+      "Y5 vazio e esgotamento")
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:
     print("FALHAS:", fails, flush=True)

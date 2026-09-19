@@ -143,6 +143,7 @@ class GamepadManager:
             pass
         self.joystick = None
         self.controller = None
+        self.sdl_mapped = True
         self.logical_to_raw = dict(XBOX_RAW)
         self.raw_to_logical = {v: k for k, v in XBOX_RAW.items()}
         self.dpad_sources = []
@@ -160,9 +161,16 @@ class GamepadManager:
         self.joystick = js
         self.active_index = index
         table = parse_sdl_mapping(self._sdl_mapping(js))
+        self.sdl_mapped = bool(table)
         if table:
             self.logical_to_raw = table
             self.raw_to_logical = {v: k for k, v in table.items()}
+        else:
+            try:
+                name = js.get_name() or "?"
+                _debug_log("pad generico sem mapa SDL: %r, mapa fixo Xbox" % name)
+            except Exception:
+                pass
         try:
             name = js.get_name() or ""
         except Exception:
@@ -222,9 +230,20 @@ class GamepadManager:
                     hat = int(m.group(1))
             if len(btns) == 4:
                 return [("btn", (btns["dpleft"], btns["dpright"],
-                                 btns["dpup"], btns["dpdown"]))]
+                                  btns["dpup"], btns["dpdown"]))]
             if hat is not None:
                 return [("hat", hat)]
+        except Exception:
+            pass
+        # Sem mapa SDL e sem hat: tenta D-pad em botoes 12-15
+        # (up,down,left,right — padrao comum DirectInput). Logado.
+        try:
+            if js.get_numhats() <= 0 and js.get_numbuttons() >= 12:
+                try:
+                    _debug_log("pad generico: D-pad via botoes 12-15")
+                except Exception:
+                    pass
+                return [("hat", 0), ("btn", (14, 15, 12, 13))]
         except Exception:
             pass
         return [("hat", 0)]

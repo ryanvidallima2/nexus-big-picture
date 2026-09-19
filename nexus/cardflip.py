@@ -431,6 +431,10 @@ class CardFlipMixin:
             return
         flip["busy"] = True
         lang = self.lang
+        try:
+            self.play_open_sound()
+        except Exception:
+            pass
         self._flip_status_text(t("dlg_opening_nexus", lang))
         self.launch_site_flow(
             name,
@@ -442,6 +446,10 @@ class CardFlipMixin:
         if not flip or flip.get("busy"):
             return
         flip["busy"] = True
+        try:
+            self.play_open_sound()
+        except Exception:
+            pass
         self.launch_app_flow(
             name,
             status_cb=lambda txt: self._flip_status_text(txt),
@@ -449,6 +457,10 @@ class CardFlipMixin:
 
     def _flip_play(self, name):
         self.unflip_card()
+        try:
+            self.play_open_sound()
+        except Exception:
+            pass
         try:
             self.launch_game(name)
         except Exception:

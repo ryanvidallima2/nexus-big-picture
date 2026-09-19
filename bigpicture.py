@@ -45,4 +45,21 @@ if __name__ == "__main__":
         pass
     root = tk.Tk()
     app = BigPictureApp(root)
+    try:
+        # Queda no meio do remoto: devolve o volume de antes (senao o
+        # preset ficaria valendo para sempre no Windows).
+        import atexit as _atexit
+
+        def _restore_vol_at_exit(_app=app):
+            try:
+                from nexus import audio as _audio
+                pre = getattr(_app, "_pre_remote_vol", None)
+                if pre is not None:
+                    _audio.audio_set_master(pre)
+            except Exception:
+                pass
+
+        _atexit.register(_restore_vol_at_exit)
+    except Exception:
+        pass
     root.mainloop()
