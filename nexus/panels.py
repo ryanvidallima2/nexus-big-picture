@@ -1095,6 +1095,10 @@ class SomPanel(SidePanel):
                                     lambda: self._get_vol(),
                                     lambda v: self._set_volume(v, tick=False),
                                     step=5)
+        self.defvol_item = self.slider(t("snd_defvol", lang), 0, 100,
+                                       lambda: self._get_defvol(),
+                                       lambda v: self._set_defvol(v),
+                                       step=5)
         self.nav_btn = self.button("", self._toggle_nav)
         self._paint_nav()
         self.button("\U0001F50A " + t("snd_test", lang), self._test)
@@ -1108,6 +1112,38 @@ class SomPanel(SidePanel):
             return max(0, min(100, int(self.app.settings.get("sound_volume", 10))))
         except Exception:
             return 10
+
+    def _get_defvol(self):
+        try:
+            return max(0, min(100, int(self.app.settings.get("sound_default", 70))))
+        except Exception:
+            return 70
+
+    def _set_defvol(self, vol):
+        try:
+            vol = max(0, min(100, int(vol)))
+        except Exception:
+            return
+        try:
+            if isinstance(self.app.settings, dict):
+                self.app.settings["sound_default"] = vol
+                save_settings(self.app.settings)
+        except Exception:
+            pass
+        try:
+            self.refresh_slider(self.defvol_item, tick=False)
+        except Exception:
+            pass
+        try:
+            if getattr(getattr(self.app, "gamepad", None),
+                       "remote_active", False):
+                self.app._apply_default_volume()
+        except Exception:
+            pass
+        try:
+            self.app.play_tick()
+        except Exception:
+            pass
 
     def _set_volume(self, vol, tick=True):
         try:

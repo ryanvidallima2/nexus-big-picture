@@ -142,6 +142,8 @@ GUIDE_CATS = [
             "dos analógicos (para o analógico parar de andar sozinho).\n"
             "Menu > Som: volume de 0 a 100 para o blip de navegação, "
             "liga/desliga e botão Testar (aperte sem medo, não morde).\n"
+            "Volume padrão: tudo que você abre (Spotify, Netflix, YouTube) "
+            "já começa nele.\n"
             "Tudo que você mudar fica salvo — pode desligar o PC tranquilo."
         ),
         "body_en": (
@@ -150,6 +152,7 @@ GUIDE_CATS = [
             "stick stops walking alone).\n"
             "Menu > Sound: volume 0 to 100 for the navigation blip, "
             "on/off switch and Test button (press it, it doesn't bite).\n"
+            "Default volume: everything you open starts at it.\n"
             "Everything you change is saved — shut down in peace."
         ),
     },

@@ -5,6 +5,7 @@ import threading
 import time
 import tkinter as tk
 
+from .audio import audio_get_master, audio_set_master
 from .config import Config, save_settings
 from .dialogs import _modal_alive
 from .i18n import t
@@ -284,6 +285,37 @@ class AppRemoteMixin:
         except Exception:
             return False
 
+    def default_volume(self):
+        """Volume padrao 0-100 p/ tudo que abre (padrao 70)."""
+        try:
+            return max(0, min(100, int(self.settings.get("sound_default", 70))))
+        except Exception:
+            return 70
+
+    def _apply_default_volume(self):
+        """Ao abrir app/site: guarda o atual e poe o padrao. True se aplicou."""
+        try:
+            cur = audio_get_master()
+            if cur is not None:
+                self._pre_remote_vol = cur
+        except Exception:
+            pass
+        try:
+            return bool(audio_set_master(self.default_volume() / 100.0))
+        except Exception:
+            return False
+
+    def _restore_pre_volume(self):
+        """Ao sair do remoto: volta o volume de antes (se guardado)."""
+        try:
+            pre = getattr(self, "_pre_remote_vol", None)
+            if pre is None:
+                return False
+            self._pre_remote_vol = None
+            return bool(audio_set_master(pre))
+        except Exception:
+            return False
+
     def start_pad_capture(self, section, action):
         self.pad_capture = {"section": section, "action": action}
         if self.pad_window is not None:
@@ -361,6 +393,10 @@ class AppRemoteMixin:
             gp.remote_kb_time = 0.0
             gp.hat_debounce.clear()
             gp.prev_buttons.clear()
+            try:
+                self._apply_default_volume()
+            except Exception:
+                pass
             self.root.iconify()
         except Exception:
             pass
@@ -402,6 +438,10 @@ class AppRemoteMixin:
                 gp.remote_wheel_acc = [0.0, 0.0]
                 gp.hat_debounce.clear()
                 gp.prev_buttons.clear()
+        except Exception:
+            pass
+        try:
+            self._restore_pre_volume()
         except Exception:
             pass
         try:

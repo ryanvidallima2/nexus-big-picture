@@ -1257,6 +1257,57 @@ finally:
 
 print("PARTE 5 OK (%d checks)" % COUNT[0], flush=True)
 
+# ================= V) volume padrao =================
+_ar = open(os.path.join(BASE, 'nexus', 'app_remote.py'), encoding='utf-8').read()
+_box = {"get": 0.5}
+_gets, _sets = [], []
+_nsV = {'audio_get_master': lambda: _gets.append(1) or _box["get"],
+        'audio_set_master': lambda v: _sets.append(round(float(v), 2)) or True}
+for _mark in ('    def default_volume(self):',
+              '    def _apply_default_volume(self):',
+              '    def _restore_pre_volume(self):'):
+    _s = _ar.index(_mark)
+    _e = _ar.index('\n    def ', _s + 10)
+    exec(textwrap.dedent(_ar[_s:_e]), _nsV)
+for _k, _v in _nsV.items():
+    if isinstance(_v, type(lambda: 0)):
+        setattr(StubApp, _k,
+                lambda self, *a, _f=_v, **k2: _f(self, *a, **k2))
+from nexus.panels import SomPanel  # noqa: E402
+
+appV = StubApp()
+appV.settings = {}
+check(appV.default_volume() == 70, "V1 padrao 70")
+check(appV._apply_default_volume() is True and _sets == [0.7]
+      and getattr(appV, '_pre_remote_vol', None) == 0.5,
+      "V2 aplicar guarda previo e poe 70")
+_box["get"] = None
+_sets.clear()
+check(appV._apply_default_volume() is True and _sets == [0.7],
+      "V3 aplicar mesmo sem ler atual")
+_box["get"] = 0.5
+appV._pre_remote_vol = 0.5
+_sets.clear()
+check(appV._restore_pre_volume() is True and _sets == [0.5]
+      and getattr(appV, '_pre_remote_vol', 'x') is None,
+      "V4 sair restaura previo")
+_sets.clear()
+check(appV._restore_pre_volume() is False and _sets == [],
+      "V5 sem previo nao mexe")
+appS = new_panel_app()
+sp = SomPanel(appS)
+sp.open()
+root.update()
+_def = [f for f in sp.focusables if f.get('kind') == 'slider'][1]
+_def['put'](70)
+check(appS.settings.get('sound_default') == 70, "V6 slider salva padrao")
+appS.gamepad = SimpleNamespace(remote_active=True)
+_applied = []
+appS._apply_default_volume = lambda: _applied.append(True)
+_def['put'](65)
+check(_applied == [True], "V7 slider aplica ao vivo no remoto")
+sp.close()
+
 # ================= M) 1 clique abre (retry) =================
 import nexus.gamepad as _GM  # noqa: E402
 _real_fit2 = _GM.focused_is_text_field
