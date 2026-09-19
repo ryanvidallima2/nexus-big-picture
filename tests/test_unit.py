@@ -1338,6 +1338,30 @@ mgrL._focus_check_thread()
 root.update()
 check(appL.opened == [True], "M3 foco rapido abre")
 _GM.focused_is_text_field = _real_fit2
+# ================= W) coalesce de pops =================
+played_ws = []
+_real_ws = NINPUT._winsound
+
+
+class _FakeWS:
+    SND_MEMORY = 0
+
+    def PlaySound(self, data, flags):
+        played_ws.append(data)
+        time.sleep(0.005)
+
+
+NINPUT._winsound = _FakeWS()
+NINPUT._TICK_STATE.update(playing=False, pending=None, last=0.0)
+for _v in (10, 30, 50, 70, 90):
+    ok, _err = NINPUT._play_nav_tick(_v)
+    check(ok, "W0 tick aceito vol %d" % _v)
+time.sleep(0.6)
+check(1 <= len(played_ws) <= 2, "W1 rajada vira 1-2 pops (%d)" % len(played_ws))
+check(bool(played_ws) and played_ws[-1] == NINPUT._nav_tick_wav(90),
+      "W2 ultimo conta")
+NINPUT._winsound = _real_ws
+NINPUT._TICK_STATE.update(playing=False, pending=None, last=0.0)
 print("TOTAL %d checks, %d falhas" % (COUNT[0], len(fails)), flush=True)
 if fails:
     print("FALHAS:", fails, flush=True)

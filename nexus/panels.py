@@ -739,7 +739,8 @@ class SidePanel:
         row = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
         row.pack(fill="x", padx=16, pady=(6, 0))
         lab = tk.Label(row, text=label, font=("Segoe UI", 13),
-                       fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR)
+                       fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR,
+                       wraplength=self.WIDTH - 110, justify="left")
         lab.pack(side="left")
         val = tk.Label(row, font=("Segoe UI", 13, "bold"),
                        fg=Config.ACCENT, bg=Config.BG_SIDEBAR, width=4)

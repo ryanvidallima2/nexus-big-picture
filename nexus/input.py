@@ -156,10 +156,21 @@ def _nav_tick_wav(vol=10):
     return _NAV_TICK_WAV[vol]
 
 
+_TICK_LOCK = threading.Lock()
+_TICK_STATE = {"playing": False, "pending": None, "last": 0.0}
+_TICK_GAP = 0.09
+
+
 def _play_nav_tick(vol=10):
     """Toca o blip. Retorna (ok, erro): o dialogo de Som mostra o erro.
     Thread + PlaySound bloqueante: SND_ASYNC da memoria falha em alguns
-    drivers ('Cannot play asynchronously from memory') e era engolido."""
+    drivers ('Cannot play asynchronously from memory') e era engolido.
+    Coalesce: rajada rapida nao empilha (1 thread toca no maximo o
+    primeiro + o ultimo, com 90ms entre inicios)."""
+    try:
+        vol = max(0, min(100, int(vol)))
+    except Exception:
+        return False, "volume invalido"
     try:
         if _winsound is None:
             return False, "winsound indisponivel"
@@ -167,11 +178,41 @@ def _play_nav_tick(vol=10):
     except Exception as e:
         return False, str(e)[:120]
     try:
-        threading.Thread(target=_winsound.PlaySound, args=(data, _winsound.SND_MEMORY),
-                         daemon=True).start()
+        with _TICK_LOCK:
+            _TICK_STATE["pending"] = data
+            if _TICK_STATE["playing"]:
+                return True, ""
+            _TICK_STATE["playing"] = True
+        threading.Thread(target=_tick_worker, daemon=True).start()
         return True, ""
     except Exception as e:
         return False, str(e)[:120]
+
+
+def _tick_worker():
+    while True:
+        try:
+            wait = _TICK_GAP - (time.monotonic() - _TICK_STATE["last"])
+            if wait > 0:
+                time.sleep(wait)
+            with _TICK_LOCK:
+                data = _TICK_STATE["pending"]
+                _TICK_STATE["pending"] = None
+                if data is None:
+                    _TICK_STATE["playing"] = False
+                    return
+                _TICK_STATE["last"] = time.monotonic()
+        except Exception:
+            try:
+                with _TICK_LOCK:
+                    _TICK_STATE["playing"] = False
+            except Exception:
+                pass
+            return
+        try:
+            _winsound.PlaySound(data, _winsound.SND_MEMORY)
+        except Exception:
+            pass
 
 
 def _play_test_tone():
