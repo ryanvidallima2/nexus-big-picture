@@ -32,6 +32,7 @@ class RemoteOverlay:
         self.vol_item = None
         self.bright_item = None
         self.win_item = None
+        self.outputs_open = False
         lang = app.lang
 
         try:
@@ -234,20 +235,12 @@ class RemoteOverlay:
         self._button("\u2190 " + t("ov_no", lang),
                      lambda: self._show_page("menu"))
 
-    def _page_confirm(self):
-        lang = self.app.lang
-        self._section(t("ov_back", lang) + "?")
-        self._button("\u2713 " + t("ov_yes", lang), self.back_to_nexus,
-                     red=True)
-        self._button("\u2190 " + t("ov_no", lang),
-                     lambda: self._show_page("menu"))
-
     def _page_config(self):
         lang = self.app.lang
         self._section(t("ov_config", lang))
+        self._outputs_box()
         self.vol_item = self._slider(
             t("ov_sound", lang), 0, 100, self._get_vol, self._put_vol, step=5)
-        self._outputs_list()
         self._section(t("ov_window", lang))
         self._window_options()
         self._section(t("ov_image", lang))
@@ -256,25 +249,41 @@ class RemoteOverlay:
         self._button("\u2190 " + t("ov_menu", lang),
                      lambda: self._show_page("menu"))
 
-    def _outputs_list(self):
+    def _outputs_box(self):
+        # Caixa com a saida atual; clica e abre a lista.
         try:
-            outs = self.app.audio_outputs() if hasattr(self.app, "audio_outputs") \
-                else []
+            from .audio import audio_outputs
+            outs = audio_outputs()
         except Exception:
             outs = []
-        if not outs:
-            try:
-                from .audio import audio_outputs
-                outs = audio_outputs()
-            except Exception:
-                outs = []
-        for o in outs:
-            try:
-                mark = "\u2713 " if o.get("default") else ""
-                self._button(mark + (o.get("name") or o.get("id", "?")),
-                             lambda _id=o.get("id", ""): self._pick_output(_id))
-            except Exception:
-                pass
+        cur = ""
+        try:
+            for o in outs:
+                if o.get("default"):
+                    cur = o.get("name") or o.get("id", "")
+                    break
+            if not cur and outs:
+                cur = outs[0].get("name") or outs[0].get("id", "")
+        except Exception:
+            pass
+        arrow = "▴" if getattr(self, "outputs_open", False) else "▾"
+        self._button("\U0001F50A %s %s" % (cur or "—", arrow),
+                     self._toggle_outputs)
+        if getattr(self, "outputs_open", False):
+            for o in outs:
+                try:
+                    mark = "\u2713 " if o.get("default") else ""
+                    self._button(mark + (o.get("name") or o.get("id", "?")),
+                                 lambda _id=o.get("id", ""): self._pick_output(_id))
+                except Exception:
+                    pass
+
+    def _toggle_outputs(self):
+        self.outputs_open = not getattr(self, "outputs_open", False)
+        try:
+            self._show_page("config")
+        except Exception:
+            pass
 
     def _pick_output(self, device_id):
         try:
@@ -282,6 +291,7 @@ class RemoteOverlay:
             audio_set_output(device_id)
         except Exception:
             pass
+        self.outputs_open = False
         try:
             self._show_page("config")
         except Exception:
@@ -357,23 +367,6 @@ class RemoteOverlay:
             pass
         return None
 
-    def _set_window_mode(self, fullscreen):
-        try:
-            hwnd = self._remote_hwnd()
-            if not hwnd:
-                return
-            if fullscreen:
-                force_borderless_fullscreen(hwnd)
-            else:
-                restore_windowed(hwnd)
-            try:
-                self.app.play_tick()
-            except Exception:
-                pass
-            self._show_page("config")
-        except Exception:
-            pass
-
     # ---------- imagem ----------
 
     # ---------- acoes ----------
@@ -447,10 +440,15 @@ class RemoteOverlay:
                 else:
                     b = item["widget"]
                     if item.get("red"):
-                        b.configure(bg="#e94560", fg="white",
-                                    highlightbackground="white" if i == self.focus
-                                    else "#e94560",
-                                    highlightthickness=3 if i == self.focus else 1)
+                        # Contorno vermelho; preenche ao focar.
+                        if i == self.focus:
+                            b.configure(bg="#e94560", fg="white",
+                                        highlightbackground="white",
+                                        highlightthickness=3)
+                        else:
+                            b.configure(bg=Config.BG_CARD, fg="#e94560",
+                                        highlightbackground="#e94560",
+                                        highlightthickness=2)
                     elif i == self.focus:
                         b.configure(bg=Config.ACCENT, fg="white",
                                     highlightbackground="white",

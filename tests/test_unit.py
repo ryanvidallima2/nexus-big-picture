@@ -1561,8 +1561,12 @@ check(ov.page == "menu"
            for b in ov.items] == ["Configurações", "← Voltar para o Nexus"],
       "AA2 menu (config + voltar)")
 check(ov.items[1].get("red") is True
-      and ov.items[1]["widget"].cget("bg") == "#e94560",
-      "AA3 voltar vermelho")
+      and ov.items[1]["widget"].cget("highlightbackground") == "#e94560"
+      and ov.items[1]["widget"].cget("bg") != "#e94560",
+      "AA3 voltar contorno vermelho")
+ov.set_focus(1)
+check(ov.items[1]["widget"].cget("bg") == "#e94560",
+      "AA3b focado preenche vermelho")
 ov.set_focus(1)
 ov.press("south")
 root.update()
@@ -1579,27 +1583,32 @@ ov2.set_focus(0)
 ov2.press("south")
 root.update()
 check(ov2.page == "config"
-      and [f['kind'] for f in ov2.items] == ['slider', 'button', 'button',
+      and [f['kind'] for f in ov2.items] == ['button', 'slider',
                                              'button', 'button', 'button'],
-      "AA6 config (som+saidas+janela+imagem+voltar)")
-ov2.set_focus(0)
+      "AA6 config (caixa+vol+janela+imagem+voltar)")
+_box0 = ov2.items[0]["widget"].cget("text")
+check("Caixa A" in _box0 and _box0.rstrip().endswith("▾"),
+      "AA6b caixa mostra atual")
+ov2.press("south")
+root.update()
+_devs = [f for f in ov2.items if f.get("kind") == "button"
+         and "Fone B" in f["widget"].cget("text")]
+check(len(_devs) == 1 and ov2.items[0]["widget"].cget("text").rstrip().endswith("▴"),
+      "AA8 lista abre")
+ov2.set_focus(ov2.items.index(_devs[0]))
+ov2.press("south")
+root.update()
+check(outs_set == ["b"]
+      and [f['kind'] for f in ov2.items] == ['button', 'slider',
+                                             'button', 'button', 'button'],
+      "AA9 trocar recolhe")
+ov2.set_focus(1)
 ov2.on_hat((1, 0))
-check(_vols and _vols[-1] <= 1.0, "AA7 volume ao vivo")
-outs_set.clear()
-_dev_btns = [f for f in ov2.items
-             if f.get("kind") == "button" and "Fone B" in f["widget"].cget("text")]
-check(len(_dev_btns) == 1, "AA8 lista saidas")
-ov2.set_focus(ov2.items.index(_dev_btns[0]))
-ov2.press("south")
-root.update()
-check(outs_set == ["b"], "AA9 trocar saida")
-ov2.set_focus(0)
-ov2.press("south")
-root.update()
+check(_vols and _vols[-1] <= 1.0, "AA10 volume ao vivo")
 ov2.press("east")
-check(ov2.page == "menu" and not ov2.closed, "AA10 B na config volta")
+check(ov2.page == "menu" and not ov2.closed, "AA11 B na config volta")
 ov2.press("east")
-check(ov2.closed, "AA11 B no menu fecha")
+check(ov2.closed, "AA12 B no menu fecha")
 import os as _osmod  # noqa: E402
 _real_startfile = getattr(_osmod, "startfile", None)
 _started = []
@@ -1611,15 +1620,15 @@ ov4.press("south")
 root.update()
 _bri = [f for f in ov4.items
         if f.get("kind") == "button" and "Brilho" in f["widget"].cget("text")]
-check(len(_bri) == 1, "AA12 brilho abre Windows")
+check(len(_bri) == 1, "AA13 brilho abre Windows")
 ov4.set_focus(ov4.items.index(_bri[0]))
 ov4.press("south")
-check(_started == ["ms-settings:display"], "AA13 sem janela propria")
+check(_started == ["ms-settings:display"], "AA14 sem janela propria")
 if _real_startfile is not None:
     _osmod.startfile = _real_startfile
 _win = [f for f in ov4.items
         if f.get("kind") == "button" and "Não suportado" in f["widget"].cget("text")]
-check(len(_win) == 1, "AA14 janela sem hwnd avisa")
+check(len(_win) == 1, "AA15 janela sem hwnd avisa")
 _AUDMOD.audio_outputs = _real_outs
 _AUDMOD.audio_set_output = _real_setout
 ROV.audio_set_master = _real_avol
