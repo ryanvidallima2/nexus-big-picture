@@ -42,6 +42,7 @@ dist/
 build/
 *.spec
 Nexus-v*.zip
+Nexus_Transferivel*.zip
 
 # Editores / SO
 .vscode/
