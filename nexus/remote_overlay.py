@@ -15,6 +15,7 @@ from .i18n import t
 from .win32 import (
     _hwnd_alive, bring_to_front, force_borderless_fullscreen,
     force_topmost_noactivate, is_borderless, restore_windowed,
+    set_brightness,
 )
 
 
@@ -244,8 +245,10 @@ class RemoteOverlay:
         self._section(t("ov_window", lang))
         self._window_options()
         self._section(t("ov_image", lang))
-        self._button("\U0001F506 " + t("ov_brightpc", lang),
-                     self._open_bright_settings)
+        self._bright_val = getattr(self, "_bright_val", 100)
+        self.bright_item = self._slider(
+            t("ov_bright", lang), 5, 100, lambda: self._bright_val,
+            self._put_bright, step=5)
         self._button("\u2190 " + t("ov_menu", lang),
                      lambda: self._show_page("menu"))
 
@@ -333,14 +336,18 @@ class RemoteOverlay:
         except Exception:
             pass
 
-    def _open_bright_settings(self):
+    # ---------- secoes ----------
+    def _put_bright(self, v):
         try:
-            import os as _os
-            _os.startfile("ms-settings:display")
+            v = max(5, min(100, int(v)))
+        except Exception:
+            return
+        try:
+            if set_brightness(v):
+                self._bright_val = v
         except Exception:
             pass
 
-    # ---------- secoes ----------
     def _get_vol(self):
         try:
             v = audio_get_master()

@@ -1323,7 +1323,32 @@ _applied = []
 appS._apply_default_volume = lambda: _applied.append(True)
 _def['put'](65)
 check(_applied == [True], "V7 slider aplica ao vivo no remoto")
-sp.close()
+import nexus.audio as _AUD2  # noqa: E402
+_ro, _so = _AUD2.audio_outputs, _AUD2.audio_set_output
+_picked = []
+_AUD2.audio_outputs = lambda: [{"id": "a", "name": "Caixa A",
+                                "default": True},
+                               {"id": "b", "name": "Fone B",
+                                "default": False}]
+_AUD2.audio_set_output = lambda did: _picked.append(did) or True
+sp2 = SomPanel(appS)
+sp2.open()
+root.update()
+_box = [f for f in sp2.focusables if f.get("kind") == "button"][0]
+check("Caixa A" in _box["widget"].cget("text"), "V8 caixa mostra atual")
+sp2.set_focus(0)
+sp2.press("south")
+root.update()
+_devs = [f for f in sp2.focusables
+         if f.get("kind") == "button" and "Fone B" in f["widget"].cget("text")]
+check(len(_devs) == 1, "V9 lista abre")
+sp2.set_focus(sp2.focusables.index(_devs[0]))
+sp2.press("south")
+root.update()
+check(_picked == ["b"], "V10 trocar saida")
+sp2.close()
+_AUD2.audio_outputs = _ro
+_AUD2.audio_set_output = _so
 
 # ================= M) 1 clique abre (retry) =================
 import nexus.gamepad as _GM  # noqa: E402
@@ -1584,8 +1609,8 @@ ov2.press("south")
 root.update()
 check(ov2.page == "config"
       and [f['kind'] for f in ov2.items] == ['button', 'slider',
-                                             'button', 'button', 'button'],
-      "AA6 config (caixa+vol+janela+imagem+voltar)")
+                                             'button', 'slider', 'button'],
+      "AA6 config (caixa+vol+janela+brilho+voltar)")
 _box0 = ov2.items[0]["widget"].cget("text")
 check("Caixa A" in _box0 and _box0.rstrip().endswith("▾"),
       "AA6b caixa mostra atual")
@@ -1600,7 +1625,7 @@ ov2.press("south")
 root.update()
 check(outs_set == ["b"]
       and [f['kind'] for f in ov2.items] == ['button', 'slider',
-                                             'button', 'button', 'button'],
+                                             'button', 'slider', 'button'],
       "AA9 trocar recolhe")
 ov2.set_focus(1)
 ov2.on_hat((1, 0))
@@ -1609,23 +1634,20 @@ ov2.press("east")
 check(ov2.page == "menu" and not ov2.closed, "AA11 B na config volta")
 ov2.press("east")
 check(ov2.closed, "AA12 B no menu fecha")
-import os as _osmod  # noqa: E402
-_real_startfile = getattr(_osmod, "startfile", None)
-_started = []
-_osmod.startfile = lambda x: _started.append(x)
+_brights2 = []
+_real_bri2 = ROV.set_brightness
+ROV.set_brightness = lambda v: _brights2.append(int(v)) or True
 ov4 = ROV.RemoteOverlay(appO)
 root.update()
 ov4.set_focus(0)
 ov4.press("south")
 root.update()
-_bri = [f for f in ov4.items
-        if f.get("kind") == "button" and "Brilho" in f["widget"].cget("text")]
-check(len(_bri) == 1, "AA13 brilho abre Windows")
-ov4.set_focus(ov4.items.index(_bri[0]))
-ov4.press("south")
-check(_started == ["ms-settings:display"], "AA14 sem janela propria")
-if _real_startfile is not None:
-    _osmod.startfile = _real_startfile
+_sliders4 = [f for f in ov4.items if f.get("kind") == "slider"]
+check(len(_sliders4) == 2, "AA13 config tem 2 sliders")
+ov4.set_focus(ov4.items.index(_sliders4[1]))
+ov4.on_hat((1, 0))
+check(bool(_brights2), "AA14 brilho slider ajusta")
+ROV.set_brightness = _real_bri2
 _win = [f for f in ov4.items
         if f.get("kind") == "button" and "Não suportado" in f["widget"].cget("text")]
 check(len(_win) == 1, "AA15 janela sem hwnd avisa")

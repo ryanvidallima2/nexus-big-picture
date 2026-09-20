@@ -1106,6 +1106,7 @@ class SomPanel(SidePanel):
     def render(self):
         app = self.app
         lang = app.lang
+        self._outputs_box()
         self.vol_item = self.slider(t("snd_volume", lang), 0, 100,
                                     lambda: self._get_vol(),
                                     lambda v: self._set_volume(v, tick=False),
@@ -1121,6 +1122,62 @@ class SomPanel(SidePanel):
                                    fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
                                    wraplength=self.WIDTH - 40, justify="center")
         self.status_lbl.pack(fill="x", padx=16, pady=(6, 2))
+
+    def _outputs_box(self):
+        # Caixa com a saida atual; clica e abre a lista.
+        try:
+            from .audio import audio_outputs
+            outs = audio_outputs()
+        except Exception:
+            outs = []
+        cur = ""
+        try:
+            for o in outs:
+                if o.get("default"):
+                    cur = o.get("name") or o.get("id", "")
+                    break
+            if not cur and outs:
+                cur = outs[0].get("name") or outs[0].get("id", "")
+        except Exception:
+            pass
+        arrow = "▴" if getattr(self, "outputs_open", False) else "▾"
+        self.button("\U0001F50A %s %s" % (cur or "—", arrow),
+                    self._toggle_outputs)
+        if getattr(self, "outputs_open", False):
+            for o in outs:
+                try:
+                    mark = "\u2713 " if o.get("default") else ""
+                    self.button(mark + (o.get("name") or o.get("id", "?")),
+                                lambda _id=o.get("id", ""): self._pick_output(_id))
+                except Exception:
+                    pass
+
+    def _toggle_outputs(self):
+        self.outputs_open = not getattr(self, "outputs_open", False)
+        self._rebuild()
+
+    def _pick_output(self, device_id):
+        try:
+            from .audio import audio_set_output
+            audio_set_output(device_id)
+        except Exception:
+            pass
+        self.outputs_open = False
+        self._rebuild()
+
+    def _rebuild(self):
+        try:
+            for w in self.body.winfo_children():
+                w.destroy()
+        except Exception:
+            return
+        self.focusables = []
+        self.focus = 0
+        try:
+            self.render()
+            self.paint()
+        except Exception:
+            pass
 
     def _get_vol(self):
         try:
