@@ -229,14 +229,17 @@ def set_brightness(level):
         return False
     global _gamma_orig
     try:
+        user32 = ctypes.windll.user32
+        user32.GetDC.argtypes = [ctypes.c_void_p]
+        user32.GetDC.restype = ctypes.c_void_p
+        user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        user32.ReleaseDC.restype = ctypes.c_int
         gdi = ctypes.windll.gdi32
-        gdi.GetDC.argtypes = [ctypes.c_void_p]
-        gdi.GetDC.restype = ctypes.c_void_p
         gdi.GetDeviceGammaRamp.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         gdi.GetDeviceGammaRamp.restype = ctypes.c_bool
         gdi.SetDeviceGammaRamp.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         gdi.SetDeviceGammaRamp.restype = ctypes.c_bool
-        hdc = gdi.GetDC(None)
+        hdc = user32.GetDC(None)
         if not hdc:
             return False
         try:
@@ -260,7 +263,7 @@ def set_brightness(level):
             return bool(gdi.SetDeviceGammaRamp(hdc, ramp))
         finally:
             try:
-                gdi.ReleaseDC(None, hdc)
+                user32.ReleaseDC(None, hdc)
             except Exception:
                 pass
     except Exception:
