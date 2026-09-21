@@ -88,6 +88,9 @@
         $("pairMsg").className = "msg ok";
         $("pairMsg").textContent = "Pareado!";
         loadStreams();
+      } else if (st === 0) {
+        $("pairMsg").className = "msg";
+        $("pairMsg").textContent = "Sem resposta: mesmo Wi-Fi? IP certo? Firewall liberado?";
       } else {
         $("pairMsg").className = "msg";
         $("pairMsg").textContent = "Falhou: confira IP/porta/código.";

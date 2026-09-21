@@ -188,10 +188,66 @@ check(st == 403, "token revogado")
 pl = PSRV.qr_payload(sapp, "123456")
 check(set(("t", "ip", "port", "code", "v")) <= set(pl.keys()),
       "QR payload (%s)" % pl.get("ip", "?"))
+ips = PSRV.lan_ips()
+check(isinstance(ips, list) and len(ips) >= 1
+      and all(i and not i.startswith("127.") for i in ips),
+      "lan_ips (%s)" % ",".join(ips))
+sapp.settings["phone_ip"] = ips[-1]
+check(PSRV.chosen_ip(sapp) == ips[-1], "IP escolhido respeitado")
+sapp.settings.pop("phone_ip", None)
+check(PSRV.chosen_ip(sapp) == ips[0], "IP padrao e o primeiro")
 photo = PSRV.make_qr_photo('{"t":"nexus"}', box=4)
 check(photo is not None, "QR gera imagem")
 srv.stop()
 check(not srv.running, "servidor para")
+
+# ---------- painel Perfil: IPs ----------
+from nexus.panels import PerfilPanel  # noqa: E402
+
+
+class PSrvFake:
+    running = True
+
+    def __init__(self, app):
+        self.app = app
+        self.codes = []
+
+    def paired_devices(self):
+        return []
+
+    def new_code(self):
+        self.codes.append(True)
+        return "123456"
+
+
+papp = StubApp()
+papp.main_frame = tk.Frame(root)
+papp.main_frame.pack(fill='both', expand=True)
+papp.sidepanel = None
+papp.sidebar_visible = False
+papp.theme_visible = False
+papp.notif_visible = False
+papp.close_sidebar = lambda: None
+papp.close_theme_panel = lambda: None
+papp.close_notif_panel = lambda: None
+papp.update_all_focus = lambda: None
+papp.nav_level = "items"
+papp.form_focus = []
+papp.form_idx = 0
+papp.phone_server = PSrvFake(papp)
+papp.lang = "pt-br"
+pp = PerfilPanel(papp)
+pp.open()
+root.update()
+_ipbtns = [f for f in pp.focusables
+            if f.get("kind") == "button"
+            and f["widget"].cget("text").replace("\u2713 ", "").strip() in ips]
+check(len(_ipbtns) == len(ips), "painel lista IPs (%d)" % len(ips))
+pp.set_focus(pp.focusables.index(_ipbtns[-1]))
+pp.press("south")
+root.update()
+check(papp.settings.get("phone_ip") == ips[-1], "trocar IP salva")
+pp.close()
 
 # ---------- execucao de comandos ----------
 calls = []

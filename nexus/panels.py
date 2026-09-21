@@ -1149,7 +1149,8 @@ class PerfilPanel(SidePanel):
         info = t("phone_on", lang) if on else t("phone_off", lang)
         if on:
             try:
-                info += "  %s:%s" % (_ps.lan_ip(), _ps.app_phone_port(app))
+                info += "  %s:%s" % (_ps.chosen_ip(app),
+                                     _ps.app_phone_port(app))
             except Exception:
                 pass
         tk.Label(self.body, text=info, font=("Segoe UI", 12),
@@ -1157,6 +1158,26 @@ class PerfilPanel(SidePanel):
                  anchor="w", justify="left",
                  wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=2)
         if on:
+            try:
+                ips = _ps.lan_ips()
+            except Exception:
+                ips = []
+            try:
+                cur_ip = _ps.chosen_ip(app)
+            except Exception:
+                cur_ip = ""
+            if len(ips) > 1:
+                tk.Label(self.body, text=t("phone_ip", lang),
+                         font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
+                         bg=Config.BG_SIDEBAR, anchor="w").pack(
+                             fill="x", padx=16, pady=(8, 0))
+                for ip in ips:
+                    try:
+                        mark = "\u2713 " if ip == cur_ip else ""
+                        self.button(mark + ip,
+                                    lambda _ip=ip: self._pick_ip(_ip))
+                    except Exception:
+                        pass
             self.button(t("phone_stop", lang), lambda: self._srv_stop())
             self.button(t("phone_newcode", lang), lambda: self._srv_code())
             self._render_qr()
@@ -1207,6 +1228,19 @@ class PerfilPanel(SidePanel):
         try:
             from . import phone_server as _ps
             _ps.stop_phone_server(self.app)
+            self._refresh()
+        except Exception:
+            pass
+
+    def _pick_ip(self, ip):
+        try:
+            if isinstance(self.app.settings, dict):
+                self.app.settings["phone_ip"] = ip
+                from .config import save_settings as _save
+                _save(self.app.settings)
+        except Exception:
+            pass
+        try:
             self._refresh()
         except Exception:
             pass

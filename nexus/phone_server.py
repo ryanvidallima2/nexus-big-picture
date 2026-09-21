@@ -38,6 +38,12 @@ MIME = {".html": "text/html; charset=utf-8",
 def lan_ip():
     """IP local para o celular alcançar (sem trafego real)."""
     try:
+        ips = lan_ips()
+        if ips:
+            return ips[0]
+    except Exception:
+        pass
+    try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             s.connect(("8.8.8.8", 80))
@@ -53,6 +59,66 @@ def lan_ip():
         return socket.gethostbyname(socket.gethostname())
     except Exception:
         return ""
+
+
+def lan_ips():
+    """Todos os IPv4 locais (Wi-Fi, VPN, cabo...). Rede local (o celular
+    esta nela) primeiro: 192.168/10/172.16 antes de VPNs e afins."""
+    out = []
+    try:
+        for fam, _typ, _proto, _canon, sockaddr in socket.getaddrinfo(
+                socket.gethostname(), None, socket.AF_INET):
+            ip = (sockaddr or [""])[0] or ""
+            if ip and not ip.startswith("127.") and ip not in out:
+                out.append(ip)
+    except Exception:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            if ip and not ip.startswith("127.") and ip not in out:
+                out.insert(0, ip)
+        finally:
+            try:
+                s.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    def _lan_first(ip):
+        try:
+            if ip.startswith("192.168.") or ip.startswith("10."):
+                return 0
+            if ip.startswith("172."):
+                second = int(ip.split(".")[1])
+                if 16 <= second <= 31:
+                    return 0
+        except Exception:
+            pass
+        return 1
+
+    try:
+        out.sort(key=_lan_first)
+    except Exception:
+        pass
+    return out
+
+
+def chosen_ip(app):
+    """IP escolhido no painel (ou o primeiro)."""
+    try:
+        ips = lan_ips()
+        if not ips:
+            return lan_ip()
+        want = (app.settings.get("phone_ip", "") or "").strip()
+        if want in ips:
+            return want
+        return ips[0]
+    except Exception:
+        return lan_ip()
 
 
 def new_pairing_code():
@@ -562,8 +628,8 @@ def exec_phone_action(app, cmd, args):
 
 def qr_payload(app, code):
     try:
-        return {"t": "nexus", "ip": lan_ip(), "port": app_phone_port(app),
-                "code": code, "v": 1}
+        return {"t": "nexus", "ip": chosen_ip(app),
+                "port": app_phone_port(app), "code": code, "v": 1}
     except Exception:
         return {}
 
