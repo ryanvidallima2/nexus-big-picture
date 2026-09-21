@@ -22,7 +22,7 @@ from .i18n import t
 from .keyboard import NexusKeyboard
 from .panels import (
     AdicionarPanel, ControlesPanel, GamepadConfigWindow, IdiomaPanel,
-    SistemaPanel, SomPanel,
+    PerfilPanel, SistemaPanel, SomPanel,
 )
 from .paths import (
     BROWSER_PROCS, IMAGES_DIR, browser_profile_size, browser_running,
@@ -810,6 +810,9 @@ class AppSettingsMixin:
 
     def open_sistema(self):
         SistemaPanel(self).open()
+
+    def open_perfil(self):
+        PerfilPanel(self).open()
 
     def open_guia(self):
         self.close_sidebar()

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0d0b1f">
+<title>Nexus Remote</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: #0d0b1f; color: #fff;
+         font-family: "Segoe UI", system-ui, sans-serif; }
+  header { background: #1a1a2e; padding: 12px 16px; font-size: 18px;
+           font-weight: bold; color: #7c4dff; position: sticky; top: 0; }
+  header small { display: block; font-size: 12px; color: #8888bb;
+                 font-weight: normal; }
+  main { padding: 12px 12px 76px; }
+  .screen { display: none; }
+  .screen.on { display: block; }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex;
+        background: #1a1a2e; border-top: 1px solid #2a2545; }
+  nav button { flex: 1; background: none; border: none; color: #8888bb;
+               font-size: 14px; padding: 14px 0; cursor: pointer; }
+  nav button.on { color: #fff; background: #7c4dff; }
+  .card { background: #1a1a2e; border-radius: 12px; padding: 14px;
+          margin-bottom: 12px; }
+  input, button.act { width: 100%; font-size: 16px; padding: 12px;
+                      margin: 6px 0; border-radius: 10px; border: none; }
+  input { background: #252548; color: #fff; }
+  button.act { background: #7c4dff; color: #fff; cursor: pointer; }
+  button.act.ghost { background: #252548; }
+  button.act.danger { background: #e94560; }
+  #video { width: 100%; border-radius: 12px; background: #000; display: none; }
+  #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #grid button { border: none; border-radius: 12px; padding: 18px 8px;
+                 font-size: 15px; font-weight: bold; color: #fff;
+                 cursor: pointer; }
+  #pad { background: #1a1a2e; border-radius: 12px; height: 220px;
+         touch-action: none; display: flex; align-items: center;
+         justify-content: center; color: #8888bb; margin-bottom: 12px;
+         user-select: none; -webkit-user-select: none; }
+  .row { display: flex; gap: 8px; }
+  .row button { flex: 1; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 64px);
+          justify-content: center; gap: 6px; margin: 12px 0; }
+  .dpad button { height: 56px; font-size: 20px; }
+  .msg { color: #ffd600; font-size: 14px; min-height: 20px; }
+  .ok { color: #00c853; }
+</style>
+</head>
+<body>
+<header>◆ Nexus Remote<small id="who">desconectado</small></header>
+<main>
+  <section id="s-pair" class="screen on">
+    <div class="card">
+      <b>1.</b> No PC: ☰ > Perfil > ligue o servidor<br>
+      <b>2.</b> Escaneie o QR ou digite os dados:
+      <div class="row" style="margin-top:8px">
+        <button class="act ghost" id="btnCam">📷 Ligar câmera</button>
+      </div>
+      <video id="video" playsinline muted></video>
+      <div class="msg" id="camMsg"></div>
+      <input id="inIp" placeholder="IP (ex.: 192.168.1.10)" autocomplete="off">
+      <input id="inPort" placeholder="Porta (48721)" inputmode="numeric" autocomplete="off">
+      <input id="inCode" placeholder="Código de 6 dígitos" inputmode="numeric" autocomplete="off">
+      <input id="inName" placeholder="Nome deste celular" autocomplete="off">
+      <button class="act" id="btnPair">Parear</button>
+      <div class="msg" id="pairMsg"></div>
+      <button class="act danger" id="btnUnpair" style="display:none">Desparear</button>
+    </div>
+  </section>
+  <section id="s-streams" class="screen">
+    <div class="card"><button class="act ghost" id="btnReload">↻ Atualizar lista</button></div>
+    <div id="grid"></div>
+    <div class="msg" id="streamsMsg"></div>
+  </section>
+  <section id="s-ctl" class="screen">
+    <div id="pad">deslize = mouse • toque = clique</div>
+    <div class="dpad">
+      <span></span><button class="act" data-nav="up">▲</button><span></span>
+      <button class="act" data-nav="left">◀</button><button class="act" data-nav="ok">●</button><button class="act" data-nav="right">▶</button>
+      <span></span><button class="act" data-nav="down">▼</button><span></span>
+    </div>
+    <div class="row">
+      <button class="act" data-cmd="select">A</button>
+      <button class="act" data-cmd="back">B</button>
+      <button class="act" data-cmd="cards">X</button>
+      <button class="act" data-cmd="sidebar">Y</button>
+    </div>
+    <div class="row">
+      <button class="act ghost" data-cmd="tabprev">LB</button>
+      <button class="act ghost" data-cmd="tabnext">RB</button>
+      <button class="act ghost" data-cmd="voldn">Vol−</button>
+      <button class="act ghost" data-cmd="volup">Vol+</button>
+    </div>
+    <div class="row">
+      <button class="act ghost" data-cmd="keyboard">⌨ Teclado</button>
+      <button class="act ghost" data-cmd="kbclose">✕ Teclado</button>
+    </div>
+    <input id="inText" placeholder="Digitar no PC..." autocomplete="off">
+    <button class="act" id="btnSendText">Enviar texto</button>
+  </section>
+</main>
+<nav>
+  <button data-s="s-pair" class="on">Parear</button>
+  <button data-s="s-streams">Streams</button>
+  <button data-s="s-ctl">Controle</button>
+</nav>
+<script src="app.js"></script>
+</body>
+</html>

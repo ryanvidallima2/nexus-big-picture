@@ -5,6 +5,9 @@
 nexus.db
 settings.json
 
+# Perfis locais de login (PIN hash + settings por usuario)
+profiles/
+
 # Logs e erros locais
 nexus_error.log
 *.log

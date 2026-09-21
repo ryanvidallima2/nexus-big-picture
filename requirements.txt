@@ -1,3 +1,6 @@
 # Dependencia obrigatoria do Nexus (o app nao abre sem ela).
 # O start.bat instala sozinho se faltar.
 Pillow>=10
+
+# QR code do pareamento com o celular (puro python + Pillow).
+qrcode>=7

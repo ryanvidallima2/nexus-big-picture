@@ -1013,6 +1013,248 @@ class SistemaPanel(SidePanel):
                     lambda: app.check_updates_manual())
 
 
+class PerfilPanel(SidePanel):
+    NAME = "perfil"
+    TITLE_KEY = "settings_profile"
+    ICON = "\U0001F464"
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        try:
+            from . import profiles as _prof
+        except Exception:
+            return
+        cur = getattr(app, "profile", None)
+        if cur:
+            who = "\u2713 " + cur
+        else:
+            who = t("profile_guest", lang)
+        tk.Label(self.body, text=who, font=("Segoe UI", 13, "bold"),
+                 fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x", padx=16, pady=(4, 6))
+        try:
+            names = _prof.list_profiles()
+        except Exception:
+            names = []
+        for name in names:
+            try:
+                lock = " \U0001F512" if _prof.profile_has_pin(name) else ""
+            except Exception:
+                lock = ""
+            mark = "\u2713 " if name == cur else ""
+            self.button(mark + "\U0001F464  " + name + lock,
+                        lambda n=name: self._login_flow(n))
+        self.button("+ " + t("profile_new", lang), self._new_flow)
+        if cur:
+            self.button(t("profile_logout", lang), self._logout)
+        self.section(t("profile_phone", lang))
+        self._render_phone()
+
+    def _refresh(self):
+        try:
+            self.open()
+        except Exception:
+            pass
+
+    def _login_flow(self, name):
+        app = self.app
+        try:
+            from . import profiles as _prof
+            from .dialogs import NexusTextDialog
+        except Exception:
+            return
+
+        def _do(pin=None):
+            try:
+                if not _prof.verify_pin(name, pin or ""):
+                    app.show_info_message(t("profile_login", app.lang),
+                                          t("profile_bad_pin", app.lang))
+                    return
+                _prof.switch_profile(app, name)
+                self._refresh()
+            except Exception:
+                pass
+
+        try:
+            if _prof.profile_has_pin(name):
+                NexusTextDialog(app, t("profile_login", app.lang),
+                                t("profile_pin", app.lang), "",
+                                lambda v: _do(v), password=True)
+            else:
+                _do("")
+        except Exception:
+            pass
+
+    def _new_flow(self):
+        app = self.app
+        try:
+            from . import profiles as _prof
+            from .dialogs import NexusTextDialog
+        except Exception:
+            return
+
+        def _got_name(name):
+            name = (name or "").strip()
+            if not name:
+                return
+
+            def _got_pin(pin):
+                try:
+                    ok, err = _prof.create_profile(
+                        name, pin, _prof.snapshot_settings(app))
+                    if not ok:
+                        app.show_info_message(
+                            t("profile_new", app.lang), err)
+                        return
+                    _prof.switch_profile(app, name)
+                    self._refresh()
+                except Exception:
+                    pass
+
+            try:
+                NexusTextDialog(app, t("profile_new", app.lang),
+                                t("profile_pin", app.lang), "",
+                                lambda v: _got_pin(v), password=True)
+            except Exception:
+                pass
+
+        try:
+            NexusTextDialog(app, t("profile_new", app.lang),
+                            t("profile_name", app.lang), "",
+                            lambda v: _got_name(v))
+        except Exception:
+            pass
+
+    def _logout(self):
+        try:
+            from . import profiles as _prof
+            _prof.switch_profile(self.app, None)
+            self._refresh()
+        except Exception:
+            pass
+
+    def _render_phone(self):
+        app = self.app
+        lang = app.lang
+        try:
+            from . import phone_server as _ps
+        except Exception:
+            return
+        try:
+            srv = getattr(app, "phone_server", None)
+            on = bool(srv is not None and srv.running)
+        except Exception:
+            on = False
+        info = t("phone_on", lang) if on else t("phone_off", lang)
+        if on:
+            try:
+                info += "  %s:%s" % (_ps.lan_ip(), _ps.app_phone_port(app))
+            except Exception:
+                pass
+        tk.Label(self.body, text=info, font=("Segoe UI", 12),
+                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                 anchor="w", justify="left",
+                 wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=2)
+        if on:
+            self.button(t("phone_stop", lang), lambda: self._srv_stop())
+            self.button(t("phone_newcode", lang), lambda: self._srv_code())
+            self._render_qr()
+            try:
+                devs = srv.paired_devices()
+            except Exception:
+                devs = []
+            if devs:
+                tk.Label(self.body, text=t("phone_paired", lang),
+                         font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
+                         bg=Config.BG_SIDEBAR, anchor="w").pack(
+                             fill="x", padx=16, pady=(8, 0))
+                for d in devs:
+                    try:
+                        label = "%s (%s)" % (d.get("device", "?"),
+                                             d.get("profile", "?") or "?")
+                        self.button(label + "  \u2715",
+                                    lambda tk_=d.get("token", ""):
+                                    self._srv_revoke(tk_))
+                    except Exception:
+                        pass
+        else:
+            self.button(t("phone_start", lang), lambda: self._srv_start())
+
+    def _srv_start(self):
+        try:
+            if not getattr(self.app, "profile", None):
+                try:
+                    self.app.show_info_message(
+                        t("profile_phone", self.app.lang),
+                        t("phone_login_first", self.app.lang))
+                except Exception:
+                    pass
+                return
+            from . import phone_server as _ps
+            ok, err = _ps.start_phone_server(self.app)
+            if not ok:
+                try:
+                    self.app.show_info_message(
+                        t("profile_phone", self.app.lang), err or "?")
+                except Exception:
+                    pass
+            self._refresh()
+        except Exception:
+            pass
+
+    def _srv_stop(self):
+        try:
+            from . import phone_server as _ps
+            _ps.stop_phone_server(self.app)
+            self._refresh()
+        except Exception:
+            pass
+
+    def _srv_code(self):
+        try:
+            srv = getattr(self.app, "phone_server", None)
+            if srv is not None:
+                srv.new_code()
+            self._refresh()
+        except Exception:
+            pass
+
+    def _srv_revoke(self, tok):
+        try:
+            srv = getattr(self.app, "phone_server", None)
+            if srv is not None:
+                srv.revoke_token(tok)
+            self._refresh()
+        except Exception:
+            pass
+
+    def _render_qr(self):
+        try:
+            from . import phone_server as _ps
+            srv = getattr(self.app, "phone_server", None)
+            if srv is None:
+                return
+            code = getattr(srv, "shown_code", "") or ""
+            if not code:
+                code = srv.new_code()
+            payload = _ps.qr_payload(self.app, code)
+            import json as _json
+            photo = _ps.make_qr_photo(_json.dumps(payload, sort_keys=True),
+                                      box=5)
+            lang = self.app.lang
+            tk.Label(self.body, text="%s: %s" % (t("phone_code", lang), code),
+                     font=("Segoe UI", 14, "bold"), fg=Config.TEXT_PRIMARY,
+                     bg=Config.BG_SIDEBAR, anchor="w").pack(
+                         fill="x", padx=16, pady=(6, 2))
+            if photo is not None:
+                self.qr_photo = photo
+                tk.Label(self.body, image=photo, bg=Config.BG_SIDEBAR).pack(
+                    padx=16, pady=2)
+        except Exception:
+            pass
+
+
 class AdicionarPanel(SidePanel):
     NAME = "adicionar"
     TITLE_KEY = "sidebar_add"

@@ -78,6 +78,9 @@ class AppShellMixin:
         self.pad_window = None
         self.kb_window = None
         self.remote_overlay = None
+        self.profile = None
+        self.phone_server = None
+        self.phone_queue = None
         self.browser_remote = None
         # Procs do navegador que o Nexus matou de proposito (Back+Start,
         # quit): a morte deles nao e crash e nao cai no fallback externo.
@@ -514,6 +517,8 @@ class AppShellMixin:
             (t("settings_language", self.lang), self.open_idioma, "\U0001F310"),
             (t("sidebar_add", self.lang), self.open_adicionar, "\U0001F4FA"),
             (t("settings_system", self.lang), self.open_sistema, "\u2699"),
+            (t("settings_profile", self.lang), self.open_perfil, "\U0001F464"),
+            (t("settings_profile", self.lang), self.open_perfil, "\U0001F464"),
             (t("settings_guide", self.lang), self.open_guia, "\U0001F4D6"),
         ]
 

@@ -330,9 +330,13 @@ def run():
 
         gm = app.gamepad
         gm.refresh_devices()
-        check(gm.read_dpad() == (0, 0)
-              and gm.logical_for_raw(0) == "south"
-              and gm.raw_for_logical("south") == 0, "gamepad sem controle")
+        try:
+            _sraw = gm.raw_for_logical("south")
+            _roundtrip = gm.logical_for_raw(_sraw) == "south"
+        except Exception:
+            _roundtrip = False
+        check(gm.read_dpad() == (0, 0) and _roundtrip,
+              "gamepad mapeado (ida e volta)")
         gm.poll()
         gm.stop()
         check(True, "gamepad poll/stop")

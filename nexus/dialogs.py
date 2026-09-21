@@ -34,7 +34,7 @@ CARD_COLOR_PRESETS = [
 class NexusTextDialog:
     """Pequeno editor de texto estilo Nexus (mouse + teclado + controle)."""
 
-    def __init__(self, app, title, prompt, initial, on_done):
+    def __init__(self, app, title, prompt, initial, on_done, password=False):
         self.app = app
         self.closed = False
         self.born = time.time()
@@ -74,6 +74,11 @@ class NexusTextDialog:
                               relief="flat", bd=0, highlightbackground=Config.BORDER,
                               highlightthickness=1)
         self.entry.pack(fill="x", padx=36, ipady=8)
+        if password:
+            try:
+                self.entry.configure(show="•")
+            except Exception:
+                pass
         app.bind_keyboard_popup(self.entry)
         if initial:
             self.entry.insert(0, initial)
