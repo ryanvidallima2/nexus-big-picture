@@ -5,6 +5,9 @@
 nexus.db
 settings.json
 
+# Perfis locais de login (PIN hash + settings por usuario)
+profiles/
+
 # Logs e erros locais
 nexus_error.log
 *.log
@@ -12,6 +15,9 @@ nexus_error.log
 # Cache Python
 __pycache__/
 *.py[cod]
+
+# Backups locais de refatoracao
+*.bak
 
 # Config de pasta do Windows (contem caminho absoluto desta maquina)
 desktop.ini
@@ -23,13 +29,32 @@ browser_profile/
 # Pasta de jogos (binarios e arquivos de cada maquina - nunca commitar)
 games/
 
+# Capas/imagens locais (Fase 1 - blindagem juridica).
+# NENHUM logo oficial de terceiro e rastreado: o repo distribui zero PNGs.
+# - generate_logos.py cria placeholders genericos locais (cor + iniciais,
+#   sem marca) - ignorados aqui, opcionais p/ dev/build.
+# - Trocar logo / Adicionar / capas de jogos salvam aqui na maquina do
+#   usuario e nunca vao para o git.
+streaming_images/*_logo.jpg
+streaming_images/*_logo.jpeg
+streaming_images/*_logo.png
+streaming_images/*_logo.webp
+streaming_images/*_logo.gif
+streaming_images/*_logo.bmp
+streaming_images/*_logo.ico
+
 # Build do executavel (PyInstaller)
 dist/
 build/
 *.spec
 Nexus-v*.zip
+Nexus_Transferivel*.zip
 
 # Editores / SO
 .vscode/
 .idea/
 Thumbs.db
+
+# Pasta local de estudo (copias de leitura, nao vai p/ o git)
+teste/
+teste 2/

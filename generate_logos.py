@@ -1,4 +1,14 @@
 # -*- coding: utf-8 -*-
+"""Gerador LOCAL de placeholders genericos (Fase 1 - blindagem juridica).
+
+Cria PNGs de cor sólida + iniciais (ex.: "N" no vermelho) — sem nenhum
+logo/ícone oficial de terceiro. Uso: dev local ou etapa de build para
+deixar os cards bonitos sem distribuir marca de ninguém.
+
+Os arquivos gerados são ignorados pelo git (.gitignore: streaming_images/*_logo.*).
+Sem eles, o app usa o fallback de emoji + cor (nexus/app_cards.py), que
+também é seguro para distribuição.
+"""
 from PIL import Image, ImageDraw, ImageFont
 import os
 

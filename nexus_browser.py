@@ -26,6 +26,36 @@ APP_ID = "NexusStreamingHub.BigPicture.2"
 
 
 def nexus_profile_dir():
+    # 1) Override p/ tirar do C pequeno: env (passado pelo Nexus) vence
+    try:
+        env = (os.environ.get("NEXUS_PROFILE_DIR") or "").strip()
+        if env:
+            d = os.path.abspath(os.path.expandvars(env))
+            try:
+                os.makedirs(d, exist_ok=True)
+            except Exception:
+                pass
+            return d
+    except Exception:
+        pass
+    # 2) settings.json do Nexus (mesma pasta deste arquivo)
+    try:
+        base = os.path.dirname(os.path.realpath(__file__))
+        sf = os.path.join(base, "settings.json")
+        if os.path.isfile(sf):
+            import json as _json
+            with open(sf, "r", encoding="utf-8") as f:
+                custom = (_json.load(f).get("browser_profile_dir") or "").strip()
+            if custom:
+                d = os.path.abspath(os.path.expandvars(custom))
+                try:
+                    os.makedirs(d, exist_ok=True)
+                except Exception:
+                    pass
+                return d
+    except Exception:
+        pass
+    # 3) Legado no C
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     d = os.path.join(base, "Nexus", "browser_profile")
     try:
@@ -46,14 +76,66 @@ except Exception:
     pass
 
 
+SW_MINIMIZE = 6
+SW_HIDE = 0
+
+
+def _show_window(hwnd, cmd):
+    try:
+        import ctypes as _ct
+        _sw = _ct.windll.user32.ShowWindow
+        _sw.argtypes = [_ct.c_void_p, _ct.c_int]
+        _sw.restype = _ct.c_bool
+        return bool(_sw(hwnd, cmd))
+    except Exception:
+        return False
+
+
+def _find_window(title):
+    try:
+        import ctypes as _ct
+        _fw = _ct.windll.user32.FindWindowW
+        _fw.argtypes = [_ct.c_wchar_p, _ct.c_wchar_p]
+        _fw.restype = _ct.c_void_p
+        hwnd = _fw(None, title)
+        return hwnd or None
+    except Exception:
+        return None
+
+
 class NexusApi:
     """Ponte pagina -> janela (chamada pelo JS injetado)."""
     def __init__(self):
         self._window = None  # underscore: o pywebview varre atributos
         # publicos da api e travaria enumerando a janela (.native)
+        self._title = "Nexus"
 
     def minimize(self):
+        # Minimiza TUDO (1 botao na tarefa, volta tudo junto): esconde
+        # esta janela e minimiza o Nexus (o minimize() do pywebview vira
+        # barrinha flutuante em fullscreen sem bordas). Voltar pela
+        # tarefa restaura o Nexus e o hook Map reexibe o navegador.
+        # TEMP-DEBUG
+        import sys as _sys
+        def _dbg(m):
+            try:
+                _sys.stderr.write("MINDBG %s\n" % m)
+            except Exception:
+                pass
         try:
+            me = _find_window("Nexus - %s" % (self._title or ""))
+            _dbg("me=%s" % (me,))
+            if me:
+                _dbg("hide=%s" % _show_window(me, SW_HIDE))
+                try:
+                    _ph = int((os.environ.get("NEXUS_PARENT_HWND") or "0").strip(), 0)
+                except Exception:
+                    _ph = 0
+                root = _ph or _find_window("Nexus - Big Picture")
+                _dbg("root=%s" % (root,))
+                if root:
+                    _dbg("minroot=%s" % _show_window(root, SW_MINIMIZE))
+                    return "ok"
             if self._window is not None:
                 self._window.minimize()
             return "ok"
@@ -90,8 +172,16 @@ _TOAST_JS = (
     "setTimeout(function(){try{d.remove();}catch(e){}},4500);'ok';}catch(e){'fail';}"
 )
 
-# Barra discreta + modal de saida + F11 (re-injetado se a pagina trocar)
+# Barra discreta + modal de saida + F11 (re-injetado se a pagina trocar).
+# DOM puro, sem innerHTML: o YouTube exige TrustedHTML e o innerHTML joga
+# TypeError, abortando a injecao antes do listener do F11. O F11 tem guarda
+# propria, independente da barrinha.
 _CHROME_JS = """try{
+if(!window.__nexusF11){window.__nexusF11=true;
+document.addEventListener('keydown',function(ev){
+if(ev&&ev.key==='F11'){try{ev.preventDefault();}catch(e){}try{window.pywebview.api.toggle_fullscreen();}catch(e){}}
+else if(ev&&ev.key==='Escape'){var q=document.getElementById('nexus-quit');if(q&&q.style.display==='flex'){q.style.display='none';}}
+},true);}
 if(!document.getElementById('nexus-bar')){
 var css='#nexus-bar{position:fixed;top:10px;right:10px;z-index:2147483647;display:flex;gap:6px;opacity:.18;transition:opacity .2s;}'
 +'#nexus-bar:hover{opacity:1;}'
@@ -110,20 +200,23 @@ var css='#nexus-bar{position:fixed;top:10px;right:10px;z-index:2147483647;displa
 var st=document.createElement('style');st.textContent=css;
 (document.head||document.documentElement).appendChild(st);
 var bar=document.createElement('div');bar.id='nexus-bar';bar.title='Nexus (F11: tela cheia)';
-bar.innerHTML='<div class=nxb id=nxb-min title=Minimizar>&ndash;</div><div class=nxb id=nxb-close title=Fechar>&times;</div>';
+var bm=document.createElement('div');bm.className='nxb';bm.id='nxb-min';bm.title='Minimizar';bm.textContent='–';
+var bc=document.createElement('div');bc.className='nxb';bc.id='nxb-close';bc.title='Fechar';bc.textContent='×';
+bar.appendChild(bm);bar.appendChild(bc);
 (document.body||document.documentElement).appendChild(bar);
 var ov=document.createElement('div');ov.id='nexus-quit';
-ov.innerHTML='<div id=nexus-quit-box><h2>&#x1F6AA; Sair do Nexus</h2><p>Deseja realmente sair do aplicativo?</p><button id=nxb-no>N&atilde;o, ficar</button><button id=nxb-yes>Sim, sair</button></div>';
+var qb=document.createElement('div');qb.id='nexus-quit-box';
+var qh=document.createElement('h2');qh.textContent='🚪 Sair do Nexus';
+var qp=document.createElement('p');qp.textContent='Deseja realmente sair do aplicativo?';
+var qn=document.createElement('button');qn.id='nxb-no';qn.textContent='Não, ficar';
+var qy=document.createElement('button');qy.id='nxb-yes';qy.textContent='Sim, sair';
+qb.appendChild(qh);qb.appendChild(qp);qb.appendChild(qn);qb.appendChild(qy);ov.appendChild(qb);
 (document.body||document.documentElement).appendChild(ov);
 document.getElementById('nxb-min').onclick=function(){try{window.pywebview.api.minimize();}catch(e){}};
 document.getElementById('nxb-close').onclick=function(){document.getElementById('nexus-quit').style.display='flex';try{document.getElementById('nxb-no').focus();}catch(e){}};
 document.getElementById('nxb-no').onclick=function(){document.getElementById('nexus-quit').style.display='none';};
 document.getElementById('nxb-yes').onclick=function(){try{window.pywebview.api.quit_app();}catch(e){window.close();}};
 document.getElementById('nexus-quit').onclick=function(ev){if(ev.target&&ev.target.id==='nexus-quit'){ev.target.style.display='none';}};
-document.addEventListener('keydown',function(ev){
-if(ev&&ev.key==='F11'){try{ev.preventDefault();}catch(e){}try{window.pywebview.api.toggle_fullscreen();}catch(e){}}
-else if(ev&&ev.key==='Escape'){var q=document.getElementById('nexus-quit');if(q&&q.style.display==='flex'){q.style.display='none';}}
-},true);
 'ok';}
 }catch(e){'fail';}"""
 
@@ -284,6 +377,7 @@ def main():
         url = "https://" + url
     import webview
     api = NexusApi()
+    api._title = title
     window = webview.create_window("Nexus - %s" % title, url,
                                    width=1280, height=800, min_size=(800, 600),
                                    fullscreen=True, focus=True, js_api=api)

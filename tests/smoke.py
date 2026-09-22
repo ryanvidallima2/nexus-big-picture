@@ -1,0 +1,417 @@
+# -*- coding: utf-8 -*-
+"""Smoke do Nexus: py_compile + boot + render + modulos. Sem dependencias novas.
+
+Uso (qualquer PC):  Python\\python.exe tests\\smoke.py   (na pasta do projeto)
+Saida: linhas PASS/FAIL + RESULT. Exit 0 = tudo ok.
+
+Nao suja arquivos do usuario: settings.json/nexus.db vao p/ backup e voltam
+(byte a byte; se nao existiam, sao removidos no fim).
+"""
+import os
+import py_compile
+import shutil
+import sys
+import time
+
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE)
+# nexus.paths deriva o BASE_DIR de sys.argv[0]: aponta p/ o entry real.
+sys.argv[0] = os.path.join(BASE, "bigpicture.py")
+
+fails = []
+
+
+def check(cond, msg):
+    print(("PASS " if cond else "FAIL ") + msg, flush=True)
+    if not cond:
+        fails.append(msg)
+
+
+def main():
+    # 0) compila tudo
+    targets = [os.path.join(BASE, "bigpicture.py"),
+               os.path.join(BASE, "nexus_browser.py")]
+    for f in sorted(os.listdir(os.path.join(BASE, "nexus"))):
+        if f.endswith(".py"):
+            targets.append(os.path.join(BASE, "nexus", f))
+    try:
+        for tfile in targets:
+            py_compile.compile(tfile, doraise=True)
+        check(True, "py_compile %d arquivos" % len(targets))
+    except Exception as e:
+        check(False, "py_compile (%r)" % e)
+        return 1
+
+    # snapshot dos arquivos do usuario
+    saved = {}
+    for f in ("settings.json", "nexus.db"):
+        p = os.path.join(BASE, f)
+        saved[f] = open(p, "rb").read() if os.path.exists(p) else None
+
+    try:
+        return run()
+    finally:
+        for f, data in saved.items():
+            p = os.path.join(BASE, f)
+            if data is None:
+                if os.path.exists(p):
+                    os.remove(p)
+            else:
+                with open(p, "wb") as fh:
+                    fh.write(data)
+
+
+def run():
+    from nexus.i18n import TRANSLATIONS, cat_label, t
+    check(len(TRANSLATIONS.get("pt-br", {})) == len(TRANSLATIONS.get("en", {})) > 200,
+          "i18n pt/en completos")
+    check(t("sec_all", "en") == "All Streamings"
+          and cat_label("Filmes", "en") == "Movies", "i18n chaves")
+
+    import tkinter as tk
+    import bigpicture as B
+    tk_errors = []
+    _orig_rep = tk.Tk.report_callback_exception
+
+    def _rep(self, exc, val, tb):
+        tk_errors.append(str(val))
+
+    tk.Tk.report_callback_exception = _rep
+    import threading
+    thread_errors = []
+    _orig_thehook = threading.excepthook
+
+    def _thehook(args):
+        thread_errors.append(str(args.exc_value))
+
+    threading.excepthook = _thehook
+    root = tk.Tk()
+    root.withdraw()
+    app = None
+    try:
+        app = B.BigPictureApp(root)
+        check(app.current_tab == "all" and len(app.get_all_services()) >= 32,
+              "boot (aba all, 32 servicos)")
+
+        from nexus.app import BigPictureApp as App2
+        check(B.BigPictureApp is App2, "entry usa nexus.app")
+        check("webview" not in sys.modules, "webview lazy (fora do boot)")
+        from nexus.browser import browser_available
+        check(browser_available() is True, "browser disponivel (lazy ok)")
+
+        for lang, title_all, tag in (("pt-br", "Todos os Streamings", "FILMES"),
+                                     ("en", "All Streamings", "MOVIES")):
+            app.lang = lang
+            for tab in ("all", "movies", "music", "videos", "favorites", "games"):
+                app.render_tab(tab)
+                root.update()
+            for mode in ("cards", "grid", "list", "details"):
+                app.set_view_mode("all", mode)
+                app.render_tab("all")
+                root.update()
+            app.set_view_mode("all", "grid")
+            app.render_tab("all")
+            root.update()
+            texts = collect_texts(app.scroll_frame)
+            check(title_all in texts and tag in texts, "render %s" % lang)
+
+        app.lang = "pt-br"
+        app.render_tab("all")
+        root.update()
+        check(getattr(app.search_entry, "_hint_on", False) is True
+              and app.search_entry.get() == "Buscar aplicativo...",
+              "busca placeholder app")
+        app.render_tab("games")
+        root.update()
+        check(app.search_entry.get() == "Buscar jogo...",
+              "busca placeholder jogo")
+        app.lang = "en"
+        app.render_tab("all")
+        root.update()
+        check(app.search_entry.get() == "Search apps...",
+              "busca placeholder en")
+        app.lang = "pt-br"
+        app.search_query = "net"
+        app.render_tab("all")
+        root.update()
+        texts = collect_texts(app.scroll_frame)
+        check("Netflix" in texts and "YouTube" not in texts, "busca filtra")
+        app.search_query = ""
+        app.render_tab("all")
+        root.update()
+
+        _fav_bak = list(app.settings.get("favorites", []) or [])
+        _gfav_bak = list(app.settings.get("game_favorites", []) or [])
+        _ext_bak = dict(app.settings.get("external_games", {}) or {})
+        try:
+            app.settings["favorites"] = ["Netflix"]
+            app.settings["game_favorites"] = []
+            app.settings["external_games"] = dict(
+                _ext_bak, **{"ZZJogo": {"exe": "x"}})
+            app.render_tab("favorites")
+            root.update()
+            texts = collect_texts(app.scroll_frame)
+            check("Netflix" in texts, "favoritos mostra app")
+            app.toggle_favorite("ZZJogo")
+            app.render_tab("favorites")
+            root.update()
+            texts = collect_texts(app.scroll_frame)
+            check("ZZJogo" not in texts, "favoritos nao mostra jogo")
+            check("ZZJogo" in app.settings.get("game_favorites", []),
+                  "toggle jogo segrega")
+            for lang, title in (("pt-br", "Jogos Favoritos"),
+                                ("en", "Favorite Games")):
+                app.lang = lang
+                app.render_tab("gamefavorites")
+                root.update()
+                check(title in collect_texts(app.scroll_frame),
+                      "gamefavorites %s" % lang)
+            app.lang = "pt-br"
+        finally:
+            app.settings["favorites"] = _fav_bak
+            app.settings["game_favorites"] = _gfav_bak
+            app.settings["external_games"] = _ext_bak
+        app.search_query = ""
+
+        for d in ("up", "down", "left", "right"):
+            app._nav(d)
+        app.go_back()
+        app.toggle_sidebar()
+        app.toggle_sidebar()
+        check(True, "nav + sidebar")
+
+        app.settings["favorites"] = []
+        app.toggle_favorite("Netflix")
+        app.toggle_favorite("Netflix")
+        check("Netflix" not in app.settings.get("favorites", []), "favorito")
+
+        from nexus.dialogs import NexusMenuWindow, NexusTextDialog
+        got = []
+        td = NexusTextDialog(app, "T", "P", "x", got.append)
+        td.confirm()
+        menu = NexusMenuWindow(app, "M", [])
+        menu.set_options([("O", lambda: got.append(1))])
+        menu.confirm()
+        menu.close()
+        check(got == ["x", 1], "dialogos")
+
+        from nexus.dialogs import GuideWindow
+        from nexus.guide import (
+            GUIDE_CATS, guide_cat_body, guide_cat_title,
+        )
+        check(len(GUIDE_CATS) == 8
+              and all(guide_cat_title(c, "pt-br") and guide_cat_body(c, "pt-br")
+                      and guide_cat_title(c, "en") and guide_cat_body(c, "en")
+                      for c in GUIDE_CATS), "guia conteudo pt/en")
+        gw = GuideWindow(app)
+        root.update()
+        check(len(gw.cat_btns) == 8, "guia 8 categorias")
+        gw.select(3)
+        root.update()
+        check("Card" in gw.body_title.cget("text")
+              or "card" in gw.body_text.cget("text").lower(),
+              "guia troca categoria")
+        gw.on_hat((0, -1))
+        check(gw.focus_idx == 4, "guia navega")
+        gw.close()
+        check(gw.closed, "guia fecha")
+
+        app.render_tab("all")
+        root.update()
+        w = app.sections[0]["widgets"][0]
+        n = app.sections[0]["names"][0]
+        app.flip_card(w, n, False)
+        root.update()
+        back_on = (app.flipped is not None and app.flipped["back"].winfo_ismapped()
+                   and len(app.flipped["opts"]) == 3)
+        check(back_on, "card vira (verso Site/App/Config)")
+        exp_color = app.settings.get("card_colors", {}).get(
+            n, (app.get_all_services().get(n, {}).get("color") or "#7c4dff"))
+        check(app.flipped["back"].cget("bg").lower() == exp_color.lower(),
+              "borda neon na cor do card")
+        app.flip_show_page("config")
+        root.update()
+        check(app.flipped["page"] == "config" and len(app.flipped["opts"]) == 9,
+              "verso config (9 acoes)")
+        from nexus.i18n import t as _t
+        check(any(_t("cache_app_clear", app.lang) in b.cget("text")
+                    for b, _c in app.flipped["opts"]),
+              "verso config tem limpar app")
+        app.flip_opt_move(1)
+        check(app.flipped["idx"] == 1, "opcao navega")
+        app.flip_show_page("color")
+        root.update()
+        check(app.flipped["page"] == "color" and len(app.flipped["opts"]) == 17,
+              "verso cor (16+cancela)")
+        from nexus.dialogs import CARD_COLOR_PRESETS
+        sw_bgs = set()
+        for b, _c in app.flipped["opts"][:16]:
+            try:
+                sw_bgs.add(b.cget("bg"))
+            except Exception:
+                pass
+        want = {c for _l, c in CARD_COLOR_PRESETS}
+        check(want <= sw_bgs, "swatches coloridos")
+        app.flip_click(0)
+        root.update()
+        check(app.settings.get("card_colors", {}).get(n)
+              and app.flipped is not None
+              and app.flipped["page"] == "color", "cor aplica e continua")
+        w = app.flipped["widget"] if app.flipped else None
+        if w is None:
+            check(False, "verso url (sem card)")
+            check(False, "verso excluir confirma")
+            check(False, "card desvira")
+            check(False, "clique em toda area do card")
+        else:
+            app.flip_show_page("url")
+            root.update()
+            check(app.flipped["page"] == "url" and app.flipped.get("entry") is not None
+                  and len(app.flipped["opts"]) == 2, "verso url (campo+ok)")
+            app.flip_show_page("delete")
+            root.update()
+            check(app.flipped["page"] == "delete" and len(app.flipped["opts"]) == 2,
+                  "verso excluir confirma")
+            app.unflip_card()
+            root.update()
+            check(app.flipped is None, "card desvira")
+            bound = []
+
+            def walk(x):
+                try:
+                    if x.bind("<Button-1>"):
+                        bound.append(True)
+                except Exception:
+                    pass
+                try:
+                    kids = x.winfo_children()
+                except Exception:
+                    return
+                for c in kids:
+                    walk(c)
+
+        walk(w)
+        check(len(bound) >= 6, "clique em toda area do card")
+        app.set_view_mode("all", "list")
+        app.render_tab("all")
+        root.update()
+        rw = app.sections[0]["widgets"][0]
+        rn = app.sections[0]["names"][0]
+        row_kids = list(rw.winfo_children())
+        app.flip_card(rw, rn, False)
+        root.update()
+        front_hidden = all(not c.winfo_ismapped() for c in row_kids)
+        check(app.flipped is not None and front_hidden
+              and app.flipped["back"].winfo_ismapped(),
+              "linha vira inteira (frente some)")
+        app.unflip_card()
+        root.update()
+        check(app.flipped is None
+              and all(c.winfo_ismapped() for c in row_kids),
+              "linha desvira (frente volta)")
+
+        entry = tk.Entry(root)
+        entry.pack()
+        app.open_keyboard(entry)
+        app.kb_window.on_hat((1, 0))
+        app.kb_window.force_front()
+        from nexus.win32 import force_topmost_noactivate
+        check(isinstance(force_topmost_noactivate(app.kb_window.win), bool),
+              "teclado forca frente")
+        app.kb_window.close()
+        for opener in (app.open_controles, app.open_idioma, app.open_adicionar,
+                       app.open_sistema, app.open_som):
+            opener()
+            app.close_sidepanel()
+        from nexus.panels import GamepadConfigWindow
+        gw = GamepadConfigWindow(app)
+        gw.close()
+        check(True, "teclado + paineis + padconfig")
+
+        gm = app.gamepad
+        gm.refresh_devices()
+        try:
+            _sraw = gm.raw_for_logical("south")
+            _roundtrip = gm.logical_for_raw(_sraw) == "south"
+        except Exception:
+            _roundtrip = False
+        check(gm.read_dpad() == (0, 0) and _roundtrip,
+              "gamepad mapeado (ida e volta)")
+        gm.poll()
+        gm.stop()
+        check(True, "gamepad poll/stop")
+
+        from nexus import input as nexus_input
+        _orig_focus = nexus_input.focused_is_text_field_cached
+        nexus_input.focused_is_text_field_cached = lambda: True
+        try:
+            no_f = nexus_input.remote_button_allowed("fullscreen")
+            ok_other = nexus_input.remote_button_allowed("space")
+        finally:
+            nexus_input.focused_is_text_field_cached = _orig_focus
+        check(no_f is False and ok_other is True,
+              "fullscreen nao digita em campo")
+
+        gm.remote_enter_time = time.time()
+        gm.remote_kb_time = 0.0
+        gm._maybe_open_kb_for_focus()
+        check(gm.remote_kb_time == 0.0, "teclado nao abre ao entrar no app")
+        gm.remote_enter_time = time.time() - 30.0
+        gm._maybe_open_kb_for_focus()
+        check(gm.remote_kb_time != 0.0, "teclado abre apos carencia")
+
+        app.scan_games()
+        app.render_games()
+        root.update()
+        check(True, "games scan+render")
+    finally:
+        try:
+            import time as _time
+            for _ in range(8):
+                try:
+                    root.update()
+                except Exception:
+                    pass
+                _time.sleep(0.5)
+        except Exception:
+            pass
+        try:
+            tk.Tk.report_callback_exception = _orig_rep
+        except Exception:
+            pass
+        try:
+            threading.excepthook = _orig_thehook
+        except Exception:
+            pass
+        try:
+            if app is not None:
+                app.root.after(200, app.root.destroy)
+                app.root.mainloop()
+        except Exception:
+            pass
+    if tk_errors:
+        print("WARN callbacks Tk com erro (%d): %s" % (len(tk_errors), tk_errors[:3]))
+    for _te in thread_errors[:3]:
+        check(False, "thread sem excecao (teve: %s)" % (_te[:100],))
+    return 0 if not fails else 1
+
+
+def collect_texts(widget):
+    import tkinter as tk
+    out = []
+
+    def walk(w):
+        try:
+            if isinstance(w, tk.Label):
+                out.append(w.cget("text"))
+        except Exception:
+            pass
+        for c in w.winfo_children():
+            walk(c)
+
+    walk(widget)
+    return out
+
+
+if __name__ == "__main__":
+    sys.exit(main() or (1 if fails else 0))

@@ -1,4 +1,4 @@
-# Nexus - Big Picture v5.4
+# Nexus - Big Picture v5.7.0
 
 Interface de streaming inspirada no Steam Big Picture Mode.
 
@@ -13,17 +13,17 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **Gamepad**: Suporte universal (Xbox, PlayStation, Switch, genericos) via pygame + SDL - deteccao automatica do tipo com nomes de botoes de cada familia (A vs. X vs. B...), D-pad por hat ou botoes conforme o controle
 - **Seletor de controle**: Configuracoes > Controles lista todos os conectados (cabo, Bluetooth, 2.4GHz, virtuais) com tipo e conexao/bateria; troca com 1 clique, hot-plug e memoria por aparelho
 - **Otimizacao por conexao**: zona morta ajustavel (ideal p/ drift no Bluetooth), calibracao automatica, polling 60Hz; dongle 2.4GHz aparece como Cabo (latencia minima)
-- **Abas**: Home, Favoritos, Filmes, Musica, Videos, Todos
-- **Busca**: Pesquisa por nome em tempo real
-- **Logos**: Sistema automatico de busca por `{nome}_logo.{ext}` na pasta `streaming_images`
-- **Trocar logo**: Clique direito > Trocar Logo
-- **Adicionar streaming**: Formulario completo com nome, URL, categoria e logo
-- **Favoritos**: Adicionar/remover com clique direito
-- **Navegador embutido**: botao Site abre o servico em tela cheia sem bordas numa janela do proprio Nexus (WebView2), com transicao e mesmo icone na barra de tarefas - parece um app so. Barra discreta com minimizar/fechar, F11 p/ tela cheia e confirmacao de saida
+- **Abas**: Favoritos, Filmes, Musica, Videos, Todos, Jogos, Jogos Favoritos
+- **Busca**: Barra de pesquisa em todas as abas com filtro em tempo real ("Buscar aplicativo..."/"Buscar jogo...")
+- **Logos**: ícones genéricos (cor + iniciais/emoji); sem logo oficial de terceiro no distribuível. Sistema de busca por `{nome}_logo.{ext}` na pasta `streaming_images` (arquivos locais, ignorados no git)
+- **Trocar logo**: Clique direito > Trocar Logo — só aceita imagem do seu computador (sem busca automática por nome de serviço)
+- **Adicionar streaming**: Formulario completo com nome, URL, categoria e logo (arquivo local)
+- **Favoritos**: Adicionar/remover com clique direito; aba Favoritos so p/ aplicativos e aba Jogos Favoritos so p/ jogos
+- **Navegador embutido**: botao Site abre o servico em tela cheia sem bordas numa janela do proprio Nexus (WebView2), com transicao e mesmo icone na barra de tarefas - parece um app so. Barra discreta com minimizar/fechar, F11 p/ tela cheia e confirmacao de saida. Janela unica no Alt+Tab: minimizar leva tudo junto e voltar pela tarefa restaura tudo
 - **Logins salvos**: perfil persistente mantem logins, cookies e senhas entre sessoes; limpeza em Configuracoes > Limpar logins e cache
 - **Apps em tela cheia**: botao App forca o aplicativo a fullscreen sem bordas (modo big picture); ao fechar, o Nexus volta em ~0,5s e sempre maximizado
 - **Leitura rapida**: logos com cache de caminho e miniaturas otimizadas; abertura de sites ~2x mais rapida
-- **Teclado virtual**: ⌨ na sidebar e nos campos de texto - analogico/setas movem, confirmar tecla; tecla de verdade onde o foco estiver (vale nos logins do navegador). Abre sozinho ao clicar no campo; detecta numerico (123) vs letras, com alternador manual
+- **Teclado virtual**: ⌨ na sidebar e nos campos de texto - analogico/setas movem, confirmar tecla; tecla de verdade onde o foco estiver (vale nos logins do navegador). Abre sozinho ao clicar no campo; detecta numerico (123) vs letras, com alternador manual. Tecla BR/US troca o layout ABNT2 (com Ç) e US; no BR, a fileira ´ ^ ~ acentua a vogal seguinte (tecla morta). Vale nos campos do Nexus e nos apps
 - **Foco unificado**: cursor do mouse e selecao sao uma coisa so - navegar com controle/teclado leva o cursor junto; apontar com o mouse leva o foco junto
 - **Modo console nos sites**: no navegador embutido, setas/analogico selecionam os quadros (filmes, series) com anel roxo como num videogame, rolando o catalogo sozinho; A abre, B volta. R1/L1 percorrem as abas de categoria; modal flutuante (ex. preview Netflix) ganha prioridade automatica
 - **Bola no menu principal**: pergunta sair ou nao sair do aplicativo
@@ -33,7 +33,8 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **3 perfis de botoes**: slot 1 sempre o padrao; slots 2-3 salvos com o nome que quiser (mapeamento manual por clique + pressao, compativel com qq controle)
 - **Hub em fullscreen**: abre em tela cheia sem bordas (F11 alterna); controles com deteccao automatica e area de teste ao vivo em Configuracoes > Controles
 - **Instalacao automatica**: botao App baixa e instala sozinho via winget/Store quando o app nao esta instalado
-- **Aba Jogos**: cada pasta em `games/` vira um card que abre o jogo (capa + executavel detectados sozinhos)
+- **Aba Jogos**: 3 formas - (1) botao Detectar puxa instalados da Steam, Epic e Xbox sozinho (sem login); (2) cada pasta em `games/` vira um card; (3) Adicionar .exe cria atalho sem mover o jogo. Capas oficiais automaticas, 4 modos de exibicao e pop-up com botao Jogar
+- **Modos de exibicao**: todas as abas tem Cards, Grade, Lista e Detalhes estilo Windows Explorer (lembrado por aba)
 - **Atualizacao automatica**: o Nexus avisa e se atualiza sozinho pela aba Configuracoes ou na abertura
 - **Resolucoes**: Tela cheia, 1920x1080, 1400x900, 1280x720, Janela
 - **Temas**: 8 cores de destaque disponiveis
@@ -74,6 +75,70 @@ Dailymotion, Bandcamp, SoundCloud, Pluto TV, Apple TV, Peacock, Paramount+,
 Discovery+, Globoplay, Vix, Curiosity Stream, MUBI, Shudder, BritBox, Tubi,
 Plex, Kodi, Jellyfin, Mixer, Vimeo, Rumble, Tidal, Deezer, Mixcloud
 
+## Aviso legal
+
+**Nexus não é afiliado a nenhum serviço de streaming mencionado.**
+Todas as marcas e nomes citados pertencem aos seus respectivos donos.
+
+- O app distribuído não inclui nenhum logo oficial de terceiro — só ícones
+  genéricos (cor + iniciais/emoji).
+- `Trocar logo` e `Adicionar` usam exclusivamente imagem escolhida pelo
+  usuário no próprio computador; o Nexus nunca busca nem baixa logo
+  automática por nome de serviço.
+- Para divulgação, não use prints/vídeos com logo oficial de terceiro.
+
+## Identidade visual (obra original do projeto Nexus, 2026-09-22)
+
+- Conjunto próprio em `assets/icons/` (gerado por `assets/icons/make_icons.py`,
+  256px, paleta roxo-futurista: tile `#1a1a2e`, acento `#7c4dff`,
+  glow `#b048ff`, ciano `#00e5ff`): um ícone por categoria
+  (`cat_filmes`, `cat_musica`, `cat_videos`, `cat_games`) + neutro
+  (`nexus_default`) para qualquer streaming sem logo customizado.
+- Os PNGs são rastreados no git e embarcados no distribuível (diferente de
+  `streaming_images/`, que é só capa local do usuário e não vai p/ git).
+- Identificação visual dispensa marca de terceiro: todo card/linha mostra o
+  **nome do serviço em texto** nos 4 modos (Cards, Grade, Lista, Detalhes).
+- Autoria/data documentadas no cabeçalho do script gerador (prova de
+  anterioridade). Registro formal da marca (INPI) é passo jurídico à parte,
+  fora do código.
+
+## Gratuito vs Pro
+
+- **Gratuito**: hub completo + anúncio próprio discreto no painel
+  Notificações (seção Novidades). Só inventário próprio, estático e local:
+  sem SDK/rede de terceiros, nunca dentro do navegador nem sobre conteúdo
+  de terceiro.
+- **Pro (Gumroad)**: controle pelo celular, perfis com PIN,
+  slots 2–3 de controle, 8 temas + cor custom e **zero anúncios**.
+  Destrava via licença (mesmo binário do GitHub).
+  | Plano | Preço USD | Líquido aprox. |
+  |---|---|---|
+  | Mensal | $5.90/mês | ~$4.81 |
+  | Semestral (~5% off) | $33.60/6 meses | ~$29.74 |
+  | Anual (~15% off) | $60/ano | ~$53.50 |
+  | Vitalício (pague uma vez, seu pra sempre) | $500 únicos | ~$449.50 |
+
+### Ativar a licença Pro
+
+1. Compre um plano no Gumroad (4 produtos: mensal, semestral, anual,
+   vitalício) e copie a chave do recibo.
+2. No app: Configurações > Sistema > Ativar Nexus Pro (ou clique no
+   card do Pro no painel Notificações) e cole a chave. Precisa de
+   internet só na ativação.
+3. O app revalida sozinho a cada 7 dias; sem internet vale a última
+   validação por até 14 dias (carência). Assinatura expirada/reembolsada
+   volta ao gratuito sozinha (anúncios retornam).
+
+### Ligar a loja (vendedor, 1x)
+
+1. Nos 4 produtos do Gumroad, ative "license keys".
+2. Copie o `product_id` de cada um e cole em `settings.json` >
+   `"pro_products": {"monthly": "...", "semiannual": "...",
+   "annual": "...", "lifetime": "..."}` (ou em
+   `nexus/license.py` > `DEFAULT_PRODUCTS`).
+3. Sem ids configurados, a ativação avisa que a loja ainda não está
+   ligada e o app segue gratuito.
+
 ## Requisitos (so para desenvolver)
 
 - Windows 10 ou superior
@@ -90,7 +155,8 @@ Plex, Kodi, Jellyfin, Mixer, Vimeo, Rumble, Tidal, Deezer, Mixcloud
 Nexus/
 ├── Nexus.exe                # Aplicativo (duplo clique)
 ├── nexus_browser.exe        # Navegador embutido (aberto pelo Nexus)
-├── streaming_images/        # Logos dos streamings
+├── streaming_images/        # Ícones genéricos/capas locais (não vai p/ git)
+├── assets/icons/            # Ícones ORIGINAIS Nexus por categoria (vai p/ git)
 ├── logo_nexus/              # Icones do Nexus
 ├── games/                   # Seus jogos (uma pasta por jogo) - crie se nao existir
 ├── settings.json            # Criado sozinho no 1o uso
@@ -101,15 +167,59 @@ Nexus/
 ## Estrutura do codigo (desenvolvimento)
 
 ```
-Default Project/
-├── bigpicture.py          # Codigo principal
+Nexus App/
+├── bigpicture.py          # Entry fino (48 linhas: Tk + BigPictureApp + main)
 ├── nexus_browser.py       # Janela do navegador embutido (Site)
+├── nexus/                 # Pacote interno (27 modulos)
+│   ├── app.py             # BigPictureApp (composicao dos 6 mixins abaixo)
+│   ├── app_shell.py       # Init + construcao da janela
+│   ├── app_views.py       # Navegacao, abas e renderizacao base
+│   ├── app_games.py       # Aba Jogos (deteccao, capas, lancamento)
+│   ├── app_cards.py       # Cards, grade, lista e foco
+│   ├── app_remote.py      # Mapeamento do controle e modo remoto
+│   ├── app_settings.py    # Menus, sidebar, tema, idioma, update
+│   ├── gamepad.py         # GamepadManager (polling pygame)
+│   ├── keyboard.py        # Teclado virtual
+│   ├── panels.py          # SidePanel (5 paineis) + GamepadConfigWindow
+│   ├── dialogs.py         # OpenTarget/GameCard/Texto/Menu + modais
+│   ├── i18n.py            # TRANSLATIONS pt-br/en + t()/cat_label()
+│   ├── streamings.py      # Base dos 32 servicos
+│   ├── games.py           # Steam/Epic/Xbox + capas
+│   ├── apps.py            # UWP/atalho/exe + winget/Store
+│   ├── input.py           # SendInput + sons + campo de texto
+│   ├── pad.py             # Mapas e watch lists do controle
+│   ├── win32.py           # Fullscreen, hwnd, titulo escuro (DWM)
+│   ├── browser.py         # Processo do navegador embutido
+│   ├── opener.py          # Deep-link / URL (com fallback externo)
+│   ├── paths.py           # Pastas, perfil, BROWSER_PROCS
+│   ├── config.py          # Config, settings.json, abas, modos
+│   ├── database.py        # SQLite (historico, stats)
+│   ├── focus.py           # Foco unificado mouse+teclado+controle
+│   ├── util.py            # Normalizacao (_norm)
+│   ├── update.py          # Release GitHub + changelog
+│   └── version.py         # APP_VERSION (5.5.0)
+├── tests/
+│   └── smoke.py           # Suite: py_compile + boot + render + modulos
+│                          # (rode: Python\python.exe tests\smoke.py)
 ├── start.bat              # Launcher
-├── settings.json          # Configuracoes salvas
-├── nexus.db               # Banco SQLite (criado automaticamente)
-├── streaming_images/      # Logos dos streamings
-│   ├── Netflix_logo.jpg
-│   ├── YouTube_logo.png
-│   └── ... (32 arquivos)
+├── settings.json          # Configuracoes salvas (local, nao vai p/ git)
+├── nexus.db               # Banco SQLite (local, nao vai p/ git)
+├── streaming_images/      # Capas locais do usuário (não vai p/ git)
+├── assets/icons/          # Identidade original Nexus (make_icons.py + 5 PNGs)
 └── README.md              # Este arquivo
 ```
+
+## Rodar em outro PC (sem configurar nada)
+
+1. Copie a pasta inteira para o outro PC (pendrive, rede, etc.).
+2. Duplo clique em `start.bat`.
+
+O launcher encontra o Python sozinho (qualquer instalacao 3.10+),
+instala o que faltar (Pillow obrigatorio; pywebview/pygame se der),
+limpa cache velho de outro Python e abre sem console. Na primeira vez
+precisa de internet para baixar as dependencias.
+
+- Sem pygame (ex.: Python 3.14 ainda sem wheel): o app abre normal,
+  so o controle fica indisponivel (mouse/teclado funcionam).
+- Para comecar do zero nessa maquina, apague `settings.json` e
+  `nexus.db` (sao recriados; nao vao para o git).
