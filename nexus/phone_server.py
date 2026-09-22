@@ -125,6 +125,24 @@ def new_pairing_code():
     return "%06d" % random.randint(0, 999999)
 
 
+def _services_payload(app):
+    """Lista de streamings p/ o app (usada no GET e no POST)."""
+    try:
+        svcs = app.get_all_services() or {}
+    except Exception:
+        svcs = {}
+    out = []
+    try:
+        for nm, inf in svcs.items():
+            inf = inf or {}
+            out.append({"name": nm,
+                        "icon": inf.get("icon", ""),
+                        "color": inf.get("color", "")})
+    except Exception:
+        pass
+    return out
+
+
 class PhoneServer:
     def __init__(self, app, port=PORT_DEFAULT):
         self.app = app
@@ -162,6 +180,10 @@ class PhoneServer:
             server = self
 
             class _Handler(BaseHTTPRequestHandler):
+                # HTTP/1.1 = conexao persistente (o touchpad manda ~30
+                # POSTs/s; recriar TCP a cada um gera lag).
+                protocol_version = "HTTP/1.1"
+
                 def log_message(self, *a):
                     pass
 
@@ -261,6 +283,29 @@ class PhoneServer:
                             prof = None
                         self._json(200, {"ok": True, "profile": prof or ""})
                         return
+                    if path == "/api/services":
+                        # O app pede via GET (?token=); aceita aqui tambem
+                        import urllib.parse as _up
+                        try:
+                            qs = _up.parse_qs(
+                                urlparse(self.path).query or "")
+                            tok = (qs.get("token", [""])[0] or "")
+                        except Exception:
+                            tok = ""
+                        ok = False
+                        try:
+                            for saved in list(server.tokens.keys()):
+                                if hmac.compare_digest(saved, tok):
+                                    ok = True
+                                    break
+                        except Exception:
+                            ok = False
+                        if not ok:
+                            self._json(403, {"ok": False})
+                            return
+                        self._json(200, {"ok": True,
+                                         "services": _services_payload(app)})
+                        return
                     self._json(404, {"ok": False})
 
                 def do_POST(self):
@@ -281,20 +326,8 @@ class PhoneServer:
                         self._json(403, {"ok": False})
                         return
                     if path == "/api/services":
-                        try:
-                            svcs = app.get_all_services() or {}
-                        except Exception:
-                            svcs = {}
-                        out = []
-                        try:
-                            for nm, inf in svcs.items():
-                                inf = inf or {}
-                                out.append({"name": nm,
-                                            "icon": inf.get("icon", ""),
-                                            "color": inf.get("color", "")})
-                        except Exception:
-                            pass
-                        self._json(200, {"ok": True, "services": out})
+                        self._json(200, {"ok": True,
+                                         "services": _services_payload(app)})
                         return
                     if path == "/api/input":
                         cmd = (data or {}).get("cmd", "")
@@ -334,6 +367,12 @@ class PhoneServer:
                     httpd.socket.settimeout(30)
             except Exception:
                 pass
+            try:  # Sem Nagle: pacotes pequenos do touchpad saem na hora
+                import socket as _sock
+                httpd.socket.setsockopt(_sock.IPPROTO_TCP,
+                                        _sock.TCP_NODELAY, 1)
+            except Exception:
+                pass
             self.httpd = httpd
             th = threading.Thread(target=httpd.serve_forever,
                                   kwargs={"poll_interval": 0.25},
@@ -347,7 +386,7 @@ class PhoneServer:
                 pass
             try:
                 app.phone_server = self
-                app.root.after(250, lambda: phone_poll(app))
+                app.root.after(50, lambda: phone_poll(app))
             except Exception:
                 pass
             return True, ""
@@ -452,8 +491,29 @@ class PhoneServer:
             return []
 
 
+def _phone_external_active(app):
+    """Site/app aberto em foco? (remoto do controle OU navegador owned,
+    que vale mesmo sem controle fisico). Se sim, setas do celular viram
+    teclas de verdade p/ o app em foco, em vez de navegar no Nexus."""
+    try:
+        gp = getattr(app, "gamepad", None)
+        if gp is not None and getattr(gp, "remote_active", False):
+            return True
+    except Exception:
+        pass
+    try:  # navegador owned aberto (monitorado por processo vivo)
+        from .app_remote import BROWSER_PROCS
+        if getattr(app, "browser_remote", None) is not None and any(
+                p.poll() is None for p in BROWSER_PROCS):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def phone_poll(app):
-    """Roda na thread do Tk: executa 1 lote da fila do celular."""
+    """Roda na thread do Tk: executa 1 lote da fila do celular.
+    50ms p/ o cursor nao arrastar (lote vazio custa quase nada)."""
     try:
         srv = getattr(app, "phone_server", None)
         if srv is None or not srv.running:
@@ -481,7 +541,7 @@ def phone_poll(app):
     except Exception:
         pass
     try:
-        app.root.after(250, lambda: phone_poll(app))
+        app.root.after(50, lambda: phone_poll(app))
     except Exception:
         pass
 
@@ -529,19 +589,36 @@ def exec_phone_action(app, cmd, args):
             return True
         if cmd == "nav":
             try:
-                app._nav(str(args.get("dir", "")))
+                if _phone_external_active(app):
+                    from .input import (tap_key, VK_UP, VK_DOWN,
+                                        VK_LEFT, VK_RIGHT)
+                    vk = {"up": VK_UP, "down": VK_DOWN,
+                          "left": VK_LEFT, "right": VK_RIGHT}.get(
+                              str(args.get("dir", "")))
+                    if vk:
+                        tap_key(vk)
+                else:
+                    app._nav(str(args.get("dir", "")))
             except Exception:
                 pass
             return True
         if cmd == "select":
             try:
-                app.select_current()
+                if _phone_external_active(app):
+                    from .input import tap_key, VK_RETURN
+                    tap_key(VK_RETURN)
+                else:
+                    app.select_current()
             except Exception:
                 pass
             return True
         if cmd == "back":
             try:
-                app.controller_back()
+                if _phone_external_active(app):
+                    from .input import tap_key, VK_ESCAPE
+                    tap_key(VK_ESCAPE)
+                else:
+                    app.controller_back()
             except Exception:
                 pass
             return True
@@ -607,6 +684,34 @@ def exec_phone_action(app, cmd, args):
             except Exception:
                 pass
             return True
+        if cmd == "pad":
+            # Botao logico do controle (south/east/west/north/lb/rb/l2/r2/
+            # back/start/l3/r3): mesmo despacho do gamepad fisico, com o
+            # remapeamento do usuario (menu ou app em foco).
+            try:
+                from .pad import LOGICAL_BUTTONS
+                logical = str(args.get("button", "")).strip().lower()
+                if logical not in LOGICAL_BUTTONS:
+                    return True
+                gp = getattr(app, "gamepad", None)
+                if gp is not None and getattr(gp, "remote_active", False):
+                    gp.do_remote_button(logical)
+                elif gp is not None:
+                    gp.press_menu_button(logical)
+                else:  # sem gamepad: basico do Nexus
+                    if logical == "south":
+                        app.select_current()
+                    elif logical == "east":
+                        app.controller_back()
+            except Exception:
+                pass
+            return True
+        if cmd == "exit_remote":
+            try:
+                app.exit_remote_mode()
+            except Exception:
+                pass
+            return True
         if cmd == "keyboard":
             try:
                 app.open_keyboard(None)
@@ -632,6 +737,16 @@ def qr_payload(app, code):
                 "port": app_phone_port(app), "code": code, "v": 1}
     except Exception:
         return {}
+
+
+def qr_url(app, code):
+    """URL direta p/ o QR: a camera nativa abre o Nexus Remote no
+    navegador (com o codigo), em vez de pesquisar o texto no Google."""
+    try:
+        return "http://%s:%s/?code=%s" % (chosen_ip(app),
+                                          app_phone_port(app), code)
+    except Exception:
+        return ""
 
 
 def app_phone_port(app):

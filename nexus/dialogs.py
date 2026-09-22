@@ -463,7 +463,7 @@ def _modal_alive(w):
 
 
 def top_modal(app):
-    """A janela modal mais nova ainda aberta (dialogo, menu, texto, teclado)."""
+    """A janela modal mais nova ainda aberta (dialogo, menu, texto, teclado, QR)."""
     cands = []
     try:
         d = app.open_dialog
@@ -475,6 +475,9 @@ def top_modal(app):
         k = getattr(app, "kb_window", None)
         if _modal_alive(k):
             cands.append(k)
+        q = getattr(app, "qr_window", None)
+        if _modal_alive(q):
+            cands.append(q)
     except Exception:
         pass
     if not cands:

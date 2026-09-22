@@ -67,6 +67,36 @@
     S.base = ip.replace(/:\d+$/, "") + ":" + port;
     return true;
   }
+  // ---------- teste de alcance (PC no cabo x celular no Wi-Fi) ----------
+  $("btnTest").addEventListener("click", function () {
+    if (!setBase($("inIp").value, $("inPort").value)) {
+      $("pairMsg").className = "msg";
+      $("pairMsg").textContent = "Preencha IP e porta primeiro.";
+      return;
+    }
+    save();
+    $("pairMsg").className = "msg";
+    $("pairMsg").textContent = "Testando...";
+    var xhr = new XMLHttpRequest();
+    try {
+      xhr.open("GET", S.base + "/", true);
+    } catch (e) {
+      $("pairMsg").textContent = "IP inválido.";
+      return;
+    }
+    xhr.timeout = 6000;
+    xhr.onload = function () {
+      $("pairMsg").className = "msg ok";
+      $("pairMsg").textContent = "PC alcançado! Agora é só parear.";
+    };
+    xhr.ontimeout = function () { failReach(); };
+    xhr.onerror = function () { failReach(); };
+    try { xhr.send(); } catch (e) { failReach(); }
+  });
+  function failReach() {
+    $("pairMsg").className = "msg";
+    $("pairMsg").textContent = "PC não responde. Confira: 1) mesmo roteador (cabo + Wi-Fi) 2) porta liberada no firewall 3) IP certo.";
+  }
   $("btnPair").addEventListener("click", function () {
     if (!setBase($("inIp").value, $("inPort").value)) {
       $("pairMsg").textContent = "Informe o IP.";
@@ -147,6 +177,23 @@
     var v = $("video");
     function ok(text) {
       stopCam();
+      // Formato novo: URL direta (http://IP:porta/?code=...).
+      var m = /^(https?:\/\/[^\/?#]+)(?:\/[^?#]*)?\?([^#]*)$/.exec(text || "");
+      if (m) {
+        try {
+          var host = m[1].replace(/^https?:\/\//, "");
+          var hn = host, pt = "";
+          var ci = host.lastIndexOf(":");
+          if (ci > 0) { hn = host.slice(0, ci); pt = host.slice(ci + 1); }
+          var q = m[2], cm = /(?:^|&)code=([^&]*)/.exec(q);
+          if (hn) $("inIp").value = hn;
+          if (pt) $("inPort").value = pt;
+          if (cm) $("inCode").value = decodeURIComponent(cm[1]);
+          $("camMsg").textContent = "QR lido! Aperte Parear.";
+          return;
+        } catch (e) {}
+      }
+      // Formato legado: JSON {"t":"nexus",...}.
       try {
         var o = JSON.parse(text);
         if (o && o.t === "nexus") {
@@ -218,28 +265,56 @@
       if (st === 403) { S.token = ""; save(); who(); }
     });
   }
-  var pad = $("pad"), lx = 0, ly = 0, pid = null, moved = false, t0 = 0;
-  function padPos(e) {
-    var r = pad.getBoundingClientRect(), t = e.touches[0];
-    return [t.clientX - (r.left + r.width / 2), t.clientY - (r.top + r.height / 2)];
+  // Touchpad relativo: deslize move (direcao do dedo), toque = clique.
+  // Segue UM dedo pelo identifier: outro dedo encostando no meio do
+  // gesto nao sequestra o cursor (causa do teleporte).
+  var pad = $("pad"), lastX = 0, lastY = 0, accX = 0, accY = 0,
+      pid = null, moved = false, t0 = 0, tracking = false, padId = null;
+  function trackedTouch(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].identifier === padId) return list[i];
+    }
+    return null;
+  }
+  function clamp(v) { return Math.max(-150, Math.min(150, v)); }
+  function flushPad() {
+    var dx = Math.round(clamp(accX) * 2.5), dy = Math.round(clamp(accY) * 2.5);
+    accX = 0; accY = 0;
+    if (Math.abs(dx) + Math.abs(dy) > 1) {
+      moved = true;
+      send("move", { dx: dx, dy: dy });
+    }
   }
   pad.addEventListener("touchstart", function (e) {
     e.preventDefault();
-    var p = padPos(e);
-    lx = p[0]; ly = p[1]; moved = false; t0 = Date.now();
+    if (tracking) return; // segundo dedo: ignora, nao rouba o gesto
+    var t = e.changedTouches[0];
+    padId = t.identifier;
+    lastX = t.clientX; lastY = t.clientY;
+    accX = 0; accY = 0;
+    moved = false; t0 = Date.now(); tracking = true;
     if (pid) clearInterval(pid);
-    pid = setInterval(function () {
-      var dx = lx, dy = ly;
-      lx = 0; ly = 0;
-      if (Math.abs(dx) + Math.abs(dy) > 4) {
-        moved = true;
-        send("move", { dx: Math.round(dx / 3), dy: Math.round(dy / 3) });
-      }
-    }, 40);
+    pid = setInterval(flushPad, 30);
+  }, { passive: false });
+  pad.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    if (!tracking) return;
+    var t = trackedTouch(e.changedTouches);
+    if (!t) return;
+    accX += t.clientX - lastX;
+    accY += t.clientY - lastY;
+    lastX = t.clientX; lastY = t.clientY;
   }, { passive: false });
   function padEnd(e) {
-    if (e) e.preventDefault();
+    if (e) {
+      e.preventDefault();
+      var t = trackedTouch(e.changedTouches);
+      if (e.type !== "touchcancel" && !t && tracking) return; // dedo alheio
+    }
+    tracking = false;
+    padId = null;
     if (pid) { clearInterval(pid); pid = null; }
+    flushPad();
     if (!moved && Date.now() - t0 < 300) send("click", { button: "left" });
   }
   pad.addEventListener("touchend", padEnd, { passive: false });
@@ -260,13 +335,12 @@
       var c = b.getAttribute("data-cmd");
       if (c === "tabprev") send("tab", { dir: "prev" });
       else if (c === "tabnext") send("tab", { dir: "next" });
-      else if (c === "voldn" || c === "volup") send("volume", {});
+      else if (c === "voldn") send("volstep", { dir: -1 });
+      else if (c === "volup") send("volstep", { dir: 1 });
       else if (cmap[c]) send(cmap[c], {});
     });
   });
-  // volume do aparelho: busca nivel atual? MVP: passos via master no PC.
-  // (botoes Vol enviam comando de volume do SO pelo Nexus: implementado
-  //  via teclas de mídia no PC)
+  // Vol-/Vol+ usam "volstep" (passos de 5% no volume master do PC).
   document.querySelectorAll('[data-cmd="voldn"],[data-cmd="volup"]').forEach(function () {});
   $("btnSendText").addEventListener("click", function () {
     var v = $("inText").value || "";
@@ -274,7 +348,33 @@
     send("text", { text: v });
     $("inText").value = "";
   });
+  // ---------- modo jogo: botoes logicos do controle ----------
+  document.querySelectorAll("[data-pad]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (!S.token) return;
+      api("/api/input", { token: S.token, cmd: "pad",
+        args: { button: b.getAttribute("data-pad") } }, function (st) {
+        if (st === 403) { S.token = ""; save(); who(); }
+      });
+    });
+  });
+  $("btnNexus").addEventListener("click", function () {
+    send("exit_remote", {});
+  });
   // mouse via clique longo? nao. teclado fisico do celular no campo acima.
+
+  // QR via camera nativa: ?code= na URL preenche e pula p/ o pareamento.
+  try {
+    var qm = /(?:^|[?&])code=([^&]*)/.exec(location.search || "");
+    if (qm && !$("inCode").value) {
+      $("inCode").value = decodeURIComponent(qm[1]);
+      var hn = location.hostname || "";
+      if (hn && !$("inIp").value) $("inIp").value = hn;
+      if (location.port && !$("inPort").value) $("inPort").value = location.port;
+      $("pairMsg").className = "msg ok";
+      $("pairMsg").textContent = "Veio do QR: confira o nome e aperte Parear.";
+    }
+  } catch (e) {}
 
   who();
   if (S.token) loadStreams();

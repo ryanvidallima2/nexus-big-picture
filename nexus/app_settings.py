@@ -259,6 +259,14 @@ class AppSettingsMixin:
         self.sidebar_date.config(text=now.strftime("%A, %d/%m/%Y"))
         self.sidebar.place(x=0, y=0, relheight=1)
         self.sidebar.lift()
+        # Recalcula scroll APOS mostrar (oculta, o bbox fica zerado)
+        try:
+            self.sidebar.update_idletasks()
+            self.sidebar_canvas.configure(
+                scrollregion=self.sidebar_canvas.bbox("all"))
+            self.sidebar_canvas.yview_moveto(0.0)
+        except Exception:
+            pass
         self.update_sidebar_focus()
 
     def close_sidebar(self):

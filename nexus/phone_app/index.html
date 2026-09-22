@@ -35,15 +35,15 @@
   #grid button { border: none; border-radius: 12px; padding: 18px 8px;
                  font-size: 15px; font-weight: bold; color: #fff;
                  cursor: pointer; }
-  #pad { background: #1a1a2e; border-radius: 12px; height: 220px;
+  #pad { background: #1a1a2e; border-radius: 12px; height: 320px;
          touch-action: none; display: flex; align-items: center;
          justify-content: center; color: #8888bb; margin-bottom: 12px;
          user-select: none; -webkit-user-select: none; }
   .row { display: flex; gap: 8px; }
   .row button { flex: 1; }
-  .dpad { display: grid; grid-template-columns: repeat(3, 64px);
-          justify-content: center; gap: 6px; margin: 12px 0; }
-  .dpad button { height: 56px; font-size: 20px; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 84px);
+          justify-content: center; gap: 8px; margin: 12px 0; }
+  .dpad button { height: 76px; font-size: 26px; }
   .msg { color: #ffd600; font-size: 14px; min-height: 20px; }
   .ok { color: #00c853; }
 </style>
@@ -64,7 +64,10 @@
       <input id="inPort" placeholder="Porta (48721)" inputmode="numeric" autocomplete="off">
       <input id="inCode" placeholder="Código de 6 dígitos" inputmode="numeric" autocomplete="off">
       <input id="inName" placeholder="Nome deste celular" autocomplete="off">
-      <button class="act" id="btnPair">Parear</button>
+      <div class="row">
+        <button class="act ghost" id="btnTest">🔍 Testar conexão</button>
+        <button class="act" id="btnPair">Parear</button>
+      </div>
       <div class="msg" id="pairMsg"></div>
       <button class="act danger" id="btnUnpair" style="display:none">Desparear</button>
     </div>
@@ -82,14 +85,6 @@
       <span></span><button class="act" data-nav="down">▼</button><span></span>
     </div>
     <div class="row">
-      <button class="act" data-cmd="select">A</button>
-      <button class="act" data-cmd="back">B</button>
-      <button class="act" data-cmd="cards">X</button>
-      <button class="act" data-cmd="sidebar">Y</button>
-    </div>
-    <div class="row">
-      <button class="act ghost" data-cmd="tabprev">LB</button>
-      <button class="act ghost" data-cmd="tabnext">RB</button>
       <button class="act ghost" data-cmd="voldn">Vol−</button>
       <button class="act ghost" data-cmd="volup">Vol+</button>
     </div>
@@ -100,11 +95,41 @@
     <input id="inText" placeholder="Digitar no PC..." autocomplete="off">
     <button class="act" id="btnSendText">Enviar texto</button>
   </section>
+  <section id="s-game" class="screen">
+    <div class="card">🎮 Modo jogo — botões diretos, sem mouse.
+      <div class="msg">No PC com app aberto, valem as mesmas ações do controle físico (respeita teu remapeamento).</div>
+    </div>
+    <div class="dpad">
+      <span></span><button class="act" data-nav="up">▲</button><span></span>
+      <button class="act" data-nav="left">◀</button><button class="act" data-nav="ok">●</button><button class="act" data-nav="right">▶</button>
+      <span></span><button class="act" data-nav="down">▼</button><span></span>
+    </div>
+    <div class="row">
+      <button class="act" data-pad="west">X</button>
+      <button class="act" data-pad="north">Y</button>
+      <button class="act" data-pad="east">B</button>
+      <button class="act" data-pad="south">A</button>
+    </div>
+    <div class="row">
+      <button class="act ghost" data-pad="lb">LB</button>
+      <button class="act ghost" data-pad="rb">RB</button>
+    </div>
+    <div class="row">
+      <button class="act ghost" data-pad="l2">LT</button>
+      <button class="act ghost" data-pad="r2">RT</button>
+    </div>
+    <div class="row">
+      <button class="act ghost" data-pad="back">Back</button>
+      <button class="act ghost" data-pad="start">Start</button>
+    </div>
+    <button class="act danger" id="btnNexus">🏠 Voltar ao Nexus</button>
+  </section>
 </main>
 <nav>
   <button data-s="s-pair" class="on">Parear</button>
   <button data-s="s-streams">Streams</button>
   <button data-s="s-ctl">Controle</button>
+  <button data-s="s-game">🎮 Jogo</button>
 </nav>
 <script src="app.js"></script>
 </body>

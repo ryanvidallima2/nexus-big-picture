@@ -51,11 +51,12 @@ class GamepadConfigWindow:
         win.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
 
         outer = tk.Canvas(win, bg=Config.BG_PRIMARY, highlightthickness=0, bd=0)
-        outer.pack(side="left", fill="both", expand=True)
         self.scroll_canvas = outer
         sb = tk_ttk.Scrollbar(win, orient="vertical", command=outer.yview,
                               style="Accent.Vertical.TScrollbar")
+        # Scrollbar PRIMEIRO: canvas com expand antes esmaga ela p/ 1px
         sb.pack(side="right", fill="y")
+        outer.pack(side="left", fill="both", expand=True)
         outer.configure(yscrollcommand=sb.set)
         self.body = tk.Frame(outer, bg=Config.BG_PRIMARY)
         outer.create_window((0, 0), window=self.body, anchor="nw", tags="inner")
@@ -593,6 +594,158 @@ class GamepadConfigWindow:
 
 
 # ===================== SOUND SETTINGS WINDOW =====================
+# ===================== QR WINDOW =====================
+class QrWindow:
+    """Janela do QR do celular: gerado sob demanda pelo botao
+    Gerar QR Code. Grande, com margem branca (escaneavel).
+    Mouse, teclado e controle: setas rolam, A/B/Esc fecha."""
+
+    def __init__(self, app):
+        import time as _time
+        self.app = app
+        self.closed = False
+        self.born = _time.time()
+        lang = app.lang
+
+        try:
+            from . import phone_server as _ps
+            import json as _json
+            srv = getattr(app, "phone_server", None)
+            if srv is None:
+                return
+            code = getattr(srv, "shown_code", "") or ""
+            if not code:
+                code = srv.new_code()
+            url = _ps.qr_url(app, code) or _json.dumps(
+                _ps.qr_payload(app, code), sort_keys=True)
+            photo = _ps.make_qr_photo(url, box=9)
+        except Exception:
+            code, photo = "", None
+
+        win = tk.Toplevel(app.root)
+        self.win = win
+        win.title(t("phone_qr_title", lang))
+        win.configure(bg=Config.BG_PRIMARY)
+        win.transient(app.root)
+        win.resizable(False, False)
+        w, h = 440, 620
+        _apply_dark_title(win, "qrwin")
+        _apply_dark_title_later(win, tag="qrwin")
+        win.update_idletasks()
+        try:
+            x = app.root.winfo_x() + (app.root.winfo_width() - w) // 2
+            y = app.root.winfo_y() + (app.root.winfo_height() - h) // 2
+        except Exception:
+            x, y = 200, 100
+        win.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
+
+        # Canvas + NOSSA barra (transparente) p/ telas baixas
+        outer = tk.Canvas(win, bg=Config.BG_PRIMARY, highlightthickness=0,
+                          bd=0)
+        self.scroll_canvas = outer
+        sb = tk_ttk.Scrollbar(win, orient="vertical", command=outer.yview,
+                              style="Transparent.Vertical.TScrollbar")
+        # Scrollbar PRIMEIRO: canvas com expand antes esmaga ela p/ 1px
+        sb.pack(side="right", fill="y")
+        outer.pack(side="left", fill="both", expand=True)
+        outer.configure(yscrollcommand=sb.set)
+        body = tk.Frame(outer, bg=Config.BG_PRIMARY)
+        outer.create_window((0, 0), window=body, anchor="nw", tags="inner")
+        body.bind("<Configure>", lambda e: outer.configure(
+            scrollregion=outer.bbox("all")))
+        outer.bind("<Configure>",
+                   lambda e: outer.itemconfig("inner", width=e.width))
+
+        tk.Label(body, text="\U0001F4F7 %s" % t("phone_qr_title", lang),
+                 font=("Segoe UI", 20, "bold"), fg=Config.ACCENT,
+                 bg=Config.BG_PRIMARY).pack(pady=(18, 2))
+        tk.Label(body, text="%s: %s" % (t("phone_code", lang), code),
+                 font=("Segoe UI", 14, "bold"), fg=Config.TEXT_PRIMARY,
+                 bg=Config.BG_PRIMARY).pack(pady=(0, 8))
+        if photo is not None:
+            self.qr_photo = photo
+            frame = tk.Frame(body, bg="white", bd=0, highlightthickness=0,
+                             padx=14, pady=14)
+            frame.pack(pady=(0, 8))
+            lbl = tk.Label(frame, image=photo, bg="white", bd=0,
+                           highlightthickness=0)
+            lbl.pack()
+            lbl.image = photo
+        else:
+            tk.Label(body, text="pip install qrcode",
+                     font=("Segoe UI", 13), fg=Config.TEXT_SECONDARY,
+                     bg=Config.BG_PRIMARY).pack(pady=(0, 8))
+        tk.Button(body, text=t("sidebar_close", lang),
+                  font=("Segoe UI", 13, "bold"),
+                  bg=Config.ACCENT, fg="white", relief="flat", bd=0,
+                  cursor="hand2", padx=36, pady=8,
+                  command=self.close).pack(pady=(4, 20))
+
+        win.bind("<Escape>", lambda e: self.close())
+        win.bind("<Up>", lambda e: self._scroll(-1))
+        win.bind("<Down>", lambda e: self._scroll(1))
+        win.bind("<Prior>", lambda e: self._scroll(-3))
+        win.bind("<Next>", lambda e: self._scroll(3))
+        win.protocol("WM_DELETE_WINDOW", self.close)
+        try:
+            app.qr_window = self
+        except Exception:
+            pass
+        try:
+            app._bind_wheel_tree(win, self._on_wheel)
+        except Exception:
+            pass
+        try:
+            win.update_idletasks()
+            outer.configure(scrollregion=outer.bbox("all"))
+            outer.yview_moveto(0.0)
+            outer.configure(takefocus=True)
+            outer.focus_set()
+        except Exception:
+            pass
+
+    def _scroll(self, units):
+        try:
+            self.scroll_canvas.yview_scroll(units, "units")
+        except Exception:
+            pass
+
+    def on_hat(self, hat):
+        if hat == (0, 1):
+            self._scroll(-1)
+        elif hat == (0, -1):
+            self._scroll(1)
+
+    def confirm(self):
+        self.close()
+
+    def _on_wheel(self, event):
+        try:
+            if event.delta > 0 and self.app._at_top(self.scroll_canvas):
+                return "break"
+            if event.delta < 0 and self.app._at_bottom(self.scroll_canvas):
+                return "break"
+            self.scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)),
+                                            "units")
+        except Exception:
+            pass
+        return "break"
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            if getattr(self.app, "qr_window", None) is self:
+                self.app.qr_window = None
+        except Exception:
+            pass
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
+
+
 # ===================== SIDE PANEL =====================
 class SidePanel:
     """Drawer direito generico das Configuracoes (Controles, Idioma,
@@ -640,6 +793,13 @@ class SidePanel:
         self.render()
         self.place()
         self.paint()
+        try:
+            self.scroll_canvas.update_idletasks()
+            self.scroll_canvas.configure(
+                scrollregion=self.scroll_canvas.bbox("all"))
+            self.scroll_canvas.yview_moveto(0.0)
+        except Exception:
+            pass
         try:
             self.after_open()
         except Exception:
@@ -707,8 +867,75 @@ class SidePanel:
                   command=self.close).pack(side="right", padx=12)
         tk.Frame(self.frame, bg=Config.BORDER, height=1).pack(
             fill="x", padx=16, pady=(4, 6))
-        self.body = tk.Frame(self.frame, bg=Config.BG_SIDEBAR)
-        self.body.pack(fill="both", expand=True)
+        # Corpo com rolagem: Canvas + NOSSA barra (transparente).
+        # Todo conteudo (button/section/slider) continua no self.body,
+        # agora interno ao canvas — nenhum render precisa mudar.
+        self.scroll_canvas = tk.Canvas(self.frame, bg=Config.BG_SIDEBAR,
+                                       highlightthickness=0, bd=0)
+        self.scrollbar = tk_ttk.Scrollbar(
+            self.frame, orient="vertical",
+            command=self.scroll_canvas.yview,
+            style="Transparent.Vertical.TScrollbar")
+        # Scrollbar PRIMEIRO: canvas com expand antes esmaga ela p/ 1px
+        self.scrollbar.pack(side="right", fill="y")
+        self.scroll_canvas.pack(side="left", fill="both", expand=True)
+        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.body = tk.Frame(self.scroll_canvas, bg=Config.BG_SIDEBAR)
+        self.scroll_canvas.create_window((0, 0), window=self.body,
+                                         anchor="nw", tags="panel_inner")
+        self.body.bind(
+            "<Configure>",
+            lambda e: self.scroll_canvas.configure(
+                scrollregion=self.scroll_canvas.bbox("all")))
+        self.scroll_canvas.bind(
+            "<Configure>",
+            lambda e: self.scroll_canvas.itemconfig("panel_inner",
+                                                    width=e.width))
+        try:
+            self.app._bind_wheel_tree(self.frame, self._on_wheel)
+        except Exception:
+            pass
+        try:
+            self.scroll_canvas.configure(takefocus=True)
+        except Exception:
+            pass
+
+    def _on_wheel(self, event):
+        try:
+            if event.delta > 0 and self.app._at_top(self.scroll_canvas):
+                return "break"
+            if event.delta < 0 and self.app._at_bottom(self.scroll_canvas):
+                return "break"
+            self.scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)),
+                                            "units")
+        except Exception:
+            pass
+        return "break"
+
+    def _ensure_focus_visible(self):
+        try:
+            if not self.focusables:
+                return
+            item = self.focusables[self.focus % len(self.focusables)]
+            widget = item.get("widget", item.get("scale"))
+            if widget is None:
+                return
+            self.scroll_canvas.update_idletasks()
+            widget.update_idletasks()
+            ch = self.scroll_canvas.winfo_height()
+            total = self.body.winfo_height()
+            if total <= 0 or ch <= 0 or total <= ch:
+                return
+            wy = widget.winfo_rooty() - self.scroll_canvas.winfo_rooty()
+            wh = widget.winfo_height()
+            first, _ = self.scroll_canvas.yview()
+            if wy < 0:
+                self.scroll_canvas.yview_moveto(max(0.0, first + wy / total))
+            elif wy + wh > ch:
+                self.scroll_canvas.yview_moveto(
+                    min(1.0, first + (wy + wh - ch) / total))
+        except Exception:
+            pass
 
     def place(self):
         try:
@@ -833,6 +1060,7 @@ class SidePanel:
         if new != self.focus:
             self.focus = new
             self.paint()
+            self._ensure_focus_visible()
             try:
                 self.app.play_tick()
             except Exception:
@@ -1147,16 +1375,35 @@ class PerfilPanel(SidePanel):
         except Exception:
             on = False
         info = t("phone_on", lang) if on else t("phone_off", lang)
+        url = ""
         if on:
             try:
                 info += "  %s:%s" % (_ps.chosen_ip(app),
                                      _ps.app_phone_port(app))
+                url = "http://%s:%s/" % (_ps.chosen_ip(app),
+                                         _ps.app_phone_port(app))
             except Exception:
                 pass
         tk.Label(self.body, text=info, font=("Segoe UI", 12),
                  fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
                  anchor="w", justify="left",
                  wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=2)
+        if on and url:
+            tk.Label(self.body, text=t("phone_url", lang) % url,
+                     font=("Segoe UI", 11),
+                     fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
+                     anchor="w", justify="left",
+                     wraplength=self.WIDTH - 40).pack(fill="x", padx=16,
+                                                      pady=2)
+            try:
+                fw = t("phone_firewall", lang) % _ps.app_phone_port(app)
+            except Exception:
+                fw = t("phone_firewall", lang)
+            tk.Label(self.body, text=fw, font=("Segoe UI", 11),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                     anchor="w", justify="left",
+                     wraplength=self.WIDTH - 40).pack(fill="x", padx=16,
+                                                      pady=2)
         if on:
             try:
                 ips = _ps.lan_ips()
@@ -1180,7 +1427,8 @@ class PerfilPanel(SidePanel):
                         pass
             self.button(t("phone_stop", lang), lambda: self._srv_stop())
             self.button(t("phone_newcode", lang), lambda: self._srv_code())
-            self._render_qr()
+            self.button("\U0001F4F7  " + t("phone_qr", lang),
+                        self._open_qr_window)
             try:
                 devs = srv.paired_devices()
             except Exception:
@@ -1263,28 +1511,27 @@ class PerfilPanel(SidePanel):
         except Exception:
             pass
 
-    def _render_qr(self):
+    def _open_qr_window(self):
         try:
-            from . import phone_server as _ps
-            srv = getattr(self.app, "phone_server", None)
-            if srv is None:
+            old = getattr(self.app, "qr_window", None)
+            if old is not None and not getattr(old, "closed", True):
+                try:
+                    old.win.lift()
+                except Exception:
+                    pass
                 return
-            code = getattr(srv, "shown_code", "") or ""
-            if not code:
-                code = srv.new_code()
-            payload = _ps.qr_payload(self.app, code)
-            import json as _json
-            photo = _ps.make_qr_photo(_json.dumps(payload, sort_keys=True),
-                                      box=5)
-            lang = self.app.lang
-            tk.Label(self.body, text="%s: %s" % (t("phone_code", lang), code),
-                     font=("Segoe UI", 14, "bold"), fg=Config.TEXT_PRIMARY,
-                     bg=Config.BG_SIDEBAR, anchor="w").pack(
-                         fill="x", padx=16, pady=(6, 2))
-            if photo is not None:
-                self.qr_photo = photo
-                tk.Label(self.body, image=photo, bg=Config.BG_SIDEBAR).pack(
-                    padx=16, pady=2)
+        except Exception:
+            pass
+        try:
+            QrWindow(self.app)
+        except Exception:
+            pass
+
+    def _render_qr(self):
+        # Legado: o QR agora abre sob demanda na QrWindow (botao Gerar
+        # QR Code). Mantido p/ compatibilidade — delega p/ a janela.
+        try:
+            self._open_qr_window()
         except Exception:
             pass
 

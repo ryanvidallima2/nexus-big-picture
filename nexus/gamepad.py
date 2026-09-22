@@ -19,6 +19,7 @@ from .input import (
     mouse_move, mouse_wheel, remote_button_allowed, stick_response, tap_key,
 )
 from .keyboard import NexusKeyboard
+from .panels import QrWindow
 from .pad import (
     REMOTE_WATCH, XBOX_RAW, PAD_LAYOUT_LABEL, detect_pad_layout,
     parse_sdl_mapping, DEFAULT_PAD_SENSITIVITY, DEFAULT_PAD_SCROLL,
@@ -456,6 +457,8 @@ class GamepadManager:
             top.on_hat(ndir)
         elif isinstance(top, NexusKeyboard):
             top.on_hat(ndir)
+        elif isinstance(top, QrWindow):
+            top.on_hat(ndir)
         elif isinstance(top, NexusTextDialog):
             pass
         else:
@@ -558,6 +561,8 @@ class GamepadManager:
                         top.on_hat(hat)
                     elif isinstance(top, NexusKeyboard):
                         top.on_hat(hat)
+                    elif isinstance(top, QrWindow):
+                        top.on_hat(hat)
                     elif isinstance(top, NexusTextDialog):
                         pass
                     else:
@@ -607,56 +612,67 @@ class GamepadManager:
                 except Exception:
                     pass
                 logical = self.logical_for_raw(btn_id)
-                is_confirm = (logical == "south")
-                is_cancel = (logical == "east")
-                top = top_modal(self.app)
-                if isinstance(top, (NexusMenuWindow, NexusTextDialog)):
-                    if is_confirm:
-                        top.confirm()
-                    elif is_cancel:
-                        top.close()
-                elif isinstance(top, NexusKeyboard):
-                    if is_confirm:
-                        top.press_focused()
-                    elif is_cancel:
-                        top.close()
-                elif self.app.pad_capture is not None:
-                    if is_cancel:
-                        self.app.cancel_pad_capture()
-                    else:
-                        self.app.finish_pad_capture(logical)
-                elif getattr(self.app, "theme_visible", False):
-                    self.app.theme_press(logical)
-                elif (getattr(self.app, "sidepanel", None) is not None
-                        and self.app.sidepanel.visible
-                        and self.app.nav_level != "form"):
-                    self.app.sidepanel.press(logical)
-                else:
-                    pw = self.app.pad_window
-                    if _modal_alive(pw):
-                        if is_confirm:
-                            pw.activate_focused()
-                        elif is_cancel:
-                            pw.close()
-                    else:
-                        action = self.app.nexus_action_for(logical)
-                        if action == "select":
-                            self.app.select_current()
-                        elif action == "back":
-                            self.app.controller_back()
-                        elif action == "cards":
-                            self.app.go_to_cards()
-                        elif action == "sidebar":
-                            self.app.toggle_sidebar()
-                        elif action == "notif":
-                            self.app.toggle_notif_panel()
-                        elif action == "tab_prev":
-                            self.app.tab_prev()
-                        elif action == "tab_next":
-                            self.app.tab_next()
+                self.press_menu_button(logical)
         except:
             pass
         self.app.root.after(16, self.poll)
+
+    def press_menu_button(self, logical):
+        """Despacho de 1 botao logico nos menus do Nexus (mesmo do
+        controle fisico; o celular em modo jogo usa este metodo)."""
+        try:
+            is_confirm = (logical == "south")
+            is_cancel = (logical == "east")
+            top = top_modal(self.app)
+            if isinstance(top, (NexusMenuWindow, NexusTextDialog)):
+                if is_confirm:
+                    top.confirm()
+                elif is_cancel:
+                    top.close()
+            elif isinstance(top, QrWindow):
+                if is_confirm or is_cancel:
+                    top.close()
+            elif isinstance(top, NexusKeyboard):
+                if is_confirm:
+                    top.press_focused()
+                elif is_cancel:
+                    top.close()
+            elif self.app.pad_capture is not None:
+                if is_cancel:
+                    self.app.cancel_pad_capture()
+                else:
+                    self.app.finish_pad_capture(logical)
+            elif getattr(self.app, "theme_visible", False):
+                self.app.theme_press(logical)
+            elif (getattr(self.app, "sidepanel", None) is not None
+                    and self.app.sidepanel.visible
+                    and self.app.nav_level != "form"):
+                self.app.sidepanel.press(logical)
+            else:
+                pw = self.app.pad_window
+                if _modal_alive(pw):
+                    if is_confirm:
+                        pw.activate_focused()
+                    elif is_cancel:
+                        pw.close()
+                else:
+                    action = self.app.nexus_action_for(logical)
+                    if action == "select":
+                        self.app.select_current()
+                    elif action == "back":
+                        self.app.controller_back()
+                    elif action == "cards":
+                        self.app.go_to_cards()
+                    elif action == "sidebar":
+                        self.app.toggle_sidebar()
+                    elif action == "notif":
+                        self.app.toggle_notif_panel()
+                    elif action == "tab_prev":
+                        self.app.tab_prev()
+                    elif action == "tab_next":
+                        self.app.tab_next()
+        except Exception:
+            pass
 
     def _poll_remote(self):
         """Controle vira controle remoto do app em foco (teclado/mouse virtual)."""
@@ -767,131 +783,145 @@ class GamepadManager:
                 except Exception:
                     pass
                 logical = self.logical_for_raw(btn_id)
-                kb = self.app.kb_window
-                if _modal_alive(kb) and logical in ("south", "east", "start"):
-                    # Teclado aberto sobre o app: A digita, B fecha,
-                    # Start confirma o texto (fecha + Enter). Continue:
-                    # o botao ja foi tratado; sem isso o codigo abaixo
-                    # usaria `top` de outra iteracao (ou NameError).
-                    if logical == "south":
-                        kb.press_focused()
-                    elif logical == "east":
-                        kb.close()
-                    else:
-                        try:
-                            kb.submit()
-                        except Exception:
-                            try:
-                                kb.close()
-                            except Exception:
-                                pass
-                    continue
-                try:
-                    ov = getattr(self.app, "remote_overlay", None)
-                    ov_open = (ov is not None and not ov.closed
-                               and ov.win.winfo_exists())
-                except Exception:
-                    ov, ov_open = None, False
-                if ov_open:
-                    # Overlay aberto: A confirma, B fecha, resto some.
-                    if logical == "south":
-                        ov.press("south")
-                    elif logical == "east":
-                        ov.close()
-                    continue
-                if logical == "start":
-                    # Start sozinho no remoto: abre/fecha o overlay.
-                    try:
-                        self.app.toggle_remote_overlay()
-                    except Exception:
-                        pass
-                    continue
-                top = top_modal(self.app)
-                if isinstance(top, NexusKeyboard):
-                    if logical == "south":
-                        top.press_focused()
-                    elif logical == "east":
-                        top.close()
-                    elif logical == "start":
-                        try:
-                            top.submit()
-                        except Exception:
-                            pass
-                elif self.app.pad_capture is not None:
-                    if logical == "east":
-                        self.app.cancel_pad_capture()
-                    else:
-                        self.app.finish_pad_capture(logical)
-                else:
-                    action = self.app.remote_action_for(logical)
-                    if action == "click_left":
-                        try:
-                            _pos = self._debug_cursor_pos()
-                        except Exception:
-                            _pos = None
-                        try:
-                            _dev = ""
-                            _js = getattr(self, "joystick", None)
-                            if _js is not None:
-                                _dev = _js.get_name()
-                        except Exception:
-                            _dev = ""
-                        try:
-                            _bnav = bool(self.app.browser_nav_active())
-                        except Exception:
-                            _bnav = None
-                        try:
-                            _debug_log("A remoto: click_left bnav=%r pos=%r dev=%r" % (
-                                _bnav, _pos, _dev))
-                        except Exception:
-                            pass
-                        if self.app.browser_nav_active():
-                            tap_key(VK_RETURN)  # modo console: A abre o quadro
-                            # Site: selecionou campo de busca? Abre o teclado
-                            # ja no 1o confirmar (sem precisar de 2 cliques).
-                            self._maybe_open_kb_for_focus()
-                        else:
-                            mouse_click(right=False)
-                            self._maybe_open_kb_for_focus()
-                    elif action == "keyboard":
-                        self._open_kb_global()
-                    elif action == "click_right":
-                        mouse_click(right=True)
-                    elif action == "enter":
-                        tap_key(VK_RETURN)
-                        # Enter que foca um campo (busca/login) abre o teclado.
-                        self._maybe_open_kb_for_focus()
-                    elif action == "back":
-                        tap_key(VK_ESCAPE)
-                    elif action == "space":
-                        tap_key(VK_SPACE)
-                    elif action == "fullscreen":
-                        try:
-                            _allowed = remote_button_allowed("fullscreen")
-                        except Exception:
-                            _allowed = True
-                        try:
-                            _debug_log("Y remoto: guard(fullscreen) -> %r"
-                                       % (_allowed,))
-                        except Exception:
-                            pass
-                        if _allowed:
-                            tap_key(VK_F)
-                    elif action == "vol_down":
-                        tap_key(VK_VOL_DOWN)
-                    elif action == "vol_up":
-                        tap_key(VK_VOL_UP)
-                    elif action == "play_pause":
-                        tap_key(VK_MEDIA_PLAY_PAUSE)
-                    elif action == "next_track":
-                        tap_key(VK_MEDIA_NEXT)
-                    elif action == "prev_track":
-                        tap_key(VK_MEDIA_PREV)
-                    elif action == "app_tab_prev":
-                        self.app.remote_tab(prev=True)
-                    elif action == "app_tab_next":
-                        self.app.remote_tab(prev=False)
+                self.do_remote_button(logical)
             self._remote_watch_tick()
+        except Exception:
+            pass
+
+    def do_remote_button(self, logical):
+        """Despacho de 1 botao logico no app em foco (mesmo do controle
+        fisico; o celular em modo jogo usa este metodo)."""
+        try:
+            kb = self.app.kb_window
+            if _modal_alive(kb) and logical in ("south", "east", "start"):
+                # Teclado aberto sobre o app: A digita, B fecha,
+                # Start confirma o texto (fecha + Enter).
+                if logical == "south":
+                    kb.press_focused()
+                elif logical == "east":
+                    kb.close()
+                else:
+                    try:
+                        kb.submit()
+                    except Exception:
+                        try:
+                            kb.close()
+                        except Exception:
+                            pass
+                return
+            try:
+                ov = getattr(self.app, "remote_overlay", None)
+                ov_open = (ov is not None and not ov.closed
+                           and ov.win.winfo_exists())
+            except Exception:
+                ov, ov_open = None, False
+            if ov_open:
+                # Overlay aberto: A confirma, B fecha, resto some.
+                if logical == "south":
+                    ov.press("south")
+                elif logical == "east":
+                    ov.close()
+                return
+            if logical == "start":
+                # Start sozinho no remoto: abre/fecha o overlay.
+                try:
+                    self.app.toggle_remote_overlay()
+                except Exception:
+                    pass
+                return
+            top = top_modal(self.app)
+            if isinstance(top, NexusKeyboard):
+                if logical == "south":
+                    top.press_focused()
+                elif logical == "east":
+                    top.close()
+                elif logical == "start":
+                    top.submit()
+                return
+            if isinstance(top, (NexusMenuWindow, NexusTextDialog)):
+                if logical == "south":
+                    top.confirm()
+                elif logical == "east":
+                    top.close()
+                return
+            if isinstance(top, QrWindow):
+                if logical in ("south", "east"):
+                    top.close()
+                return
+            if self.app.pad_capture is not None:
+                if logical == "east":
+                    self.app.cancel_pad_capture()
+                else:
+                    self.app.finish_pad_capture(logical)
+                return
+            action = self.app.remote_action_for(logical)
+            if action == "click_left":
+                try:
+                    _pos = self._debug_cursor_pos()
+                except Exception:
+                    _pos = None
+                try:
+                    _dev = ""
+                    _js = getattr(self, "joystick", None)
+                    if _js is not None:
+                        _dev = _js.get_name()
+                except Exception:
+                    _dev = ""
+                try:
+                    _bnav = bool(self.app.browser_nav_active())
+                except Exception:
+                    _bnav = None
+                try:
+                    _debug_log("A remoto: click_left bnav=%r pos=%r dev=%r" % (
+                        _bnav, _pos, _dev))
+                except Exception:
+                    pass
+                if self.app.browser_nav_active():
+                    tap_key(VK_RETURN)  # modo console: A abre o quadro
+                    # Site: selecionou campo de busca? Abre o teclado
+                    # ja no 1o confirmar (sem precisar de 2 cliques).
+                    self._maybe_open_kb_for_focus()
+                else:
+                    mouse_click(right=False)
+                    self._maybe_open_kb_for_focus()
+            elif action == "keyboard":
+                self._open_kb_global()
+            elif action == "click_right":
+                mouse_click(right=True)
+            elif action == "enter":
+                tap_key(VK_RETURN)
+                # Enter que foca um campo (busca/login) abre o teclado.
+                self._maybe_open_kb_for_focus()
+            elif action == "back":
+                tap_key(VK_ESCAPE)
+            elif action == "space":
+                tap_key(VK_SPACE)
+            elif action == "fullscreen":
+                try:
+                    _allowed = remote_button_allowed("fullscreen")
+                except Exception:
+                    _allowed = True
+                try:
+                    _debug_log("Y remoto: guard(fullscreen) -> %r"
+                               % (_allowed,))
+                except Exception:
+                    pass
+                if _allowed:
+                    tap_key(VK_F)
+            elif action == "vol_down":
+                tap_key(VK_VOL_DOWN)
+            elif action == "vol_up":
+                tap_key(VK_VOL_UP)
+            elif action == "play_pause":
+                tap_key(VK_MEDIA_PLAY_PAUSE)
+            elif action == "next_track":
+                tap_key(VK_MEDIA_NEXT)
+            elif action == "prev_track":
+                tap_key(VK_MEDIA_PREV)
+            elif action == "app_tab_prev":
+                self.app.remote_tab(prev=True)
+            elif action == "app_tab_next":
+                self.app.remote_tab(prev=False)
         except Exception:
             pass
 

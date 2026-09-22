@@ -77,6 +77,7 @@ class AppShellMixin:
         self.pad_capture = None
         self.pad_window = None
         self.kb_window = None
+        self.qr_window = None
         self.remote_overlay = None
         self.profile = None
         self.phone_server = None
@@ -153,6 +154,18 @@ class AppShellMixin:
                         borderwidth=0)
         style.map("Accent.Vertical.TScrollbar",
                   background=[("active", Config.ACCENT_GLOW)])
+        # Sidebar/painel: barra transparente (some no fundo, acende no hover)
+        style.configure("Transparent.Vertical.TScrollbar",
+                        background=Config.BG_SIDEBAR,
+                        troughcolor=Config.BG_SIDEBAR,
+                        arrowcolor=Config.BG_SIDEBAR,
+                        bordercolor=Config.BG_SIDEBAR,
+                        lightcolor=Config.BG_SIDEBAR,
+                        darkcolor=Config.BG_SIDEBAR,
+                        relief="flat",
+                        borderwidth=0)
+        style.map("Transparent.Vertical.TScrollbar",
+                  background=[("active", Config.ACCENT)])
 
     def load_photo(self, filepath, size=Config.LOGO_SIZE):
         if not filepath or not os.path.exists(filepath):
@@ -431,13 +444,14 @@ class AppShellMixin:
 
         self.canvas = tk.Canvas(self.content_frame, bg=Config.BG_PRIMARY,
                                 highlightthickness=0, bd=0)
-        self.canvas.pack(side="left", fill="both", expand=True)
 
         self._style_scrollbars()
         self.scrollbar = tk_ttk.Scrollbar(self.content_frame, orient="vertical",
                                           command=self.canvas.yview,
                                           style="Accent.Vertical.TScrollbar")
+        # Scrollbar PRIMEIRO: canvas com expand antes esmaga ela p/ 1px
         self.scrollbar.pack(side="right", fill="y", padx=(0, 2))
+        self.canvas.pack(side="left", fill="both", expand=True)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
         self.scroll_frame = tk.Frame(self.canvas, bg=Config.BG_PRIMARY)
@@ -490,18 +504,22 @@ class AppShellMixin:
 
         self.sidebar_scrollbar = tk_ttk.Scrollbar(self.sidebar, orient="vertical",
                                                   command=self.sidebar_canvas.yview,
-                                                  style="Accent.Vertical.TScrollbar")
+                                                  style="Transparent.Vertical.TScrollbar")
         self.sidebar_scroll_frame = tk.Frame(self.sidebar_canvas, bg=Config.BG_SIDEBAR)
 
         self.sidebar_scroll_frame.bind(
             "<Configure>", lambda e: self.sidebar_canvas.configure(
                 scrollregion=self.sidebar_canvas.bbox("all")))
         self.sidebar_canvas.create_window((0, 0), window=self.sidebar_scroll_frame,
-                                          anchor="nw")
+                                          anchor="nw", tags="sidebar_inner")
         self.sidebar_canvas.configure(yscrollcommand=self.sidebar_scrollbar.set)
+        self.sidebar_canvas.bind(
+            "<Configure>",
+            lambda e: self.sidebar_canvas.itemconfig("sidebar_inner", width=e.width))
 
-        self.sidebar_canvas.pack(side="left", fill="both", expand=True)
+        # Scrollbar PRIMEIRO: canvas com expand antes esmaga ela p/ 1px
         self.sidebar_scrollbar.pack(side="right", fill="y", padx=(0, 2))
+        self.sidebar_canvas.pack(side="left", fill="both", expand=True)
 
         self.sidebar_btns = []
         self.sidebar_items = []
@@ -511,14 +529,13 @@ class AppShellMixin:
                  bg=Config.BG_SIDEBAR, anchor="w").pack(pady=(0, 8), padx=25, fill="x")
 
         settings_items = [
+            (t("settings_profile", self.lang), self.open_perfil, "\U0001F464"),
             (t("settings_theme", self.lang), self.open_theme_picker, "\U0001F3A8"),
             (t("settings_controls", self.lang), self.open_controles, "\U0001F3AE"),
             (t("settings_sound", self.lang), self.open_som, "\U0001F50A"),
             (t("settings_language", self.lang), self.open_idioma, "\U0001F310"),
             (t("sidebar_add", self.lang), self.open_adicionar, "\U0001F4FA"),
             (t("settings_system", self.lang), self.open_sistema, "\u2699"),
-            (t("settings_profile", self.lang), self.open_perfil, "\U0001F464"),
-            (t("settings_profile", self.lang), self.open_perfil, "\U0001F464"),
             (t("settings_guide", self.lang), self.open_guia, "\U0001F4D6"),
         ]
 
