@@ -15,7 +15,7 @@ from .gamepad import GamepadManager
 from .games import GAME_COVER_SIZE, find_game_cover
 from .i18n import t
 from .opener import StreamingOpener
-from .paths import BASE_DIR, IMAGES_DIR
+from .paths import BASE_DIR, IMAGES_DIR, category_icon_path
 from .streamings import STREAMINGS_DB
 from .win32 import _apply_dark_title
 
@@ -245,6 +245,18 @@ class AppShellMixin:
                     except Exception:
                         pass
                     return self.load_photo(p)
+        # Fase 2: sem imagem do usuario, usa icone ORIGINAL Nexus da
+        # categoria (nunca logo de terceiro). Emoji vira ultimo recurso.
+        try:
+            if big:
+                category = "Games"
+            else:
+                category = self.get_all_services().get(name, {}).get("category", "")
+            icon_path = category_icon_path(category)
+            if icon_path:
+                return self.load_photo(icon_path, size=cover_size)
+        except Exception:
+            pass
         return None
 
     def get_all_services(self):

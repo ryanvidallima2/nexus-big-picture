@@ -15,6 +15,31 @@ SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 IMAGES_DIR = os.path.join(BASE_DIR, "streaming_images")
 GAMES_DIR = os.path.join(BASE_DIR, "games")
 DATABASE_FILE = os.path.join(BASE_DIR, "nexus.db")
+# Identidade visual propria (Fase 2): icones originais por categoria,
+# rastreados no git e embarcados no distribuivel (fallback de get_logo).
+ICONS_DIR = os.path.join(BASE_DIR, "assets", "icons")
+CATEGORY_ICONS = {
+    "Filmes": "cat_filmes.png",
+    "Musica": "cat_musica.png",
+    "Videos": "cat_videos.png",
+    "Games": "cat_games.png",
+}
+DEFAULT_ICON = "nexus_default.png"
+
+
+def category_icon_path(category):
+    """PNG original Nexus p/ a categoria (ou o neutro). '' se ausente."""
+    try:
+        filename = CATEGORY_ICONS.get(category, DEFAULT_ICON)
+        p = os.path.join(ICONS_DIR, filename)
+        if os.path.isfile(p):
+            return p
+        fallback = os.path.join(ICONS_DIR, DEFAULT_ICON)
+        if os.path.isfile(fallback):
+            return fallback
+    except Exception:
+        pass
+    return ""
 NEXUS_BROWSER_FILE = os.path.join(BASE_DIR, "nexus_browser.py")
 NEXUS_BROWSER_EXE = os.path.join(BASE_DIR, "nexus_browser.exe")
 

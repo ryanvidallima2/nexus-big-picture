@@ -98,6 +98,8 @@ GUIDE_CATS = [
             "Lá atrás moram Site, App e Config.\n"
             "No Config dá para favoritar (⭐), pintar o card da sua cor, "
             "trocar o link e a logo, ou excluir sem dó nem piedade.\n"
+            "Trocar logo usa só imagem do seu computador "
+            "(sem busca automática por nome de serviço).\n"
             "A borda neon mostra a cor do card — card bonito, sofá feliz.\n"
             "B ou ← desvira. Botão direito abre o menu rapidinho."
         ),
@@ -106,6 +108,8 @@ GUIDE_CATS = [
             "Back there live Site, App and Config.\n"
             "In Config you can favorite (⭐), paint the card your color, "
             "change the link and logo, or delete with no mercy.\n"
+            "Change logo only uses an image from your own computer "
+            "(no automatic search by service name).\n"
             "The neon border shows the card color — pretty card, happy couch.\n"
             "B or ← unflips. Right click opens the quick menu."
         ),
@@ -179,6 +183,28 @@ GUIDE_CATS = [
             "Menu > System: screen resolution, clear logins and cache, "
             "rescue ignored games and hunt for updates.\n"
             "F11: fullscreen. N: opens notifications. B: almost always back."
+        ),
+    },
+    {
+        "key": "legal",
+        "icon": "⚖",
+        "title_pt": "Sobre / Aviso legal",
+        "title_en": "About / Legal notice",
+        "body_pt": (
+            "Nexus não é afiliado a nenhum serviço de streaming mencionado. "
+            "Todas as marcas e nomes citados pertencem aos seus respectivos donos.\n"
+            "Os ícones padrão do app são genéricos (cor + iniciais/emoji) — "
+            "sem logo oficial de terceiros.\n"
+            "Trocar logo e Adicionar usam só imagem do seu computador; "
+            "o Nexus nunca busca logo automática por nome de serviço."
+        ),
+        "body_en": (
+            "Nexus is not affiliated with any streaming service mentioned. "
+            "All brands and names belong to their respective owners.\n"
+            "The app's default icons are generic (color + initials/emoji) — "
+            "no third-party official logos.\n"
+            "Change logo and Add only use an image from your own computer; "
+            "Nexus never auto-fetches a logo by service name."
         ),
     },
 ]

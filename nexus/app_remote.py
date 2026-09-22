@@ -12,6 +12,7 @@ from .config import Config, save_settings
 from .dialogs import _modal_alive
 from .i18n import t
 from .input import VK_F7, VK_F8, ctrl_tab, tap_key
+from .license import has_pro
 from .pad import (
     BROWSER_WATCH, DEFAULT_NEXUS_MAP, DEFAULT_REMOTE_MAP, LOGICAL_BUTTONS,
     REMOTE_WATCH, DEFAULT_PAD_SENSITIVITY, DEFAULT_PAD_SCROLL,
@@ -166,6 +167,15 @@ class AppRemoteMixin:
         """Salva o mapeamento atual no slot 2 ou 3 (o 1 e sempre o padrao)."""
         if slot not in (2, 3):
             return False
+        # Gate: slots extras sao Pro (gratis = slot 1).
+        if not has_pro(self):
+            offer = getattr(self, "pro_required", None)
+            if callable(offer):
+                try:
+                    offer()
+                except Exception:
+                    pass
+            return False
         try:
             if self.pad_capture is not None:
                 self.cancel_pad_capture()
@@ -197,6 +207,15 @@ class AppRemoteMixin:
 
     def load_pad_profile(self, slot):
         """Slot 1 = padrao de fabrica; 2/3 = salvos (vazio = padrao)."""
+        # Gate: carregar slot extra e Pro (gratis = slot 1).
+        if slot != 1 and not has_pro(self):
+            offer = getattr(self, "pro_required", None)
+            if callable(offer):
+                try:
+                    offer()
+                except Exception:
+                    pass
+            return False
         try:
             if self.pad_capture is not None:
                 self.cancel_pad_capture()

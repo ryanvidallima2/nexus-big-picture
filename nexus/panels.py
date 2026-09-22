@@ -1239,6 +1239,26 @@ class SistemaPanel(SidePanel):
                     lambda: app.restore_ignored_platform())
         self.button("\u2193  " + t("update_check", lang),
                     lambda: app.check_updates_manual())
+        # Gate Pro: ativar licença (ou status, se já é Pro).
+        try:
+            _is_pro = getattr(app, "is_pro", None)
+            _pro = bool(_is_pro()) if callable(_is_pro) else False
+        except Exception:
+            _pro = False
+        if _pro:
+            self.button("✓  " + t("pro_active", lang),
+                        lambda: app.show_pro_offer())
+        else:
+            self.button("◆  " + t("pro_activate", lang),
+                        lambda: self._pro_activate())
+
+    def _pro_activate(self):
+        try:
+            fn = getattr(self.app, "activate_pro", None)
+            if callable(fn):
+                fn()
+        except Exception:
+            pass
 
 
 class PerfilPanel(SidePanel):
@@ -1326,6 +1346,20 @@ class PerfilPanel(SidePanel):
             name = (name or "").strip()
             if not name:
                 return
+            # Gate: gratis = 1 perfil; demais sao Pro.
+            try:
+                _names = _prof.list_profiles()
+            except Exception:
+                _names = []
+            try:
+                from .license import has_pro as _has_pro
+                if len(_names) >= 1 and not _has_pro(app):
+                    offer = getattr(app, "pro_required", None)
+                    if callable(offer):
+                        offer()
+                    return
+            except Exception:
+                pass
 
             def _got_pin(pin):
                 try:
@@ -1460,6 +1494,16 @@ class PerfilPanel(SidePanel):
                 except Exception:
                     pass
                 return
+            # Gate: controle pelo celular e Pro.
+            try:
+                from .license import has_pro as _has_pro
+                if not _has_pro(self.app):
+                    offer = getattr(self.app, "pro_required", None)
+                    if callable(offer):
+                        offer()
+                    return
+            except Exception:
+                pass
             from . import phone_server as _ps
             ok, err = _ps.start_phone_server(self.app)
             if not ok:

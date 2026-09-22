@@ -20,6 +20,10 @@ from .dialogs import (
 from .games import GAME_COVER_SIZE
 from .i18n import t
 from .keyboard import NexusKeyboard
+from .license import (
+    license_status, mark_invalid, mark_verified, needs_recheck,
+    product_ids, verify_key,
+)
 from .panels import (
     AdicionarPanel, ControlesPanel, GamepadConfigWindow, IdiomaPanel,
     PerfilPanel, SistemaPanel, SomPanel,
@@ -196,6 +200,12 @@ class AppSettingsMixin:
         menu.set_options([(t("sidebar_close", self.lang), menu.close)])
 
     def change_logo(self, name, path=None):
+        """Troca a logo do card (Fase 1 - blindagem juridica).
+
+        Politica: só aceita imagem escolhida pelo usuário no próprio
+        computador (file picker). Nunca faz busca automática por nome
+        do serviço nem baixa logo oficial de terceiro.
+        """
         if path is None:
             filepath = filedialog.askopenfilename(
                 title=f"Logo de {name}",
@@ -435,6 +445,156 @@ class AppSettingsMixin:
                   activeforeground=Config.TEXT_PRIMARY,
                   relief="flat", cursor="hand2", padx=12, pady=4,
                   command=self._notif_manual_check).pack(anchor="e", padx=16, pady=(2, 0))
+        # ---- Fase 3: anuncio proprio no plano gratuito ----
+        # Só inventário próprio, estático e local: nunca SDK/rede de
+        # terceiro, nunca dentro do navegador nem sobre conteúdo alheio
+        # (blindagem da Fase 1). Pro (pro_license) não vê anúncio.
+        try:
+            if not self.is_pro():
+                self._render_ad_card()
+        except Exception:
+            pass
+
+    def is_pro(self):
+        """Pro = chave valida dentro da carencia (nexus/license.py).
+
+        Sem chave ou check vencido = plano gratuito (com anúncio).
+        Nunca levanta excecao (stubs de teste caem no fallback).
+        """
+        try:
+            return license_status(self.settings)[0] == "pro"
+        except Exception:
+            pass
+        try:
+            return bool((self.settings or {}).get("pro_license"))
+        except Exception:
+            return False
+
+    def _render_ad_card(self):
+        lang = self.lang
+        self._notif_section(self.notif_panel, t("ad_news", lang))
+        self._notif_card(self.notif_panel, t("ad_pro_title", lang),
+                         t("ad_pro_sub", lang), Config.ACCENT,
+                         on_click=lambda: self.show_pro_offer())
+
+    def show_pro_offer(self):
+        try:
+            menu = NexusMenuWindow(self, t("ad_pro_title", self.lang), [],
+                                   subtitle=t("ad_pro_sub", self.lang)
+                                   + "\n\n" + t("ad_pro_soon", self.lang),
+                                   icon="◆", width=480)
+            menu.set_options([(t("pro_activate", self.lang),
+                               lambda: self._offer_go_activate(menu)),
+                              (t("sidebar_close", self.lang), menu.close)])
+        except Exception:
+            pass
+
+    def _offer_go_activate(self, menu):
+        try:
+            menu.close()
+        except Exception:
+            pass
+        self.activate_pro()
+
+    def pro_required(self):
+        """Gate padrao: mostra a oferta e retorna False (bloqueia a acao)."""
+        try:
+            self.show_pro_offer()
+        except Exception:
+            pass
+        return False
+
+    def activate_pro(self):
+        """Abre o dialogo da chave (Sistema ou card Novidades)."""
+        try:
+            from .dialogs import NexusTextDialog
+            NexusTextDialog(self, t("pro_activate", self.lang),
+                            t("pro_key_prompt", self.lang), "",
+                            lambda v: self._do_activate(v))
+        except Exception:
+            pass
+
+    def _do_activate(self, key):
+        key = (key or "").strip()
+        if not key:
+            return
+        threading.Thread(target=self._activate_thread,
+                         args=(key,), daemon=True).start()
+
+    def _activate_thread(self, key):
+        try:
+            ok, tier, detail = verify_key(product_ids(self.settings), key)
+        except Exception:
+            ok, tier, detail = False, None, {"error": "offline"}
+        try:
+            self.root.after(0, lambda: self._activate_done(key, ok, tier, detail or {}))
+        except Exception:
+            pass
+
+    def _activate_done(self, key, ok, tier, detail):
+        try:
+            err = (detail or {}).get("error", "")
+            if ok:
+                ids = product_ids(self.settings)
+                mark_verified(self.settings, key, tier, ids.get(tier, ""),
+                              (detail or {}).get("email", ""))
+                save_settings(self.settings)
+                self.show_info_message(t("pro_activate", self.lang),
+                                       t("pro_ok", self.lang))
+                self.refresh_ui()
+            elif err == "offline":
+                self.show_info_message(t("pro_activate", self.lang),
+                                       t("pro_offline", self.lang))
+            elif err == "noconfig":
+                self.show_info_message(t("pro_activate", self.lang),
+                                       t("ad_pro_soon", self.lang))
+            else:
+                self.show_info_message(t("pro_activate", self.lang),
+                                       t("pro_bad", self.lang))
+        except Exception:
+            pass
+
+    def _license_recheck_thread(self):
+        """Startup: revalida a chave se o ultimo check envelheceu."""
+        try:
+            if not needs_recheck(self.settings):
+                return
+            key = (self.settings.get("pro_license") or "").strip()
+            if not key:
+                return
+            was = self.is_pro()
+            ok, tier, detail = verify_key(product_ids(self.settings), key)
+            if ok:
+                ids = product_ids(self.settings)
+                mark_verified(self.settings, key, tier, ids.get(tier, ""),
+                              (detail or {}).get("email", ""))
+            else:
+                mark_invalid(self.settings)
+            try:
+                save_settings(self.settings)
+            except Exception:
+                pass
+            now = self.is_pro()
+            if was and not now:
+                try:
+                    self.root.after(0, self._license_lapsed)
+                except Exception:
+                    pass
+            elif was != now:
+                try:
+                    self.root.after(0, self.refresh_ui)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _license_lapsed(self):
+        try:
+            self.show_info_message(t("pro_activate", self.lang),
+                                   t("pro_expired", self.lang))
+            self.refresh_ui()
+        except Exception:
+            pass
 
     def _notif_go_update(self):
         info = self._latest_release
@@ -551,6 +711,7 @@ class AppSettingsMixin:
 
     # ===================== ADD STREAMING =====================
     def browse_image(self, entry):
+        """File picker local (mesma politica do change_logo: sem busca auto)."""
         fp = filedialog.askopenfilename(
             title="Escolher logo",
             filetypes=[("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp *.ico"), ("Todas", "*.*")])
@@ -559,6 +720,7 @@ class AppSettingsMixin:
             entry.insert(0, fp)
 
     def add_new_streaming(self):
+        """Cria card novo. Logo: só arquivo local informado pelo usuário."""
         name = self.add_entries.get(t("add_name", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
         url = self.add_entries.get(t("add_url", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
         cat = self.add_entries.get(t("add_category", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
@@ -786,6 +948,18 @@ class AppSettingsMixin:
 
     def apply_theme(self, color, win=None):
         global Config
+        # Gate: gratis usa as 3 cores base; demais sao Pro.
+        try:
+            free = [c for c, _label in (self.THEME_COLORS[:3] or [])]
+        except Exception:
+            free = []
+        try:
+            pro = self.is_pro()
+        except Exception:
+            pro = True
+        if free and color not in free and not pro:
+            self.pro_required()
+            return
         Config.ACCENT = color
         Config.ACCENT_GLOW = color
         self.refresh_ui()
@@ -935,6 +1109,8 @@ class AppSettingsMixin:
     def check_updates_startup(self):
         threading.Thread(target=self._update_check_thread,
                          args=(True,), daemon=True).start()
+        threading.Thread(target=self._license_recheck_thread,
+                         daemon=True).start()
 
     def check_updates_manual(self):
         self.close_sidebar()

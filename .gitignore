@@ -29,9 +29,12 @@ browser_profile/
 # Pasta de jogos (binarios e arquivos de cada maquina - nunca commitar)
 games/
 
-# Capas pessoais de jogos baixadas pelo app (Steam/icone/Xbox de cada maquina).
-# As 32 logos padrao dos streamings JA estao rastreadas e continuam no git;
-# a regra abaixo so esconde as capas novas que cada um baixar na sua maquina.
+# Capas/imagens locais (Fase 1 - blindagem juridica).
+# NENHUM logo oficial de terceiro e rastreado: o repo distribui zero PNGs.
+# - generate_logos.py cria placeholders genericos locais (cor + iniciais,
+#   sem marca) - ignorados aqui, opcionais p/ dev/build.
+# - Trocar logo / Adicionar / capas de jogos salvam aqui na maquina do
+#   usuario e nunca vao para o git.
 streaming_images/*_logo.jpg
 streaming_images/*_logo.jpeg
 streaming_images/*_logo.png

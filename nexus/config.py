@@ -59,6 +59,8 @@ DEFAULT_SETTINGS = {
     "browser_profile_dir": "",
     "view_modes": {},
     "game_favorites": [],
+    "pro_license": "",
+    "pro_license_info": {},
 }
 
 

@@ -15,9 +15,9 @@ Interface de streaming inspirada no Steam Big Picture Mode.
 - **Otimizacao por conexao**: zona morta ajustavel (ideal p/ drift no Bluetooth), calibracao automatica, polling 60Hz; dongle 2.4GHz aparece como Cabo (latencia minima)
 - **Abas**: Favoritos, Filmes, Musica, Videos, Todos, Jogos, Jogos Favoritos
 - **Busca**: Barra de pesquisa em todas as abas com filtro em tempo real ("Buscar aplicativo..."/"Buscar jogo...")
-- **Logos**: Sistema automatico de busca por `{nome}_logo.{ext}` na pasta `streaming_images`
-- **Trocar logo**: Clique direito > Trocar Logo
-- **Adicionar streaming**: Formulario completo com nome, URL, categoria e logo
+- **Logos**: ícones genéricos (cor + iniciais/emoji); sem logo oficial de terceiro no distribuível. Sistema de busca por `{nome}_logo.{ext}` na pasta `streaming_images` (arquivos locais, ignorados no git)
+- **Trocar logo**: Clique direito > Trocar Logo — só aceita imagem do seu computador (sem busca automática por nome de serviço)
+- **Adicionar streaming**: Formulario completo com nome, URL, categoria e logo (arquivo local)
 - **Favoritos**: Adicionar/remover com clique direito; aba Favoritos so p/ aplicativos e aba Jogos Favoritos so p/ jogos
 - **Navegador embutido**: botao Site abre o servico em tela cheia sem bordas numa janela do proprio Nexus (WebView2), com transicao e mesmo icone na barra de tarefas - parece um app so. Barra discreta com minimizar/fechar, F11 p/ tela cheia e confirmacao de saida. Janela unica no Alt+Tab: minimizar leva tudo junto e voltar pela tarefa restaura tudo
 - **Logins salvos**: perfil persistente mantem logins, cookies e senhas entre sessoes; limpeza em Configuracoes > Limpar logins e cache
@@ -75,6 +75,70 @@ Dailymotion, Bandcamp, SoundCloud, Pluto TV, Apple TV, Peacock, Paramount+,
 Discovery+, Globoplay, Vix, Curiosity Stream, MUBI, Shudder, BritBox, Tubi,
 Plex, Kodi, Jellyfin, Mixer, Vimeo, Rumble, Tidal, Deezer, Mixcloud
 
+## Aviso legal
+
+**Nexus não é afiliado a nenhum serviço de streaming mencionado.**
+Todas as marcas e nomes citados pertencem aos seus respectivos donos.
+
+- O app distribuído não inclui nenhum logo oficial de terceiro — só ícones
+  genéricos (cor + iniciais/emoji).
+- `Trocar logo` e `Adicionar` usam exclusivamente imagem escolhida pelo
+  usuário no próprio computador; o Nexus nunca busca nem baixa logo
+  automática por nome de serviço.
+- Para divulgação, não use prints/vídeos com logo oficial de terceiro.
+
+## Identidade visual (obra original do projeto Nexus, 2026-09-22)
+
+- Conjunto próprio em `assets/icons/` (gerado por `assets/icons/make_icons.py`,
+  256px, paleta roxo-futurista: tile `#1a1a2e`, acento `#7c4dff`,
+  glow `#b048ff`, ciano `#00e5ff`): um ícone por categoria
+  (`cat_filmes`, `cat_musica`, `cat_videos`, `cat_games`) + neutro
+  (`nexus_default`) para qualquer streaming sem logo customizado.
+- Os PNGs são rastreados no git e embarcados no distribuível (diferente de
+  `streaming_images/`, que é só capa local do usuário e não vai p/ git).
+- Identificação visual dispensa marca de terceiro: todo card/linha mostra o
+  **nome do serviço em texto** nos 4 modos (Cards, Grade, Lista, Detalhes).
+- Autoria/data documentadas no cabeçalho do script gerador (prova de
+  anterioridade). Registro formal da marca (INPI) é passo jurídico à parte,
+  fora do código.
+
+## Gratuito vs Pro
+
+- **Gratuito**: hub completo + anúncio próprio discreto no painel
+  Notificações (seção Novidades). Só inventário próprio, estático e local:
+  sem SDK/rede de terceiros, nunca dentro do navegador nem sobre conteúdo
+  de terceiro.
+- **Pro (Gumroad)**: controle pelo celular, perfis com PIN,
+  slots 2–3 de controle, 8 temas + cor custom e **zero anúncios**.
+  Destrava via licença (mesmo binário do GitHub).
+  | Plano | Preço USD | Líquido aprox. |
+  |---|---|---|
+  | Mensal | $5.90/mês | ~$4.81 |
+  | Semestral (~5% off) | $33.60/6 meses | ~$29.74 |
+  | Anual (~15% off) | $60/ano | ~$53.50 |
+  | Vitalício (pague uma vez, seu pra sempre) | $500 únicos | ~$449.50 |
+
+### Ativar a licença Pro
+
+1. Compre um plano no Gumroad (4 produtos: mensal, semestral, anual,
+   vitalício) e copie a chave do recibo.
+2. No app: Configurações > Sistema > Ativar Nexus Pro (ou clique no
+   card do Pro no painel Notificações) e cole a chave. Precisa de
+   internet só na ativação.
+3. O app revalida sozinho a cada 7 dias; sem internet vale a última
+   validação por até 14 dias (carência). Assinatura expirada/reembolsada
+   volta ao gratuito sozinha (anúncios retornam).
+
+### Ligar a loja (vendedor, 1x)
+
+1. Nos 4 produtos do Gumroad, ative "license keys".
+2. Copie o `product_id` de cada um e cole em `settings.json` >
+   `"pro_products": {"monthly": "...", "semiannual": "...",
+   "annual": "...", "lifetime": "..."}` (ou em
+   `nexus/license.py` > `DEFAULT_PRODUCTS`).
+3. Sem ids configurados, a ativação avisa que a loja ainda não está
+   ligada e o app segue gratuito.
+
 ## Requisitos (so para desenvolver)
 
 - Windows 10 ou superior
@@ -91,7 +155,8 @@ Plex, Kodi, Jellyfin, Mixer, Vimeo, Rumble, Tidal, Deezer, Mixcloud
 Nexus/
 ├── Nexus.exe                # Aplicativo (duplo clique)
 ├── nexus_browser.exe        # Navegador embutido (aberto pelo Nexus)
-├── streaming_images/        # Logos dos streamings
+├── streaming_images/        # Ícones genéricos/capas locais (não vai p/ git)
+├── assets/icons/            # Ícones ORIGINAIS Nexus por categoria (vai p/ git)
 ├── logo_nexus/              # Icones do Nexus
 ├── games/                   # Seus jogos (uma pasta por jogo) - crie se nao existir
 ├── settings.json            # Criado sozinho no 1o uso
@@ -139,10 +204,8 @@ Nexus App/
 ├── start.bat              # Launcher
 ├── settings.json          # Configuracoes salvas (local, nao vai p/ git)
 ├── nexus.db               # Banco SQLite (local, nao vai p/ git)
-├── streaming_images/      # Logos dos streamings
-│   ├── Netflix_logo.jpg
-│   ├── YouTube_logo.png
-│   └── ... (32 arquivos)
+├── streaming_images/      # Capas locais do usuário (não vai p/ git)
+├── assets/icons/          # Identidade original Nexus (make_icons.py + 5 PNGs)
 └── README.md              # Este arquivo
 ```
 

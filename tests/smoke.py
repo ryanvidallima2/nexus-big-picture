@@ -199,13 +199,13 @@ def run():
         from nexus.guide import (
             GUIDE_CATS, guide_cat_body, guide_cat_title,
         )
-        check(len(GUIDE_CATS) == 7
+        check(len(GUIDE_CATS) == 8
               and all(guide_cat_title(c, "pt-br") and guide_cat_body(c, "pt-br")
                       and guide_cat_title(c, "en") and guide_cat_body(c, "en")
                       for c in GUIDE_CATS), "guia conteudo pt/en")
         gw = GuideWindow(app)
         root.update()
-        check(len(gw.cat_btns) == 7, "guia 7 categorias")
+        check(len(gw.cat_btns) == 8, "guia 8 categorias")
         gw.select(3)
         root.update()
         check("Card" in gw.body_title.cget("text")
