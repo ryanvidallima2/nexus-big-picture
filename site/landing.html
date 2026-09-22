@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus — Big Picture para seus streamings</title>
+<meta name="description" content="Nexus: hub estilo Big Picture para Netflix, YouTube, Disney+ e mais. Controle, celular como controle remoto e modo console.">
+<style>
+:root{--bg:#0d0d1a;--card:#1e2040;--acc:#7c4dff;--txt:#fff;--mut:#8888bb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.6 "Segoe UI",system-ui,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:40px 20px}
+.hero{text-align:center;padding:40px 0 20px}
+.hero h1{font-size:44px;margin:0;color:var(--acc)}
+.hero p{color:var(--mut);font-size:19px}
+.btn{display:inline-block;background:var(--acc);color:#fff;text-decoration:none;font-weight:700;padding:14px 34px;border-radius:12px;margin:8px 6px}
+.btn.ghost{background:var(--card)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:34px 0}
+.card{background:var(--card);border-radius:14px;padding:20px}
+.card h3{margin:0 0 8px;color:var(--acc)}
+.card p{margin:0;color:var(--mut);font-size:14px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:20px 0}
+.plan{background:var(--card);border-radius:14px;padding:22px;text-align:center;border:2px solid transparent}
+.plan.hot{border-color:var(--acc)}
+.plan .p{font-size:26px;font-weight:800}
+.plan small{color:var(--mut)}
+.mock{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:26px 0}
+.tile{width:150px;height:200px;border-radius:12px;display:flex;flex-direction:column;justify-content:flex-end;padding:12px;font-weight:700}
+footer{color:var(--mut);font-size:13px;text-align:center;margin-top:40px}
+footer a{color:var(--acc)}
+.legal{background:var(--card);border-radius:12px;padding:16px 20px;font-size:13px;color:var(--mut);margin-top:26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <h1>◆ NEXUS</h1>
+    <p>Todos os seus streamings e jogos num hub estilo Big Picture.<br>
+    Navegue com controle, teclado ou celular — na TV, no PC, no seu ritmo.</p>
+    <a class="btn" href="#planos">Ver planos</a>
+    <a class="btn ghost" href="#">Baixar versão grátis</a>
+  </div>
+
+  <div class="mock" aria-hidden="true">
+    <div class="tile" style="background:#3a2b00">Filmes<br><small>18 serviços</small></div>
+    <div class="tile" style="background:#002b3a">Vídeos<br><small>8 serviços</small></div>
+    <div class="tile" style="background:#00331a">Música<br><small>6 serviços</small></div>
+    <div class="tile" style="background:#2b0040">Jogos<br><small>Steam • Epic • Xbox</small></div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><h3>🎮 Controle total</h3><p>Xbox, PlayStation, Switch e genéricos. Até o celular vira controle remoto com QR code.</p></div>
+    <div class="card"><h3>🖥️ Modo console</h3><p>Navegação por setas com anel de foco, busca com teclado automático e tela cheia sem bordas.</p></div>
+    <div class="card"><h3>🎞️ 32 serviços + jogos</h3><p>Filmes, vídeos e música num lugar só, além da sua biblioteca de jogos com capas.</p></div>
+    <div class="card"><h3>🔄 Sempre atualizado</h3><p>O app avisa e se atualiza sozinho. Logins salvos entre sessões.</p></div>
+  </div>
+
+  <h2 id="planos" style="text-align:center">Planos</h2>
+  <div class="plans">
+    <div class="plan"><div class="p">Grátis</div><small>todos os recursos<br>com anúncio próprio</small></div>
+    <div class="plan"><div class="p">$5,90<small>/mês</small></div><small>Nexus Pro mensal</small></div>
+    <div class="plan"><div class="p">$33,60<small>/semestre</small></div><small>Nexus Pro semestral</small></div>
+    <div class="plan hot"><div class="p">$60<small>/ano</small></div><small>Nexus Pro anual</small></div>
+    <div class="plan"><div class="p">$500<small>único</small></div><small>Nexus Pro vitalício</small></div>
+  </div>
+  <p style="text-align:center"><a class="btn" href="#">Assinar via Gumroad</a></p>
+
+  <div class="legal">
+    <strong>Aviso legal:</strong> o Nexus não é afiliado a nenhum serviço de streaming mencionado.
+    Todas as marcas pertencem aos seus respectivos donos. O app não inclui logos oficiais de
+    terceiros — apenas ícones genéricos próprios. Pagamentos processados pelo Gumroad.
+    Leia os <a href="termos.html">Termos de Uso</a> e a <a href="privacidade.html">Política de Privacidade</a>.
+  </div>
+
+  <footer>© 2026 Nexus • <a href="termos.html">Termos</a> • <a href="privacidade.html">Privacidade</a> • <a href="https://github.com/ryanvidallima2/nexus-big-picture/issues">Suporte e ideias</a></footer>
+</div>
+</body>
+</html>

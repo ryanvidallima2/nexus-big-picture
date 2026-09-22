@@ -223,3 +223,24 @@ precisa de internet para baixar as dependencias.
   so o controle fica indisponivel (mouse/teclado funcionam).
 - Para comecar do zero nessa maquina, apague `settings.json` e
   `nexus.db` (sao recriados; nao vao para o git).
+
+## Suporte e feedback
+
+Achou um bug ou quer um recurso? Abra uma issue (templates prontos de
+bug e ideia):
+https://github.com/ryanvidallima2/nexus-big-picture/issues
+
+Inclua: versao do Nexus, versao do Windows, controle usado (se for o
+caso) e, se conseguir reproduzir, o `nexus_debug.log` (rode com
+`NEXUS_DEBUG=1`).
+
+## Pos-lancamento (mantenedores)
+
+- **Vendas**: painel do Gumroad (conversao por plano, reembolsos, chaves).
+- **Downloads**: contadores da Release no GitHub (`Nexus-vX.X.X-windows.zip`
+  e `Nexus-X.X.X-setup.exe`).
+- **Bugs/pedidos**: Issues com labels `bug`/`enhancement`; revisar 1x/semana
+  nas primeiras semanas e transformar repetidos em tarefa.
+- **Parcerias** (fabricantes de controle): avaliar apos base inicial —
+  levar numeros de downloads + usuarios Pro e proposta fechada
+  (ex.: perfil oficial do controle no app).

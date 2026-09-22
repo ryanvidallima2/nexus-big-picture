@@ -1075,6 +1075,60 @@ check(appK.settings["pad_nexus"].get("cards") == "west"
 check(GPStub([{"name": "B", "guid": "B"}], "B").current_guid() == "B"
       and GPStub([], None).current_guid() == "", "K8 guid atual")
 
+# ================= N) licenca Gumroad (sem rede) =================
+from nexus import license as LIC  # noqa: E402
+check(LIC.parse_time("2026-01-15T10:00:00Z") is not None
+      and LIC.parse_time("lixo") is None
+      and LIC.parse_time("") is None, "N1 parse_time ISO/invalido")
+check(LIC.product_ids({"pro_products": {"monthly": "abc"}})["monthly"] == "abc"
+      and LIC.product_ids({})["annual"] == "", "N2 product_ids merge")
+_now = LIC.now_utc()
+check(LIC.purchase_problem({"refunded": True}, _now) == "refunded"
+      and LIC.purchase_problem({"disputed": True}, _now) == "refunded"
+      and LIC.purchase_problem({"subscription_failed_at": "x"}, _now) == "expired"
+      and LIC.purchase_problem({"subscription_ended_at": "2020-01-01T00:00:00Z"},
+                               _now) == "expired"
+      and LIC.purchase_problem({"subscription_ended_at": "2999-01-01T00:00:00Z"},
+                               _now) is None
+      and LIC.purchase_problem({}, _now) is None, "N3 purchase_problem casos")
+_pids = {"monthly": "p1", "semiannual": "", "annual": "", "lifetime": ""}
+_ok_post = lambda pid, key: {"success": True, "purchase": {
+    "email": "a@b.c", "product_name": "Nexus Pro"}}
+check(LIC.verify_key(_pids, "KEY", _post=_ok_post) == (
+    True, "monthly", {"email": "a@b.c", "product_name": "Nexus Pro"}),
+    "N4 verify ok mensal")
+_ref_post = lambda pid, key: {"success": True, "purchase": {"refunded": True}}
+check(LIC.verify_key(_pids, "KEY", _post=_ref_post)[2] == {"error": "refunded"},
+      "N5 verify reembolsado")
+_bad_post = lambda pid, key: {"success": False}
+check(LIC.verify_key(_pids, "KEY", _post=_bad_post)[2] == {"error": "invalid"},
+      "N6 verify invalida")
+
+
+def _off_post(pid, key):
+    raise OSError("sem rede")
+
+
+check(LIC.verify_key(_pids, "KEY", _post=_off_post)[2] == {"error": "offline"},
+      "N7 verify offline")
+check(LIC.verify_key({}, "KEY")[2] == {"error": "noconfig"}
+      and LIC.verify_key(_pids, "  ")[2] == {"error": "invalid"},
+      "N8 verify sem config / chave vazia")
+_s = {}
+LIC.mark_verified(_s, "KEY", "annual", "p9", "a@b.c")
+check(LIC.license_status(_s) == ("pro", "cached")
+      and LIC.needs_recheck(_s) is False, "N9 ativacao vira pro")
+_s["pro_license_info"]["last_check"] = "2020-01-01T00:00:00Z"
+check(LIC.license_status(_s) == ("free", "expired")
+      and LIC.needs_recheck(_s) is True, "N10 carencia estourada rebaixa")
+LIC.mark_invalid(_s)
+check(LIC.license_status(_s) == ("free", "invalid"), "N11 invalidacao manual")
+check(LIC.license_status({}) == ("free", "none")
+      and LIC.needs_recheck({}) is False, "N12 sem chave e free")
+check(LIC.has_pro(SimpleNamespace(is_pro=lambda: True)) is True
+      and LIC.has_pro(SimpleNamespace(is_pro=lambda: False)) is False
+      and LIC.has_pro(SimpleNamespace()) is True, "N13 gate has_pro")
+
 # ================= L) teclado: abre no 1o confirmar, fecha ao confirmar ====
 import nexus.keyboard as KMOD  # noqa: E402
 ktaps = []
