@@ -90,8 +90,14 @@ def run():
     app = None
     try:
         app = B.BigPictureApp(root)
-        check(app.current_tab == "all" and len(app.get_all_services()) >= 32,
-              "boot (aba all, 32 servicos)")
+        # Hermetico: ocultos do settings local nao contam no boot.
+        _hidden_bak = list(app.settings.get("hidden_streamings", []) or [])
+        try:
+            app.settings["hidden_streamings"] = []
+            check(app.current_tab == "all" and len(app.get_all_services()) >= 32,
+                  "boot (aba all, 32 servicos)")
+        finally:
+            app.settings["hidden_streamings"] = _hidden_bak
 
         from nexus.app import BigPictureApp as App2
         check(B.BigPictureApp is App2, "entry usa nexus.app")
@@ -151,7 +157,7 @@ def run():
             app.render_tab("favorites")
             root.update()
             texts = collect_texts(app.scroll_frame)
-            check("Netflix" in texts, "favoritos mostra app")
+            check(any("Netflix" in tx for tx in texts), "favoritos mostra app")
             app.toggle_favorite("ZZJogo")
             app.render_tab("favorites")
             root.update()
