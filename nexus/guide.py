@@ -31,6 +31,61 @@ GUIDE_CATS = [
         ),
     },
     {
+        "key": "login",
+        "icon": "\U0001F464",
+        "title_pt": "Login e perfis",
+        "title_en": "Login and profiles",
+        "body_pt": (
+            "Um login, um perfil: ele guarda seus favoritos, ajustes e "
+            "aparelhos pareados.\n"
+            "O avatar redondo ao lado do relógio abre o login: criar perfil "
+            "pede nome, PIN (4 a 8 dígitos, pode deixar vazio) e um avatar "
+            "à sua escolha (troca depois no mesmo lugar).\n"
+            "Quem tem cadeado pede o PIN na entrada. Sair volta a convidado.\n"
+            "Sem login você passeia como convidado, mas controle pelo "
+            "celular e alguns recursos pedem um perfil."
+        ),
+        "body_en": (
+            "One login, one profile: it keeps your favorites, settings "
+            "and paired devices.\n"
+            "The round avatar next to the clock opens login: creating a "
+            "profile asks for a name, a PIN (4 to 8 digits, may be empty) "
+            "and an avatar of your choice (change it later in the same place).\n"
+            "Locked ones ask for the PIN at the door. Signing out returns "
+            "to guest.\n"
+            "Without login you roam as a guest, but phone control and some "
+            "features require a profile."
+        ),
+    },
+    {
+        "key": "celular",
+        "icon": "\U0001F4F1",
+        "title_pt": "Controle pelo celular",
+        "title_en": "Phone control",
+        "body_pt": (
+            "Menu > Controles > Controle virtual: Ligue e o Nexus vira um "
+            "servidor na sua rede (precisa de login no perfil).\n"
+            "Gerar QR Code abre o código grandão: mire a câmera do celular "
+            "e o site abre sozinho com tudo preenchido — é só Parear.\n"
+            "Sem câmera? Digite IP, porta e código na tela Parear (ou use "
+            "Testar conexão se empacar: mesmo roteador + porta liberada).\n"
+            "Abas do site: Streams abre serviços no PC, Controle tem mouse, "
+            "setas e teclado, e Jogo vira um controle completo (A/B/X/Y, "
+            "ombros, gatilhos, Start) sem mouse na frente."
+        ),
+        "body_en": (
+            "Menu > Controls > Virtual remote: turn it on and Nexus becomes "
+            "a server on your network (profile login required).\n"
+            "Generate QR Code opens a big code: point your phone camera and "
+            "the site opens pre-filled — just Pair.\n"
+            "No camera? Type IP, port and code on the Pair screen (or use "
+            "Test connection if stuck: same router + open port).\n"
+            "Site tabs: Streams opens services on the PC, Control has mouse, "
+            "arrows and keyboard, and Game becomes a full gamepad (A/B/X/Y, "
+            "bumpers, triggers, Start) with no mouse in the way."
+        ),
+    },
+    {
         "key": "assistir",
         "icon": "\U0001F4FA",
         "title_pt": "Assistindo",
@@ -122,6 +177,8 @@ GUIDE_CATS = [
         "body_pt": (
             "A aba Jogos é uma estante mágica: cada pasta dentro de games/ "
             "vira um card sozinha, sem você fazer nada.\n"
+            "Botão Detectar: caça jogos instalados de Steam, Epic e Xbox "
+            "e pendura as capas sozinho (rode de novo após instalar algo).\n"
             "Vire o card: Jogar executa o jogo; Config troca a capa e a cor "
             "(ou manda o jogo passear com Excluir).\n"
             "Atalhos e jogos de plataforma (Steam e cia) também entram "
@@ -131,6 +188,8 @@ GUIDE_CATS = [
         "body_en": (
             "The Games tab is a magic shelf: each folder inside games/ "
             "becomes a card all by itself.\n"
+            "Detect button: hunts installed Steam, Epic and Xbox games "
+            "and hangs their covers by itself (run it again after installs).\n"
             "Flip the card: Play runs the game; Config swaps the cover and "
             "color (or sends the game away with Delete).\n"
             "Shortcuts and platform games (Steam and friends) join the "
@@ -147,6 +206,8 @@ GUIDE_CATS = [
             "Menu > Controles: veja seus aparelhos conectados, troque "
             "entre eles, remapeie qualquer botão e ajuste a sensibilidade "
             "dos analógicos (para o analógico parar de andar sozinho).\n"
+            "Ali também mora o Controle virtual do celular: ligar, QR, "
+            "rede e aparelhos pareados.\n"
             "Menu > Som: volume de 0 a 100 para o blip de navegação, "
             "liga/desliga e botão Testar (aperte sem medo, não morde).\n"
             "Volume padrão: tudo que você abre (Spotify, Netflix, YouTube, "
@@ -157,6 +218,8 @@ GUIDE_CATS = [
             "Menu > Controls: see your connected gamepads, switch between "
             "them, remap any button and tune stick sensitivity (so the "
             "stick stops walking alone).\n"
+            "The virtual phone remote also lives there: on/off, QR, "
+            "network and paired devices.\n"
             "Menu > Sound: volume 0 to 100 for the navigation blip, "
             "on/off switch and Test button (press it, it doesn't bite).\n"
             "Default volume: everything you open starts at it.\n"

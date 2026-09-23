@@ -35,6 +35,14 @@ root.geometry('900x700+100+100')
 root.deiconify()
 root.lift()
 root.update()
+try:
+    # Hermetico: cursor parado sobre a janela dispara <Enter> e muda o
+    # foco no meio dos checks. Estaciona no canto (so o inicio).
+    import ctypes as _ct
+    _ct.windll.user32.SetCursorPos(2, 2)
+    print("INFO cursor estacionado no canto (nao mexa o mouse)", flush=True)
+except Exception:
+    pass
 
 import bigpicture as B  # noqa: E402  (entry p/ Config/t/i18n)
 from nexus import cardflip as CF  # noqa: E402
@@ -502,7 +510,7 @@ p = ControlesPanel(appP)
 p.open()
 root.update()
 check([f['kind'] for f in p.focusables] == ['button', 'button', 'slider',
-      'slider', 'slider', 'button'], "E1 controles estrutura")
+      'slider', 'slider', 'button', 'button'], "E1 controles estrutura")
 
 
 class FakeJS2:

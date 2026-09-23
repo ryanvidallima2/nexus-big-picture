@@ -350,9 +350,31 @@ class GuideWindow(NexusMenuWindow):
                 w.destroy()
         except Exception:
             pass
-        left = tk.Frame(self.body, bg=Config.BG_SIDEBAR, width=220)
-        left.pack(side="left", fill="y", padx=(0, 8))
-        left.pack_propagate(False)
+        left_wrap = tk.Frame(self.body, bg=Config.BG_SIDEBAR, width=220)
+        left_wrap.pack(side="left", fill="y", padx=(0, 8))
+        left_wrap.pack_propagate(False)
+        import tkinter.ttk as _ttk
+        _gsb = _ttk.Scrollbar(left_wrap, orient="vertical",
+                              style="Transparent.Vertical.TScrollbar")
+        # Scrollbar PRIMEIRO: canvas com expand antes esmaga ela p/ 1px
+        _gsb.pack(side="right", fill="y")
+        left = tk.Canvas(left_wrap, bg=Config.BG_SIDEBAR,
+                         highlightthickness=0, bd=0)
+        left.pack(side="left", fill="both", expand=True)
+        self.guide_canvas = left
+        _gsb.configure(command=left.yview)
+        left.configure(yscrollcommand=_gsb.set)
+        inner = tk.Frame(left, bg=Config.BG_SIDEBAR)
+        left.create_window((0, 0), window=inner, anchor="nw",
+                           tags="guide_inner")
+        inner.bind("<Configure>", lambda e: left.configure(
+            scrollregion=left.bbox("all")))
+        left.bind("<Configure>", lambda e: left.itemconfig(
+            "guide_inner", width=e.width))
+        try:
+            self.app._bind_wheel_tree(self.win, self._guide_wheel)
+        except Exception:
+            pass
         right = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
         right.pack(side="left", fill="both", expand=True)
         self.body_title = tk.Label(right, text="", font=("Segoe UI", 16, "bold"),
@@ -365,7 +387,7 @@ class GuideWindow(NexusMenuWindow):
                                   wraplength=self.WIN_W - 300)
         self.body_text.pack(fill="both", expand=True)
         for i, cat in enumerate(GUIDE_CATS):
-            b = tk.Button(left, text="%s  %s" % (
+            b = tk.Button(inner, text="%s  %s" % (
                               cat.get("icon", ""),
                               guide_cat_title(cat, app.lang)),
                           font=("Segoe UI", 12, "bold"),
@@ -389,6 +411,42 @@ class GuideWindow(NexusMenuWindow):
         except Exception:
             pass
 
+    def _guide_wheel(self, event):
+        try:
+            cv = self.guide_canvas
+            if event.delta > 0 and self.app._at_top(cv):
+                return "break"
+            if event.delta < 0 and self.app._at_bottom(cv):
+                return "break"
+            cv.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        except Exception:
+            pass
+        return "break"
+
+    def _guide_ensure_visible(self):
+        try:
+            cv = self.guide_canvas
+            btns = self.cat_btns
+            if not btns or self.focus_idx >= len(btns):
+                return
+            cv.update_idletasks()
+            w = btns[self.focus_idx]
+            w.update_idletasks()
+            ch = cv.winfo_height()
+            inner_h = cv.bbox("all")
+            total = inner_h[3] if inner_h else 0
+            if total <= 0 or ch <= 0 or total <= ch:
+                return
+            wy = w.winfo_rooty() - cv.winfo_rooty()
+            wh = w.winfo_height()
+            first, _ = cv.yview()
+            if wy < 0:
+                cv.yview_moveto(max(0.0, first + wy / total))
+            elif wy + wh > ch:
+                cv.yview_moveto(min(1.0, first + (wy + wh - ch) / total))
+        except Exception:
+            pass
+
     def select(self, idx):
         if self.closed or not self.cat_btns:
             return
@@ -403,6 +461,7 @@ class GuideWindow(NexusMenuWindow):
         except Exception:
             pass
         self._paint()
+        self._guide_ensure_visible()
         if changed:
             try:
                 self.app.play_tick()

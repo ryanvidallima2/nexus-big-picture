@@ -20,6 +20,8 @@ except Exception:
 
 PROFILES_DIR = os.path.join(BASE_DIR, "profiles")
 GUEST = "_guest"
+# Login: 1 unico perfil (convidado nao conta).
+MAX_PROFILES = 1
 
 
 def profiles_dir():
@@ -97,13 +99,50 @@ def verify_pin(name, pin):
         return False
 
 
+def get_avatar(name):
+    """Avatar do perfil (id pre-definido) ou padrao deterministico."""
+    try:
+        avid = (load_profile_data(name).get("avatar", "") or "").strip()
+        from .avatars import avatar_ids
+        if avid in avatar_ids():
+            return avid
+    except Exception:
+        pass
+    try:
+        from .avatars import default_avatar
+        return default_avatar(name)
+    except Exception:
+        return ""
+
+
+def set_avatar(name, avatar_id):
+    """Troca o avatar do perfil. True se salvou."""
+    try:
+        from .avatars import avatar_ids
+        if avatar_id not in avatar_ids():
+            return False
+        data = load_profile_data(name)
+        if not data:
+            return False
+        data["avatar"] = avatar_id
+        return bool(save_profile_data(name, data))
+    except Exception:
+        return False
+
+
 def create_profile(name, pin, settings_snapshot):
-    """Cria perfil (nome único, PIN opcional). Retorna (ok, erro_pt)."""
+    """Cria perfil (nome único, PIN opcional, maximo MAX_PROFILES).
+    Retorna (ok, erro_pt)."""
     name = _safe_name(name)
     if not name or name.startswith("_"):
         return False, "nome inválido"
     if os.path.exists(_path(name)):
         return False, "esse nome já existe"
+    try:
+        if len(list_profiles()) >= MAX_PROFILES:
+            return False, "limite de %d perfil" % MAX_PROFILES
+    except Exception:
+        pass
     pin = (pin or "").strip()
     if pin and (not pin.isdigit() or len(pin) < 4 or len(pin) > 8):
         return False, "PIN de 4 a 8 dígitos (ou vazio)"
@@ -119,6 +158,26 @@ def snapshot_settings(app):
         return copy.deepcopy(dict(app.settings))
     except Exception:
         return {}
+
+
+def delete_profile(app, name):
+    """Exclui o perfil. Se era o atual, volta a convidado. True se ok."""
+    try:
+        name = _safe_name(name)
+        if not name or name.startswith("_"):
+            return False
+        try:
+            if getattr(app, "profile", None) == name:
+                switch_profile(app, None)
+        except Exception:
+            pass
+        try:
+            os.remove(_path(name))
+            return True
+        except Exception:
+            return not os.path.exists(_path(name))
+    except Exception:
+        return False
 
 
 def switch_profile(app, name, save_fn=None):
@@ -169,7 +228,14 @@ def switch_profile(app, name, save_fn=None):
 
 
 def require_login(app, feature="este recurso"):
-    """Gate p/ funções que exigem login. True = pode seguir."""
+    """Gate p/ funções que exigem login. True = pode seguir.
+    Modo dev libera sem login."""
+    try:
+        from .license import dev_unlocked as _dev
+        if _dev(app):
+            return True
+    except Exception:
+        pass
     try:
         if getattr(app, "profile", None):
             return True

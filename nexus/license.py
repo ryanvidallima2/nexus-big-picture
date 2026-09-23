@@ -213,9 +213,29 @@ def mark_invalid(settings):
     return settings
 
 
+def dev_unlocked(app):
+    """Modo desenvolvedor: tudo liberado (Pro + login).
+
+    Opt-in por settings ("dev_mode": true) — padrao DESLIGADO p/ nao
+    vazar desbloqueado na release. So liga local p/ desenvolver.
+    """
+    try:
+        settings = getattr(app, "settings", None) or {}
+        if isinstance(settings, dict):
+            return bool(settings.get("dev_mode", False))
+        return False
+    except Exception:
+        return False
+
+
 def has_pro(app):
     """Gate central: True se o app tem Pro (ou se o objeto nao tem
     is_pro — stubs de teste liberam p/ nao quebrar a suite)."""
+    try:
+        if dev_unlocked(app):
+            return True
+    except Exception:
+        pass
     try:
         fn = getattr(app, "is_pro", None)
         if callable(fn):

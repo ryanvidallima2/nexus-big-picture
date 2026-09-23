@@ -26,13 +26,40 @@ def check(cond, msg):
         fails.append(msg)
 
 
+# Nao suja o settings.json do usuario (switch/pair salvam de verdade):
+# backup byte a byte + restauracao no fim (igual ao smoke.py).
+_saved_settings = None
+try:
+    _sp = os.path.join(BASE, "settings.json")
+    _saved_settings = open(_sp, "rb").read() if os.path.exists(_sp) else None
+except Exception:
+    _saved_settings = None
+
+
+def _restore_settings():
+    try:
+        _sp = os.path.join(BASE, "settings.json")
+        if _saved_settings is None:
+            if os.path.exists(_sp):
+                os.remove(_sp)
+        else:
+            with open(_sp, "wb") as _fh:
+                _fh.write(_saved_settings)
+    except Exception:
+        pass
+
+
+import atexit as _atexit
+_atexit.register(_restore_settings)
+
+
 import nexus.profiles as PROF  # noqa: E402
 import nexus.phone_server as PSRV  # noqa: E402
 
 _tmp = tempfile.mkdtemp(prefix="nexus-prof-test-")
 PROF.PROFILES_DIR = _tmp
 
-# ---------- perfis ----------
+# ---------- perfis (produto: 1 unico perfil) ----------
 ok, err = PROF.create_profile("Pedro", "1234", {"language": "pt-br",
                                                 "sound_volume": 10})
 check(ok, "perfil cria (%s)" % err)
@@ -40,13 +67,11 @@ ok, err = PROF.create_profile("Pedro", "", {})
 check(not ok, "perfil duplicado recusa")
 ok, err = PROF.create_profile("Ana", "12", {})
 check(not ok, "pin curto recusa")
-ok, err = PROF.create_profile("Ana!!", "", {"language": "en"})
-check(ok and "Ana" in PROF.list_profiles(), "perfil sem pin + lista")
+ok, err = PROF.create_profile("Ana", "", {})
+check(not ok and "limite" in err, "2o perfil recusa (limite 1)")
 check(PROF.verify_pin("Pedro", "1234"), "pin certo")
 check(not PROF.verify_pin("Pedro", "0000"), "pin errado")
-check(PROF.verify_pin("Ana", ""), "sem pin libera")
-check(PROF.profile_has_pin("Pedro") and not PROF.profile_has_pin("Ana"),
-      "tem pin?")
+check(PROF.profile_has_pin("Pedro"), "tem pin?")
 
 
 class StubApp:
@@ -69,12 +94,13 @@ PROF.switch_profile(app, "Pedro")
 check(app.profile == "Pedro" and app.settings.get("language") == "pt-br"
       and app.refreshed, "login carrega snapshot")
 app.settings["sound_volume"] = 55
-PROF.switch_profile(app, "Ana")
-check(PROF.load_profile_data("Pedro").get("settings", {}).get(
-    "sound_volume") == 55 and app.settings.get("language") == "en",
-    "troca salva antigo e carrega novo")
 PROF.switch_profile(app, None)
-check(app.profile is None, "logout vira convidado")
+check(PROF.load_profile_data("Pedro").get("settings", {}).get(
+    "sound_volume") == 55 and app.profile is None,
+    "logout salva e vira convidado")
+PROF.switch_profile(app, "Pedro")
+check(app.profile == "Pedro" and app.settings.get("sound_volume") == 55,
+      "login recarrega snapshot")
 app2 = StubApp()
 check(PROF.require_login(app2, "X") is False and app2.infos,
       "convidado bloqueia + avisa")
@@ -85,7 +111,16 @@ check(PROF.require_login(app2, "X") is True, "logado passa")
 root = tk.Tk()
 root.geometry('900x700+100+100')
 root.deiconify()
+root.lift()
 root.update()
+try:
+    # Hermetico: cursor parado sobre a janela dispara <Enter> e muda o
+    # foco no meio dos checks. Estaciona no canto (so o inicio).
+    import ctypes as _ct
+    _ct.windll.user32.SetCursorPos(2, 2)
+    print("INFO cursor estacionado no canto (nao mexa o mouse)", flush=True)
+except Exception:
+    pass
 
 
 class SrvApp(StubApp):
@@ -201,8 +236,8 @@ check(photo is not None, "QR gera imagem")
 srv.stop()
 check(not srv.running, "servidor para")
 
-# ---------- painel Perfil: IPs ----------
-from nexus.panels import PerfilPanel  # noqa: E402
+# ---------- painel Controles: IPs + controle virtual ----------
+from nexus.panels import ControlesPanel  # noqa: E402
 
 
 class PSrvFake:
@@ -236,7 +271,14 @@ papp.form_focus = []
 papp.form_idx = 0
 papp.phone_server = PSrvFake(papp)
 papp.lang = "pt-br"
-pp = PerfilPanel(papp)
+papp.gamepad = None
+papp.pad_devices = lambda: []
+papp.show_gamepad_info = lambda: None
+papp.open_keyboard = lambda *a: None
+papp.pad_sensitivity = lambda: 12
+papp.pad_scroll = lambda: 8
+papp.pad_deadzone = lambda: 22
+pp = ControlesPanel(papp)
 pp.open()
 root.update()
 _ipbtns = [f for f in pp.focusables

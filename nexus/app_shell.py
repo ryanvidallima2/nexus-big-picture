@@ -8,6 +8,8 @@ import tkinter.ttk as tk_ttk
 from datetime import datetime
 from PIL import Image, ImageTk
 
+from .apps import open_app_for_service
+from .avatars import make_avatar_photo
 from .config import Config, ensure_images_dir, load_settings, save_settings
 from .database import NexusDB
 from .focus import FocusManager
@@ -386,8 +388,22 @@ class AppShellMixin:
         right = tk.Frame(bar, bg=Config.BG_SIDEBAR)
         right.pack(side="right", padx=20)
 
+        # Atalho do Login a esquerda do relogio: avatar atual ou 👤.
+        # Abre o painel de perfil (login, avatar, sair).
+        self.profile_btn = tk.Button(right, font=("Segoe UI", 16),
+                                     bg=Config.BG_SIDEBAR,
+                                     fg=Config.TEXT_SECONDARY,
+                                     activebackground=Config.ACCENT,
+                                     relief="flat", cursor="hand2", bd=0,
+                                     command=self.open_perfil)
+        self.profile_btn.pack(side="left", padx=10)
+        try:
+            self._paint_profile_btn()
+        except Exception:
+            pass
+
         self.clock_label = tk.Label(right, font=("Segoe UI", 13),
-                                    fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR)
+                                     fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR)
         self.clock_label.pack(side="left", padx=10)
 
         self.notif_btn = tk.Button(right, text="\U0001F514", font=("Segoe UI", 16),
@@ -447,6 +463,35 @@ class AppShellMixin:
                 return
             dx, dy = getattr(self, "_drag_offset", (0, 0))
             self.root.geometry(f"+{event.x_root - dx}+{event.y_root - dy}")
+        except Exception:
+            pass
+
+    def _paint_profile_btn(self):
+        """Avatar redondo do perfil atual (ou 👤 convidado) no topo."""
+        try:
+            btn = self.profile_btn
+        except Exception:
+            return
+        try:
+            cur = getattr(self, "profile", None)
+        except Exception:
+            cur = None
+        photo = None
+        if cur:
+            try:
+                from .profiles import get_avatar
+                photo = make_avatar_photo(get_avatar(cur), 36)
+            except Exception:
+                photo = None
+        try:
+            if photo is not None:
+                self._top_avatar = photo
+                btn.configure(image=photo, text="")
+                btn.image = photo
+            else:
+                self._top_avatar = None
+                btn.configure(image="", text="\U0001F464")
+                btn.image = None
         except Exception:
             pass
 
@@ -541,7 +586,6 @@ class AppShellMixin:
                  bg=Config.BG_SIDEBAR, anchor="w").pack(pady=(0, 8), padx=25, fill="x")
 
         settings_items = [
-            (t("settings_profile", self.lang), self.open_perfil, "\U0001F464"),
             (t("settings_theme", self.lang), self.open_theme_picker, "\U0001F3A8"),
             (t("settings_controls", self.lang), self.open_controles, "\U0001F3AE"),
             (t("settings_sound", self.lang), self.open_som, "\U0001F50A"),

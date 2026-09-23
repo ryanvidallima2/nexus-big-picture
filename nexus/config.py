@@ -89,7 +89,8 @@ def save_settings(settings):
 
 
 # Abas visiveis na barra superior (aba Home foi removida)
-TABS = ["favorites", "movies", "music", "videos", "all", "games", "gamefavorites"]
+TABS = ["favorites", "movies", "music", "videos", "all", "games",
+        "gamefavorites"]
 
 # Modos de exibicao estilo Windows Explorer (por aba, salvos em view_modes).
 # cards = carrossel atual | grid = grade | list = lista | details = detalhes

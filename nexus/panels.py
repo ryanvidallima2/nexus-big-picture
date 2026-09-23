@@ -1113,6 +1113,78 @@ class SidePanel:
                 pass
 
 
+class AvatarPanel(SidePanel):
+    """Troca de avatar em sidebar: grade de imagens redondas.
+    Mouse clica, setas + A escolhem, B fecha. Alvo e callback vao em
+    target_profile / on_pick antes do open()."""
+    NAME = "avatar"
+    TITLE_KEY = "login_choose_avatar"
+    ICON = "\U0001F5BC"
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        try:
+            from .avatars import (avatar_ids, avatar_label,
+                                  make_avatar_photo)
+            from . import profiles as _prof
+        except Exception:
+            return
+        try:
+            target = getattr(self, "target_profile", None)
+            cur = _prof.get_avatar(target) if target else ""
+        except Exception:
+            cur = ""
+        self._av_photos = []
+        try:
+            aids = avatar_ids()
+        except Exception:
+            aids = []
+        row = None
+        for k, aid in enumerate(aids):
+            if k % 2 == 0:
+                row = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+                row.pack(fill="x", padx=16, pady=3)
+                row.columnconfigure(0, weight=1)
+                row.columnconfigure(1, weight=1)
+            try:
+                photo = make_avatar_photo(aid, 96)
+            except Exception:
+                photo = None
+            mark = "\u2713 " if aid == cur else ""
+            b = tk.Button(row, text="%s%s" % (mark, avatar_label(aid, lang)),
+                          font=("Segoe UI", 11, "bold"),
+                          fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
+                          activebackground=Config.BG_CARD_HOVER,
+                          activeforeground=Config.TEXT_PRIMARY,
+                          relief="flat", bd=0, cursor="hand2",
+                          compound="top", pady=8,
+                          highlightthickness=1,
+                          highlightbackground=Config.BORDER,
+                          command=lambda a=aid: self._pick(a))
+            if photo is not None:
+                self._av_photos.append(photo)
+                b.configure(image=photo)
+                b.image = photo
+            b.grid(row=0, column=k % 2, padx=4, sticky="ew")
+            self.focusables.append({"kind": "button", "widget": b,
+                                    "cmd": b.invoke})
+            idx = len(self.focusables) - 1
+            b.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+
+    def _pick(self, aid):
+        cb = getattr(self, "on_pick", None)
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            if callable(cb):
+                cb(aid)
+        except Exception:
+            pass
+
+
 class ControlesPanel(SidePanel):
     NAME = "controles"
     TITLE_KEY = "settings_controls"
@@ -1169,6 +1241,195 @@ class ControlesPanel(SidePanel):
         self.section("\u2328 " + t("ctrl_kb_sec", lang))
         self.button(t("kb_open", lang),
                     lambda: app.open_keyboard())
+        self.section("\U0001F4F1 " + t("phone_virtual", lang))
+        self._render_virtual()
+
+    # ---------- controle virtual (celular) ----------
+    def _virtual_refresh(self):
+        try:
+            self.reopen()
+        except Exception:
+            pass
+
+    def _render_virtual(self):
+        app = self.app
+        lang = app.lang
+        try:
+            from . import phone_server as _ps
+        except Exception:
+            return
+        try:
+            srv = getattr(app, "phone_server", None)
+            on = bool(srv is not None and srv.running)
+        except Exception:
+            on = False
+        info = t("phone_on", lang) if on else t("phone_off", lang)
+        url = ""
+        if on:
+            try:
+                info += "  %s:%s" % (_ps.chosen_ip(app),
+                                     _ps.app_phone_port(app))
+                url = "http://%s:%s/" % (_ps.chosen_ip(app),
+                                         _ps.app_phone_port(app))
+            except Exception:
+                pass
+        tk.Label(self.body, text=info, font=("Segoe UI", 12),
+                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                 anchor="w", justify="left",
+                 wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=2)
+        if on and url:
+            tk.Label(self.body, text=t("phone_url", lang) % url,
+                     font=("Segoe UI", 11),
+                     fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
+                     anchor="w", justify="left",
+                     wraplength=self.WIDTH - 40).pack(fill="x", padx=16,
+                                                      pady=2)
+            try:
+                fw = t("phone_firewall", lang) % _ps.app_phone_port(app)
+            except Exception:
+                fw = t("phone_firewall", lang)
+            tk.Label(self.body, text=fw, font=("Segoe UI", 11),
+                     fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
+                     anchor="w", justify="left",
+                     wraplength=self.WIDTH - 40).pack(fill="x", padx=16,
+                                                      pady=2)
+        if on:
+            try:
+                ips = _ps.lan_ips()
+            except Exception:
+                ips = []
+            try:
+                cur_ip = _ps.chosen_ip(app)
+            except Exception:
+                cur_ip = ""
+            if len(ips) > 1:
+                tk.Label(self.body, text=t("phone_ip", lang),
+                         font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
+                         bg=Config.BG_SIDEBAR, anchor="w").pack(
+                             fill="x", padx=16, pady=(8, 0))
+                for ip in ips:
+                    try:
+                        mark = "\u2713 " if ip == cur_ip else ""
+                        self.button(mark + ip,
+                                    lambda _ip=ip: self._pick_ip(_ip))
+                    except Exception:
+                        pass
+            self.button(t("phone_stop", lang), lambda: self._srv_stop())
+            self.button(t("phone_newcode", lang), lambda: self._srv_code())
+            self.button("\U0001F4F7  " + t("phone_qr", lang),
+                        self._open_qr_window)
+            try:
+                devs = srv.paired_devices()
+            except Exception:
+                devs = []
+            if devs:
+                tk.Label(self.body, text=t("phone_paired", lang),
+                         font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
+                         bg=Config.BG_SIDEBAR, anchor="w").pack(
+                             fill="x", padx=16, pady=(8, 0))
+                for d in devs:
+                    try:
+                        label = "%s (%s)" % (d.get("device", "?"),
+                                             d.get("profile", "?") or "?")
+                        self.button(label + "  \u2715",
+                                    lambda tk_=d.get("token", ""):
+                                    self._srv_revoke(tk_))
+                    except Exception:
+                        pass
+        else:
+            self.button(t("phone_start", lang), lambda: self._srv_start())
+
+    def _srv_start(self):
+        try:
+            try:
+                from .license import dev_unlocked as _dev
+                _dev_on = bool(_dev(self.app))
+            except Exception:
+                _dev_on = False
+            if not _dev_on and not getattr(self.app, "profile", None):
+                try:
+                    self.app.show_info_message(
+                        t("phone_virtual", self.app.lang),
+                        t("phone_login_first", self.app.lang))
+                except Exception:
+                    pass
+                return
+            # Gate: controle pelo celular e Pro.
+            try:
+                from .license import has_pro as _has_pro
+                if not _has_pro(self.app):
+                    offer = getattr(self.app, "pro_required", None)
+                    if callable(offer):
+                        offer()
+                    return
+            except Exception:
+                pass
+            from . import phone_server as _ps
+            ok, err = _ps.start_phone_server(self.app)
+            if not ok:
+                try:
+                    self.app.show_info_message(
+                        t("phone_virtual", self.app.lang), err or "?")
+                except Exception:
+                    pass
+            self._virtual_refresh()
+        except Exception:
+            pass
+
+    def _srv_stop(self):
+        try:
+            from . import phone_server as _ps
+            _ps.stop_phone_server(self.app)
+            self._virtual_refresh()
+        except Exception:
+            pass
+
+    def _pick_ip(self, ip):
+        try:
+            if isinstance(self.app.settings, dict):
+                self.app.settings["phone_ip"] = ip
+                from .config import save_settings as _save
+                _save(self.app.settings)
+        except Exception:
+            pass
+        try:
+            self._virtual_refresh()
+        except Exception:
+            pass
+
+    def _srv_code(self):
+        try:
+            srv = getattr(self.app, "phone_server", None)
+            if srv is not None:
+                srv.new_code()
+            self._virtual_refresh()
+        except Exception:
+            pass
+
+    def _srv_revoke(self, tok):
+        try:
+            srv = getattr(self.app, "phone_server", None)
+            if srv is not None:
+                srv.revoke_token(tok)
+            self._virtual_refresh()
+        except Exception:
+            pass
+
+    def _open_qr_window(self):
+        try:
+            old = getattr(self.app, "qr_window", None)
+            if old is not None and not getattr(old, "closed", True):
+                try:
+                    old.win.lift()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        try:
+            QrWindow(self.app)
+        except Exception:
+            pass
 
     def _get_dead(self):
         try:
@@ -1281,6 +1542,20 @@ class PerfilPanel(SidePanel):
         tk.Label(self.body, text=who, font=("Segoe UI", 13, "bold"),
                  fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
                  anchor="w").pack(fill="x", padx=16, pady=(4, 6))
+        if cur:
+            try:
+                from .avatars import make_avatar_photo
+                _photo = make_avatar_photo(_prof.get_avatar(cur), 96)
+            except Exception:
+                _photo = None
+            if _photo is not None:
+                self._perfil_photo = _photo
+                _albl = tk.Label(self.body, image=_photo,
+                                 bg=Config.BG_SIDEBAR)
+                _albl.image = _photo
+                _albl.pack(padx=16, pady=(0, 4), anchor="w")
+            self.button("\U0001F5BC  " + t("login_avatar", lang),
+                        lambda: self._change_avatar(cur))
         try:
             names = _prof.list_profiles()
         except Exception:
@@ -1296,14 +1571,29 @@ class PerfilPanel(SidePanel):
         self.button("+ " + t("profile_new", lang), self._new_flow)
         if cur:
             self.button(t("profile_logout", lang), self._logout)
-        self.section(t("profile_phone", lang))
-        self._render_phone()
 
     def _refresh(self):
         try:
             self.open()
         except Exception:
             pass
+
+    def _change_avatar(self, name):
+        try:
+            ap = AvatarPanel(self.app)
+            ap.target_profile = name
+            ap.on_pick = lambda aid: self._finish_avatar(name, aid)
+            ap.open()
+        except Exception:
+            pass
+
+    def _finish_avatar(self, name, aid):
+        try:
+            from . import profiles as _prof
+            _prof.set_avatar(name, aid)
+        except Exception:
+            pass
+        self._refresh()
 
     def _login_flow(self, name):
         app = self.app
@@ -1393,189 +1683,6 @@ class PerfilPanel(SidePanel):
             from . import profiles as _prof
             _prof.switch_profile(self.app, None)
             self._refresh()
-        except Exception:
-            pass
-
-    def _render_phone(self):
-        app = self.app
-        lang = app.lang
-        try:
-            from . import phone_server as _ps
-        except Exception:
-            return
-        try:
-            srv = getattr(app, "phone_server", None)
-            on = bool(srv is not None and srv.running)
-        except Exception:
-            on = False
-        info = t("phone_on", lang) if on else t("phone_off", lang)
-        url = ""
-        if on:
-            try:
-                info += "  %s:%s" % (_ps.chosen_ip(app),
-                                     _ps.app_phone_port(app))
-                url = "http://%s:%s/" % (_ps.chosen_ip(app),
-                                         _ps.app_phone_port(app))
-            except Exception:
-                pass
-        tk.Label(self.body, text=info, font=("Segoe UI", 12),
-                 fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
-                 anchor="w", justify="left",
-                 wraplength=self.WIDTH - 40).pack(fill="x", padx=16, pady=2)
-        if on and url:
-            tk.Label(self.body, text=t("phone_url", lang) % url,
-                     font=("Segoe UI", 11),
-                     fg=Config.ACCENT, bg=Config.BG_SIDEBAR,
-                     anchor="w", justify="left",
-                     wraplength=self.WIDTH - 40).pack(fill="x", padx=16,
-                                                      pady=2)
-            try:
-                fw = t("phone_firewall", lang) % _ps.app_phone_port(app)
-            except Exception:
-                fw = t("phone_firewall", lang)
-            tk.Label(self.body, text=fw, font=("Segoe UI", 11),
-                     fg=Config.TEXT_SECONDARY, bg=Config.BG_SIDEBAR,
-                     anchor="w", justify="left",
-                     wraplength=self.WIDTH - 40).pack(fill="x", padx=16,
-                                                      pady=2)
-        if on:
-            try:
-                ips = _ps.lan_ips()
-            except Exception:
-                ips = []
-            try:
-                cur_ip = _ps.chosen_ip(app)
-            except Exception:
-                cur_ip = ""
-            if len(ips) > 1:
-                tk.Label(self.body, text=t("phone_ip", lang),
-                         font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
-                         bg=Config.BG_SIDEBAR, anchor="w").pack(
-                             fill="x", padx=16, pady=(8, 0))
-                for ip in ips:
-                    try:
-                        mark = "\u2713 " if ip == cur_ip else ""
-                        self.button(mark + ip,
-                                    lambda _ip=ip: self._pick_ip(_ip))
-                    except Exception:
-                        pass
-            self.button(t("phone_stop", lang), lambda: self._srv_stop())
-            self.button(t("phone_newcode", lang), lambda: self._srv_code())
-            self.button("\U0001F4F7  " + t("phone_qr", lang),
-                        self._open_qr_window)
-            try:
-                devs = srv.paired_devices()
-            except Exception:
-                devs = []
-            if devs:
-                tk.Label(self.body, text=t("phone_paired", lang),
-                         font=("Segoe UI", 11, "bold"), fg=Config.ACCENT,
-                         bg=Config.BG_SIDEBAR, anchor="w").pack(
-                             fill="x", padx=16, pady=(8, 0))
-                for d in devs:
-                    try:
-                        label = "%s (%s)" % (d.get("device", "?"),
-                                             d.get("profile", "?") or "?")
-                        self.button(label + "  \u2715",
-                                    lambda tk_=d.get("token", ""):
-                                    self._srv_revoke(tk_))
-                    except Exception:
-                        pass
-        else:
-            self.button(t("phone_start", lang), lambda: self._srv_start())
-
-    def _srv_start(self):
-        try:
-            if not getattr(self.app, "profile", None):
-                try:
-                    self.app.show_info_message(
-                        t("profile_phone", self.app.lang),
-                        t("phone_login_first", self.app.lang))
-                except Exception:
-                    pass
-                return
-            # Gate: controle pelo celular e Pro.
-            try:
-                from .license import has_pro as _has_pro
-                if not _has_pro(self.app):
-                    offer = getattr(self.app, "pro_required", None)
-                    if callable(offer):
-                        offer()
-                    return
-            except Exception:
-                pass
-            from . import phone_server as _ps
-            ok, err = _ps.start_phone_server(self.app)
-            if not ok:
-                try:
-                    self.app.show_info_message(
-                        t("profile_phone", self.app.lang), err or "?")
-                except Exception:
-                    pass
-            self._refresh()
-        except Exception:
-            pass
-
-    def _srv_stop(self):
-        try:
-            from . import phone_server as _ps
-            _ps.stop_phone_server(self.app)
-            self._refresh()
-        except Exception:
-            pass
-
-    def _pick_ip(self, ip):
-        try:
-            if isinstance(self.app.settings, dict):
-                self.app.settings["phone_ip"] = ip
-                from .config import save_settings as _save
-                _save(self.app.settings)
-        except Exception:
-            pass
-        try:
-            self._refresh()
-        except Exception:
-            pass
-
-    def _srv_code(self):
-        try:
-            srv = getattr(self.app, "phone_server", None)
-            if srv is not None:
-                srv.new_code()
-            self._refresh()
-        except Exception:
-            pass
-
-    def _srv_revoke(self, tok):
-        try:
-            srv = getattr(self.app, "phone_server", None)
-            if srv is not None:
-                srv.revoke_token(tok)
-            self._refresh()
-        except Exception:
-            pass
-
-    def _open_qr_window(self):
-        try:
-            old = getattr(self.app, "qr_window", None)
-            if old is not None and not getattr(old, "closed", True):
-                try:
-                    old.win.lift()
-                except Exception:
-                    pass
-                return
-        except Exception:
-            pass
-        try:
-            QrWindow(self.app)
-        except Exception:
-            pass
-
-    def _render_qr(self):
-        # Legado: o QR agora abre sob demanda na QrWindow (botao Gerar
-        # QR Code). Mantido p/ compatibilidade — delega p/ a janela.
-        try:
-            self._open_qr_window()
         except Exception:
             pass
 
