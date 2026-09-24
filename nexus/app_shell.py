@@ -45,6 +45,17 @@ class AppShellMixin:
             pass
 
         self.settings = load_settings()
+        # Tema salvo (accent_color/accent_glow): restaura no boot p/ os
+        # icones de categoria (icontint) ja nascerem na cor certa.
+        try:
+            _ac = (self.settings.get("accent_color", "") or "").strip()
+            _ag = (self.settings.get("accent_glow", "") or "").strip()
+            if _ac:
+                Config.ACCENT = _ac
+            if _ag:
+                Config.ACCENT_GLOW = _ag
+        except Exception:
+            pass
         if self.settings.get("resolution_mode") != "fullscreen":
             self.settings["resolution_mode"] = "fullscreen"
             try:
@@ -106,6 +117,14 @@ class AppShellMixin:
         self.gamepad = GamepadManager(self)
         self.update_clock()
         self.check_updates_startup()
+        # Top 3 online dos streamings: atualiza o cache em thread
+        # (TTL mensal); a UI usa o cache/estatico sem travar.
+        try:
+            import threading as _th
+            from . import topcontent as _tc
+            _th.Thread(target=_tc.refresh_all, daemon=True).start()
+        except Exception:
+            pass
 
     def _set_app_icon(self):
         # Logo_mini na barra de tarefas/titulo (vale p/ todas as janelas).
@@ -196,6 +215,28 @@ class AppShellMixin:
         except Exception:
             big = False
         cover_size = size or (GAME_COVER_SIZE if big else Config.LOGO_SIZE)
+        # 0) Icone pre-definido Nexus (acompanha o tema via icontint).
+        try:
+            _data = {}
+            if big:
+                try:
+                    _data = (self.settings.get("external_games") or {}).get(name, {}) or {}
+                    if not _data:
+                        _data = (self.settings.get("platform_games") or {}).get(name, {}) or {}
+                except Exception:
+                    _data = {}
+            else:
+                try:
+                    _data = (self.settings.get("custom_streamings", {}) or {}).get(name, {}) or {}
+                except Exception:
+                    _data = {}
+            _asset = (_data.get("icon_asset", "") or "").strip()
+            if _asset:
+                _photo = self._themed_asset(_asset, cover_size, name)
+                if _photo is not None:
+                    return _photo
+        except Exception:
+            pass
         # 1) Logo trocado manualmente (vale p/ streamings, pastas e atalhos)
         custom = self.settings.get("custom_streamings", {})
         if name in custom and "image" in custom[name]:
@@ -248,7 +289,9 @@ class AppShellMixin:
                         pass
                     return self.load_photo(p)
         # Fase 2: sem imagem do usuario, usa icone ORIGINAL Nexus da
-        # categoria (nunca logo de terceiro). Emoji vira ultimo recurso.
+        # categoria (nunca logo de terceiro), recolorido p/ a cor do card
+        # (icontint: cache por icone+cor; trocar a cor regenera sozinho).
+        # Emoji vira ultimo recurso.
         try:
             if big:
                 category = "Games"
@@ -256,10 +299,50 @@ class AppShellMixin:
                 category = self.get_all_services().get(name, {}).get("category", "")
             icon_path = category_icon_path(category)
             if icon_path:
-                return self.load_photo(icon_path, size=cover_size)
+                from .icontint import get_themed_icon
+                return get_themed_icon(icon_path, self._card_tint(name),
+                                       size=cover_size, shaded=True)
         except Exception:
             pass
         return None
+
+    def _card_tint(self, name):
+        """Cor efetiva do card p/ tingir o icone: cor custom do card >
+        cor do servico > acento do tema."""
+        try:
+            c = (self.settings.get("card_colors", {}) or {}).get(name, "")
+            if c:
+                return c
+        except Exception:
+            pass
+        try:
+            c = (self.get_all_services().get(name, {}) or {}).get(
+                "color", "")
+            if c:
+                return c
+        except Exception:
+            pass
+        try:
+            from .icontint import get_accent
+            return get_accent(self.settings)
+        except Exception:
+            return "#7c4dff"
+
+    def _themed_asset(self, asset, size, name=""):
+        """PhotoImage do icone pre-definido na cor do card (ou None)."""
+        try:
+            from .icontint import get_themed_icon
+            from .paths import ICONS_DIR, preset_icon_names
+            base = os.path.basename(str(asset or ""))
+            if not base or base not in preset_icon_names():
+                return None
+            p = os.path.join(ICONS_DIR, base)
+            if not os.path.isfile(p):
+                return None
+            return get_themed_icon(p, self._card_tint(name),
+                                   size=size, shaded=True)
+        except Exception:
+            return None
 
     def get_all_services(self):
         hidden = set(self.settings.get("hidden_streamings", []))
@@ -272,7 +355,13 @@ class AppShellMixin:
                 all_s[k] = v
         for k, v in self.settings.get("custom_streamings", {}).items():
             if k not in hidden:
-                all_s[k] = v
+                # Merge (nao substitui): custom parcial (so logo, p. ex.)
+                # nao pode apagar cor, deep link e top 3 do original.
+                if (k in all_s and isinstance(v, dict)
+                        and isinstance(all_s[k], dict)):
+                    all_s[k] = {**all_s[k], **v}
+                else:
+                    all_s[k] = v
         return all_s
 
     def set_card_color(self, name, hex_color):

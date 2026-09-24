@@ -21,7 +21,7 @@ from .games import GAME_COVER_SIZE
 from .i18n import t
 from .keyboard import NexusKeyboard
 from .license import (
-    license_status, mark_invalid, mark_verified, needs_recheck,
+    has_pro, license_status, mark_invalid, mark_verified, needs_recheck,
     product_ids, verify_key,
 )
 from .panels import (
@@ -202,16 +202,74 @@ class AppSettingsMixin:
     def change_logo(self, name, path=None):
         """Troca a logo do card (Fase 1 - blindagem juridica).
 
-        Politica: só aceita imagem escolhida pelo usuário no próprio
-        computador (file picker). Nunca faz busca automática por nome
-        do serviço nem baixa logo oficial de terceiro.
+        Sem path: abre a sidebar LogoPanel com os icones pre-definidos
+        Nexus (+ opcao de arquivo local). Com path: fluxo direto de
+        arquivo (compat). Nunca faz busca automática por nome de
+        serviço nem baixa logo oficial de terceiro.
         """
         if path is None:
-            filepath = filedialog.askopenfilename(
-                title=f"Logo de {name}",
-                filetypes=[("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp *.ico"), ("Todas", "*.*")])
-        else:
-            filepath = path
+            try:
+                from .panels import LogoPanel
+                p = LogoPanel(self)
+                p.target_name = name
+                p.on_pick = lambda choice: self._logo_picked(name, choice)
+                p.open()
+            except Exception:
+                pass
+            return
+        self.change_logo_file(name, path)
+
+    def _logo_picked(self, name, choice):
+        """Retorno do LogoPanel: filename pre-definido ou '__file__'."""
+        try:
+            if choice == "__file__":
+                filepath = filedialog.askopenfilename(
+                    title=f"Logo de {name}",
+                    filetypes=[("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp *.ico"),
+                               ("Todas", "*.*")])
+                if filepath:
+                    self.change_logo_file(name, filepath)
+                return
+            self.change_logo_asset(name, choice)
+        except Exception:
+            pass
+
+    def change_logo_asset(self, name, filename):
+        """Logo pre-definida: guarda icon_asset (resolve dinamico no tema)."""
+        try:
+            from .paths import preset_icon_names
+            base = os.path.basename(str(filename or ""))
+            if base not in preset_icon_names():
+                return False
+        except Exception:
+            return False
+        try:
+            if self.game_is_external(name):
+                extg = dict(self.settings.get("external_games") or {})
+                data = dict(extg.get(name, {}))
+                data["icon_asset"] = base
+                extg[name] = data
+                self.settings["external_games"] = extg
+            elif self.game_is_platform(name):
+                plat = dict(self.settings.get("platform_games") or {})
+                data = dict(plat.get(name, {}))
+                data["icon_asset"] = base
+                plat[name] = data
+                self.settings["platform_games"] = plat
+            else:
+                custom = self.settings.get("custom_streamings", {})
+                if name not in custom:
+                    custom[name] = {}
+                custom[name]["icon_asset"] = base
+                self.settings["custom_streamings"] = custom
+            save_settings(self.settings)
+            self.refresh_ui()
+            return True
+        except Exception:
+            return False
+
+    def change_logo_file(self, name, filepath):
+        """Fluxo classico de arquivo local (limpa icon_asset)."""
         if filepath:
             ext = os.path.splitext(filepath)[1].lower()
             dest = os.path.join(IMAGES_DIR, f"{name}_logo{ext}")
@@ -225,6 +283,7 @@ class AppSettingsMixin:
                     extg = dict(self.settings.get("external_games") or {})
                     data = dict(extg.get(name, {}))
                     data["cover"] = dest
+                    data.pop("icon_asset", None)
                     extg[name] = data
                     self.settings["external_games"] = extg
                 except Exception:
@@ -234,6 +293,7 @@ class AppSettingsMixin:
                     plat = dict(self.settings.get("platform_games") or {})
                     data = dict(plat.get(name, {}))
                     data["cover"] = dest
+                    data.pop("icon_asset", None)
                     plat[name] = data
                     self.settings["platform_games"] = plat
                 except Exception:
@@ -243,6 +303,7 @@ class AppSettingsMixin:
                 if name not in custom:
                     custom[name] = {}
                 custom[name]["image"] = dest
+                custom[name].pop("icon_asset", None)
                 self.settings["custom_streamings"] = custom
             try:
                 self.logo_path_cache.pop(name, None)
@@ -720,12 +781,28 @@ class AppSettingsMixin:
             entry.insert(0, fp)
 
     def add_new_streaming(self):
-        """Cria card novo. Logo: só arquivo local informado pelo usuário."""
-        name = self.add_entries.get(t("add_name", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
-        url = self.add_entries.get(t("add_url", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
-        cat = self.add_entries.get(t("add_category", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
-        icon = self.add_entries.get(t("add_emoji", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
-        img = self.add_entries.get(t("add_logo", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
+        """Cria card novo. Categoria da lista (4); logo via sidebar ou
+        arquivo; depois abre a aba da categoria."""
+        try:
+            sp = getattr(self, "sidepanel", None)
+            panel = sp if getattr(sp, "NAME", "") == "adicionar" else None
+        except Exception:
+            panel = None
+        try:
+            name = self.add_entries.get(t("add_name", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
+            url = self.add_entries.get(t("add_url", self.lang), type("x", (), {"get": lambda: ""})).get().strip()
+        except Exception:
+            name, url = "", ""
+        try:
+            cat = (getattr(panel, "_add_category", "") or "").strip()
+        except Exception:
+            cat = ""
+        if cat not in ("Filmes", "Musica", "Videos", "Jogos"):
+            cat = "Filmes"
+        try:
+            choice = dict(getattr(panel, "_add_logo", None) or {})
+        except Exception:
+            choice = {}
 
         if not name or not url:
             self.show_info_message(t("msg_warning", self.lang), t("add_warning", self.lang))
@@ -733,18 +810,33 @@ class AppSettingsMixin:
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
+        icons = {"Filmes": "\U0001F3AC", "Musica": "\U0001F3B5",
+                 "Videos": "\U0001F4FA", "Jogos": "\U0001F3AE"}
+        try:
+            paint = (getattr(panel, "_add_color", "") or "").strip()
+        except Exception:
+            paint = ""
         custom = self.settings.get("custom_streamings", {})
-        data = {"url": url, "category": cat or "Filmes", "icon": icon or "\U0001F4F0",
-                "color": Config.ACCENT, "deep_link": "", "url_template": url,
+        data = {"url": url, "category": cat, "icon": icons.get(cat, "\U0001F4FA"),
+                "color": paint or Config.ACCENT, "deep_link": "", "url_template": url,
                 "top_content": []}
-        if img and os.path.exists(img):
-            ext = os.path.splitext(img)[1].lower()
-            dest = os.path.join(IMAGES_DIR, f"{name}_logo{ext}")
-            try:
-                copy2(img, dest)
-                data["image"] = dest
-            except:
-                data["image"] = img
+        try:
+            kind = choice.get("kind")
+            val = (choice.get("value", "") or "").strip()
+            if kind == "asset" and val:
+                from .paths import preset_icon_names
+                if os.path.basename(val) in preset_icon_names():
+                    data["icon_asset"] = os.path.basename(val)
+            elif kind == "file" and val and os.path.exists(val):
+                ext = os.path.splitext(val)[1].lower()
+                dest = os.path.join(IMAGES_DIR, f"{name}_logo{ext}")
+                try:
+                    copy2(val, dest)
+                    data["image"] = dest
+                except:
+                    data["image"] = val
+        except Exception:
+            pass
         custom[name] = data
         self.settings["custom_streamings"] = custom
         try:
@@ -754,8 +846,31 @@ class AppSettingsMixin:
         if name not in self.settings.get("favorites", []):
             self.settings["favorites"].append(name)
         save_settings(self.settings)
+        try:
+            if panel is not None:
+                panel._add_draft = {}
+                try:
+                    panel._add_category = "Filmes"
+                except Exception:
+                    pass
+                try:
+                    panel._add_logo = {}
+                except Exception:
+                    pass
+        except Exception:
+            pass
         self.show_info_message(t("msg_success", self.lang), f'"{name}" {t("add_success", self.lang)}')
         self.refresh_ui()
+        try:
+            self.close_sidepanel()
+        except Exception:
+            pass
+        try:
+            self.switch_tab({"Filmes": "movies", "Musica": "music",
+                             "Videos": "videos", "Jogos": "games"}.get(
+                                 cat, "all"))
+        except Exception:
+            pass
 
     # ===================== QA OVERLAY =====================
     def close_qa(self):
@@ -948,13 +1063,13 @@ class AppSettingsMixin:
 
     def apply_theme(self, color, win=None):
         global Config
-        # Gate: gratis usa as 3 cores base; demais sao Pro.
+        # Gate: gratis usa as 3 cores base; demais sao Pro (dev libera).
         try:
             free = [c for c, _label in (self.THEME_COLORS[:3] or [])]
         except Exception:
             free = []
         try:
-            pro = self.is_pro()
+            pro = has_pro(self)
         except Exception:
             pro = True
         if free and color not in free and not pro:
@@ -962,6 +1077,14 @@ class AppSettingsMixin:
             return
         Config.ACCENT = color
         Config.ACCENT_GLOW = color
+        # Persiste p/ settings.json (icontint le a cor vigente de la).
+        try:
+            if isinstance(self.settings, dict):
+                self.settings["accent_color"] = color
+                self.settings["accent_glow"] = color
+                save_settings(self.settings)
+        except Exception:
+            pass
         self.refresh_ui()
         try:
             if win is not None:

@@ -25,6 +25,28 @@ CATEGORY_ICONS = {
     "Games": "cat_games.png",
 }
 DEFAULT_ICON = "nexus_default.png"
+# Serie 2 (temas genericos p/ escolha de logo): (arquivo, rotulo_pt,
+# rotulo_en). Formas originais, sem marca de terceiro.
+EXTRA_ICONS = [
+    ("cat_anime.png", "Anime", "Anime"),
+    ("cat_sports.png", "Esportes", "Sports"),
+    ("cat_news.png", "Notícias", "News"),
+    ("cat_kids.png", "Infantil", "Kids"),
+    ("cat_docs.png", "Documentários", "Documentaries"),
+    ("cat_horror.png", "Terror", "Horror"),
+    ("cat_comedy.png", "Comédia", "Comedy"),
+    ("cat_live.png", "Ao vivo", "Live"),
+    ("cat_podcast.png", "Podcast", "Podcast"),
+    ("cat_fitness.png", "Fitness", "Fitness"),
+    ("cat_cinema.png", "Cinema", "Cinema"),
+    ("cat_serie.png", "Séries", "Series"),
+    ("cat_fone.png", "Fones", "Headphones"),
+    ("cat_radio.png", "Rádio", "Radio"),
+    ("cat_camera.png", "Câmera", "Camera"),
+    ("cat_play.png", "Play", "Play"),
+    ("cat_dpad.png", "Controle", "Gamepad"),
+    ("cat_dado.png", "Dado", "Dice"),
+]
 
 
 def category_icon_path(category):
@@ -40,6 +62,46 @@ def category_icon_path(category):
     except Exception:
         pass
     return ""
+
+
+def preset_icon_files():
+    """[(arquivo, rotulo_pt, rotulo_en)] dos icones pre-definidos p/
+    escolher no painel de logo. So arquivos conhecidos (sem traversal)."""
+    out = []
+    try:
+        from .i18n import cat_label as _cat_label
+    except Exception:
+        _cat_label = None
+    try:
+        for cat, fn in CATEGORY_ICONS.items():
+            p = os.path.join(ICONS_DIR, fn)
+            if not os.path.isfile(p):
+                continue
+            if _cat_label is not None:
+                try:
+                    out.append((fn, _cat_label(cat, "pt-br"),
+                                _cat_label(cat, "en")))
+                    continue
+                except Exception:
+                    pass
+            out.append((fn, cat, cat))
+        for fn, pt, en in EXTRA_ICONS:
+            if os.path.isfile(os.path.join(ICONS_DIR, fn)):
+                out.append((fn, pt, en))
+        p = os.path.join(ICONS_DIR, DEFAULT_ICON)
+        if os.path.isfile(p) and all(f != DEFAULT_ICON for f, _p, _e in out):
+            out.append((DEFAULT_ICON, "Padrão", "Default"))
+    except Exception:
+        pass
+    return out
+
+
+def preset_icon_names():
+    """S so os nomes de arquivo validos (validacao do icon_asset)."""
+    try:
+        return {fn for fn, _p, _e in preset_icon_files()}
+    except Exception:
+        return set()
 NEXUS_BROWSER_FILE = os.path.join(BASE_DIR, "nexus_browser.py")
 NEXUS_BROWSER_EXE = os.path.join(BASE_DIR, "nexus_browser.exe")
 

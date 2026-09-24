@@ -61,6 +61,8 @@ DEFAULT_SETTINGS = {
     "game_favorites": [],
     "pro_license": "",
     "pro_license_info": {},
+    "accent_color": "",
+    "accent_glow": "",
 }
 
 

@@ -5,6 +5,9 @@
 nexus.db
 settings.json
 
+# Cache do Top 3 online (topcontent.py regenera sozinho, mensal)
+topcache.json
+
 # Perfis locais de login (PIN hash + settings por usuario)
 profiles/
 

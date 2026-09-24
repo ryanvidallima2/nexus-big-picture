@@ -571,8 +571,8 @@ appA = new_panel_app()
 a = AdicionarPanel(appA)
 a.open()
 root.update()
-check(appA.nav_level == 'form' and len(appA.form_focus) == 8,
-      "E11 form 8 itens")
+check(appA.nav_level == 'form' and len(appA.form_focus) == 10,
+      "E11 form 10 itens")
 _keys = list(appA.add_entries.keys())
 appA.add_entries[_keys[0]].delete(0, 'end')
 appA.add_entries[_keys[1]].delete(0, 'end')

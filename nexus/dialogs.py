@@ -402,6 +402,11 @@ class GuideWindow(NexusMenuWindow):
         except Exception:
             pass
         self.btns = list(self.cat_btns)
+        # Re-liga o wheel: os botoes nascem DEPOIS do bind inicial.
+        try:
+            self.app._bind_wheel_tree(self.win, self._guide_wheel)
+        except Exception:
+            pass
         self.select(0)
 
     def set_options(self, options, opt_font=14):

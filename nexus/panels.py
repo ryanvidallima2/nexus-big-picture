@@ -3,9 +3,11 @@
 
 import tkinter as tk
 import tkinter.ttk as tk_ttk
+import os
+from tkinter import filedialog
 
 from .config import Config, save_settings
-from .dialogs import NexusTextDialog
+from .dialogs import CARD_COLOR_PRESETS, NexusTextDialog
 from .i18n import t
 from .input import _play_test_tone
 from .pad import (
@@ -756,6 +758,8 @@ class SidePanel:
     ICON = "\u25C6"
     WIDTH = 360
     IS_FORM = False
+    # Estilo da barra de rolagem (LogoPanel usa a visivel Accent).
+    SCROLL_STYLE = "Transparent.Vertical.TScrollbar"
 
     def __init__(self, app):
         self.app = app
@@ -793,6 +797,13 @@ class SidePanel:
         self.render()
         self.place()
         self.paint()
+        # Re-liga o wheel: o render() cria os botoes DEPOIS do build, e
+        # o bind do build nao alcanca os filhos novos (evento nao borbulha).
+        # bind() troca (nao acumula), entao repetir e seguro.
+        try:
+            self.app._bind_wheel_tree(self.frame, self._on_wheel)
+        except Exception:
+            pass
         try:
             self.scroll_canvas.update_idletasks()
             self.scroll_canvas.configure(
@@ -836,6 +847,10 @@ class SidePanel:
         self.place()
         self.paint()
         try:
+            self.app._bind_wheel_tree(self.frame, self._on_wheel)
+        except Exception:
+            pass
+        try:
             self.after_open()
         except Exception:
             pass
@@ -875,7 +890,7 @@ class SidePanel:
         self.scrollbar = tk_ttk.Scrollbar(
             self.frame, orient="vertical",
             command=self.scroll_canvas.yview,
-            style="Transparent.Vertical.TScrollbar")
+            style=self.SCROLL_STYLE)
         # Scrollbar PRIMEIRO: canvas com expand antes esmaga ela p/ 1px
         self.scrollbar.pack(side="right", fill="y")
         self.scroll_canvas.pack(side="left", fill="both", expand=True)
@@ -962,7 +977,7 @@ class SidePanel:
         b.pack(fill="x", padx=16, pady=3)
         self.focusables.append({"kind": "button", "widget": b, "cmd": cmd})
         idx = len(self.focusables) - 1
-        b.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+        b.bind("<Enter>", lambda e, i=idx: self.set_focus(i, False))
         return b
 
     def slider(self, label, vmin, vmax, get, put, step=1):
@@ -1001,10 +1016,10 @@ class SidePanel:
         # cantos de corrida (o e nunca e usado; so _it importa).
         sc.bind("<ButtonRelease-1>",
                 lambda e=None, _it=item: self.refresh_slider(_it, tick=True))
-        sc.bind("<Enter>", lambda e=None, i=idx: self.set_focus(i))
+        sc.bind("<Enter>", lambda e=None, i=idx: self.set_focus(i, False))
         for w in (row, lab, val):
             try:
-                w.bind("<Enter>", lambda e=None, i=idx: self.set_focus(i))
+                w.bind("<Enter>", lambda e=None, i=idx: self.set_focus(i, False))
             except Exception:
                 pass
         self.refresh_slider(item, tick=False)
@@ -1053,14 +1068,20 @@ class SidePanel:
         self.refresh_slider(item, tick=True)
 
     # ---------- navegacao ----------
-    def set_focus(self, idx):
+    def set_focus(self, idx, ensure_visible=True):
+        """Foco + (opcional) arrasta o scroll ate o item.
+
+        Hover do mouse chama com ensure_visible=False: o painel NAO
+        rola sozinho atras do cursor (scroll e manual: barra/wheel ou
+        setas do controle, que usam True)."""
         if not self.visible or not self.focusables:
             return
         new = idx % len(self.focusables)
         if new != self.focus:
             self.focus = new
             self.paint()
-            self._ensure_focus_visible()
+            if ensure_visible:
+                self._ensure_focus_visible()
             try:
                 self.app.play_tick()
             except Exception:
@@ -1111,6 +1132,152 @@ class SidePanel:
                 item["cmd"]()
             except Exception:
                 pass
+
+
+class LogoPanel(SidePanel):
+    """Escolha da logo do card em sidebar: icones pre-definidos Nexus
+    (na cor do tema) + opcao de arquivo do computador. Mouse clica,
+    setas + A escolhem, B fecha. Alvo e callback vao em target_name /
+    on_pick antes do open(): on_pick(filename ou "__file__")."""
+    NAME = "logo"
+    TITLE_KEY = "logo_title"
+    ICON = "\U0001F5BC"
+    # Barra VISIVEL aqui: o mouse nao arrasta o scroll sozinho.
+    SCROLL_STYLE = "Accent.Vertical.TScrollbar"
+
+    def render(self):
+        app = self.app
+        lang = app.lang
+        try:
+            from .icontint import get_accent, get_themed_icon
+            from .paths import ICONS_DIR, preset_icon_files
+        except Exception:
+            return
+        try:
+            import os as _os
+            accent = get_accent(getattr(app, "settings", None))
+            presets = preset_icon_files()
+        except Exception:
+            accent, presets = "#7c4dff", []
+        self._logo_photos = []
+        row = None
+        for k, _preset in enumerate(presets):
+            try:
+                fn, lab_pt, lab_en = _preset
+            except Exception:
+                continue
+            if k % 2 == 0:
+                row = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+                row.pack(fill="x", padx=16, pady=3)
+                row.columnconfigure(0, weight=1)
+                row.columnconfigure(1, weight=1)
+            try:
+                photo = get_themed_icon(_os.path.join(ICONS_DIR, fn),
+                                        accent, size=96, shaded=True)
+            except Exception:
+                photo = None
+            try:
+                label = lab_pt if str(lang).startswith("pt") else lab_en
+            except Exception:
+                label = lab_pt or fn
+            b = tk.Button(row, text=label, font=("Segoe UI", 11, "bold"),
+                          fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
+                          activebackground=Config.BG_CARD_HOVER,
+                          activeforeground=Config.TEXT_PRIMARY,
+                          relief="flat", bd=0, cursor="hand2",
+                          compound="top", pady=8,
+                          highlightthickness=1,
+                          highlightbackground=Config.BORDER,
+                          command=lambda f=fn: self._pick(f))
+            if photo is not None:
+                self._logo_photos.append(photo)
+                b.configure(image=photo)
+                b.image = photo
+            b.grid(row=0, column=k % 2, padx=4, sticky="ew")
+            self.focusables.append({"kind": "button", "widget": b,
+                                    "cmd": b.invoke})
+            idx = len(self.focusables) - 1
+            b.bind("<Enter>", lambda e, i=idx: self.set_focus(i, False))
+        self.button("\U0001F4C1  " + t("logo_file", lang),
+                    lambda: self._pick("__file__"))
+
+    def _pick(self, choice):
+        cb = getattr(self, "on_pick", None)
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            if callable(cb):
+                cb(choice)
+        except Exception:
+            pass
+
+
+class ColorPanel(SidePanel):
+    """Escolha da cor do card em sidebar: swatches da paleta padrao.
+    Mouse clica, setas + A escolhem, B fecha. Cor atual vai em
+    current_color e o callback em on_pick antes do open()."""
+    NAME = "color"
+    TITLE_KEY = "add_color"
+    ICON = "\U0001F3A8"
+
+    def render(self):
+        grid = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
+        grid.pack(fill="x", padx=16, pady=(4, 6))
+        for c in range(4):
+            grid.columnconfigure(c, weight=1)
+        try:
+            presets = list(CARD_COLOR_PRESETS)
+        except Exception:
+            presets = []
+        try:
+            cur = (getattr(self, "current_color", "") or "").strip().lower()
+        except Exception:
+            cur = ""
+        for k, (_label, color) in enumerate(presets):
+            mark = "\u2713" if str(color).lower() == cur else ""
+            b = tk.Button(grid, text=mark, font=("Segoe UI", 12, "bold"),
+                          bg=color, fg="black" if color == "#ffd600" else "white",
+                          activebackground=color, relief="flat", bd=0,
+                          cursor="hand2", width=4, height=2,
+                          highlightthickness=1,
+                          highlightbackground=Config.BORDER,
+                          command=lambda col=color: self._pick(col))
+            b.grid(row=k // 4, column=k % 4, padx=4, pady=4, sticky="ew")
+            self.focusables.append({"kind": "button", "widget": b,
+                                    "cmd": b.invoke, "swatch": color})
+            idx = len(self.focusables) - 1
+            b.bind("<Enter>", lambda e, i=idx: self.set_focus(i, False))
+
+    def paint(self):
+        # Swatches: o bg E o conteudo — o paint base os apagaria p/ cinza.
+        for i, item in enumerate(self.focusables):
+            try:
+                b = item["widget"]
+                col = item.get("swatch", "") or Config.BG_CARD
+                if i == self.focus:
+                    b.configure(bg=col,
+                                highlightbackground="white",
+                                highlightthickness=3)
+                else:
+                    b.configure(bg=col,
+                                highlightbackground=Config.BORDER,
+                                highlightthickness=1)
+            except Exception:
+                pass
+
+    def _pick(self, color):
+        cb = getattr(self, "on_pick", None)
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            if callable(cb):
+                cb(color)
+        except Exception:
+            pass
 
 
 class AvatarPanel(SidePanel):
@@ -1170,7 +1337,7 @@ class AvatarPanel(SidePanel):
             self.focusables.append({"kind": "button", "widget": b,
                                     "cmd": b.invoke})
             idx = len(self.focusables) - 1
-            b.bind("<Enter>", lambda e, i=idx: self.set_focus(i))
+            b.bind("<Enter>", lambda e, i=idx: self.set_focus(i, False))
 
     def _pick(self, aid):
         cb = getattr(self, "on_pick", None)
@@ -1692,57 +1859,114 @@ class AdicionarPanel(SidePanel):
     TITLE_KEY = "sidebar_add"
     ICON = "\U0001F4FA"
     IS_FORM = True
+    CATEGORIES = ("Filmes", "Musica", "Videos", "Jogos")
 
     def render(self):
         app = self.app
         lang = app.lang
-        fields = [(t("add_name", lang), "Meu Streaming"),
-                  (t("add_url", lang), "https://"),
-                  (t("add_category", lang), "Filmes"),
-                  (t("add_emoji", lang), "\U0001F4F0"),
-                  (t("add_logo", lang), "")]
+        try:
+            draft = getattr(self, "_add_draft", None) or {}
+        except Exception:
+            draft = {}
+        if not hasattr(self, "_add_category") or self._add_category not in self.CATEGORIES:
+            self._add_category = draft.get("category", "Filmes")
+            if self._add_category not in self.CATEGORIES:
+                self._add_category = "Filmes"
+        if not hasattr(self, "_add_logo") or not isinstance(self._add_logo, dict):
+            self._add_logo = draft.get("logo") or {"kind": None, "value": ""}
+        try:
+            self._add_color = draft.get("color", "") or Config.ACCENT
+        except Exception:
+            pass
+        if not hasattr(self, "_add_color") or not self._add_color:
+            try:
+                self._add_color = Config.ACCENT
+            except Exception:
+                self._add_color = ""
         app.add_entries = {}
         app.form_focus = []
         app.form_idx = 0
-        for label, default in fields:
+        for label, default in ((t("add_name", lang),
+                                draft.get("name", "Meu Streaming")),
+                               (t("add_url", lang),
+                                draft.get("url", "https://"))):
             tk.Label(self.body, text=label, font=("Segoe UI", 12),
                      fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR,
                      anchor="w").pack(fill="x", padx=16, pady=(8, 0))
-            if label == t("add_logo", lang):
-                rowf = tk.Frame(self.body, bg=Config.BG_SIDEBAR)
-                rowf.pack(fill="x", padx=16)
-                e = tk.Entry(rowf, font=("Segoe UI", 12),
-                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                             insertbackground=Config.ACCENT, bd=0,
-                             highlightbackground=Config.BORDER,
-                             highlightthickness=1)
-                e.pack(side="left", fill="x", expand=True)
-                bb = tk.Button(rowf, text="...", font=("Segoe UI", 12),
-                               bg=Config.ACCENT, fg="white",
-                               relief="flat", cursor="hand2", padx=10,
-                               command=lambda ent=e: app.browse_image(ent))
-                bb.pack(side="left", padx=(8, 0))
-                app.add_entries[label] = e
-                app.bind_keyboard_popup(e, mode="text")
-                app._reg_form(e, "entry")
-                app._reg_form(bb, "button",
-                              lambda ent=e: app.browse_image(ent))
-            else:
-                e = tk.Entry(self.body, font=("Segoe UI", 12),
-                             bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
-                             insertbackground=Config.ACCENT, bd=0,
-                             highlightbackground=Config.BORDER,
-                             highlightthickness=1)
-                e.pack(fill="x", padx=16, pady=(0, 2))
-                e.insert(0, default)
-                app.add_entries[label] = e
-                app.bind_keyboard_popup(e)
-                app._reg_form(e, "entry")
+            e = tk.Entry(self.body, font=("Segoe UI", 12),
+                         bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                         insertbackground=Config.ACCENT, bd=0,
+                         highlightbackground=Config.BORDER,
+                         highlightthickness=1)
+            e.pack(fill="x", padx=16, pady=(0, 2))
+            e.insert(0, default)
+            app.add_entries[label] = e
+            app.bind_keyboard_popup(e)
+            app._reg_form(e, "entry")
+        # Categoria em lista: 4 opcoes, uma marcada.
+        tk.Label(self.body, text=t("add_category", lang),
+                 font=("Segoe UI", 12),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x", padx=16, pady=(8, 0))
+        self._cat_btns = []
+        for cat in self.CATEGORIES:
+            try:
+                text = cat_label(cat, lang) if cat != "Jogos" else t(
+                    "tab_games", lang)
+            except Exception:
+                text = cat
+            b = tk.Button(self.body, text=text, font=("Segoe UI", 12),
+                          fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
+                          activebackground=Config.BG_CARD_HOVER,
+                          activeforeground=Config.TEXT_PRIMARY,
+                          relief="flat", bd=0, cursor="hand2", anchor="w",
+                          padx=18, pady=7, highlightthickness=1,
+                          highlightbackground=Config.BORDER,
+                          command=lambda c=cat: self._pick_category(c))
+            b.pack(fill="x", padx=16, pady=2)
+            self._cat_btns.append((cat, b))
+            app._reg_form(b, "button", lambda c=cat: self._pick_category(c))
+        self._paint_categories()
+        # Logo: escolhe na sidebar de logos (sessao preservada).
+        tk.Label(self.body, text=t("add_logo", lang),
+                 font=("Segoe UI", 12),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x", padx=16, pady=(8, 0))
+        self._logo_btn = tk.Button(
+            self.body, text="", font=("Segoe UI", 12),
+            fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD,
+            activebackground=Config.BG_CARD_HOVER,
+            activeforeground=Config.TEXT_PRIMARY,
+            relief="flat", bd=0, cursor="hand2", anchor="w",
+            padx=18, pady=8, highlightthickness=1,
+            highlightbackground=Config.BORDER,
+            command=self._open_logo_picker)
+        self._logo_btn.pack(fill="x", padx=16, pady=2)
+        app._reg_form(self._logo_btn, "button", self._open_logo_picker)
+        self._paint_logo_choice()
+        # Cor do card: escolhe na sidebar de cores.
+        tk.Label(self.body, text=t("add_color", lang),
+                 font=("Segoe UI", 12),
+                 fg=Config.TEXT_PRIMARY, bg=Config.BG_SIDEBAR,
+                 anchor="w").pack(fill="x", padx=16, pady=(8, 0))
+        _ccol = getattr(self, "_add_color", None) or Config.ACCENT
+        self._color_btn = tk.Button(
+            self.body, text="\u2713", font=("Segoe UI", 12, "bold"),
+            fg="black" if str(_ccol).lower() == "#ffd600" else "white",
+            bg=_ccol, activebackground=_ccol,
+            activeforeground="black" if str(_ccol).lower() == "#ffd600" else "white",
+            relief="raised", bd=2, cursor="hand2", anchor="center",
+            pady=8, highlightthickness=2,
+            highlightbackground="black",
+            command=self._open_color_picker)
+        self._color_btn.pack(fill="x", padx=16, pady=2)
+        app._reg_form(self._color_btn, "button", self._open_color_picker)
         submit = tk.Button(self.body,
                            text="%s \u2192" % t("add_submit", lang),
                            font=("Segoe UI", 14, "bold"),
                            bg=Config.ACCENT, fg="white",
                            activebackground=Config.ACCENT_GLOW,
+                           activeforeground="white",
                            relief="flat", cursor="hand2", pady=8,
                            command=app.add_new_streaming)
         submit.pack(fill="x", padx=16, pady=(14, 4))
@@ -1755,6 +1979,111 @@ class AdicionarPanel(SidePanel):
                          command=self._back)
         back.pack(fill="x", padx=16, pady=(0, 10))
         app._reg_form(back, "button", self._back)
+
+    def _paint_categories(self):
+        try:
+            for cat, b in getattr(self, "_cat_btns", []):
+                if cat == getattr(self, "_add_category", "Filmes"):
+                    b.configure(text="\u2713 " + b.cget("text").lstrip("\u2713 "),
+                                bg=Config.ACCENT, fg="white",
+                                highlightbackground=Config.ACCENT_GLOW,
+                                highlightthickness=2)
+                else:
+                    b.configure(text=b.cget("text").lstrip("\u2713 "),
+                                bg=Config.BG_CARD, fg=Config.TEXT_PRIMARY,
+                                highlightbackground=Config.BORDER,
+                                highlightthickness=1)
+        except Exception:
+            pass
+
+    def _pick_category(self, cat):
+        try:
+            self._add_category = cat
+        except Exception:
+            pass
+        self._paint_categories()
+
+    def _logo_label(self):
+        try:
+            return "\U0001F5BC  %s" % t("logo_title", self.app.lang)
+        except Exception:
+            return ""
+
+    def _paint_logo_choice(self):
+        try:
+            self._logo_btn.configure(text=self._logo_label())
+        except Exception:
+            pass
+
+    def _save_draft(self):
+        try:
+            name_e = (self.app.add_entries or {}).get(
+                t("add_name", self.app.lang))
+            url_e = (self.app.add_entries or {}).get(
+                t("add_url", self.app.lang))
+            self._add_draft = {
+                "name": name_e.get().strip() if name_e else "",
+                "url": url_e.get().strip() if url_e else "",
+                "category": getattr(self, "_add_category", "Filmes"),
+                "logo": dict(getattr(self, "_add_logo", None) or {}),
+                "color": getattr(self, "_add_color", ""),
+            }
+        except Exception:
+            pass
+
+    def _open_color_picker(self):
+        self._save_draft()
+        try:
+            p = ColorPanel(self.app)
+            p.current_color = getattr(self, "_add_color", "")
+            p.on_pick = lambda col: self._got_color(col)
+            p.open()
+        except Exception:
+            pass
+
+    def _got_color(self, color):
+        try:
+            self._add_color = color
+            self._add_draft = dict(getattr(self, "_add_draft", None) or {})
+            self._add_draft["color"] = color
+        except Exception:
+            pass
+        try:
+            self.open()
+        except Exception:
+            pass
+
+    def _open_logo_picker(self):
+        self._save_draft()
+        try:
+            p = LogoPanel(self.app)
+            p.target_name = ""
+            p.on_pick = lambda choice: self._got_logo(choice)
+            p.open()
+        except Exception:
+            pass
+
+    def _got_logo(self, choice):
+        try:
+            if choice == "__file__":
+                fp = filedialog.askopenfilename(
+                    title=t("add_logo", self.app.lang),
+                    filetypes=[("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp *.ico"),
+                               ("Todas", "*.*")])
+                if fp:
+                    self._add_logo = {"kind": "file", "value": fp}
+                    self._add_draft = dict(getattr(self, "_add_draft", None) or {})
+                    self._add_draft["logo"] = dict(self._add_logo)
+            else:
+                self._add_logo = {"kind": "asset", "value": choice}
+                self._add_draft = dict(getattr(self, "_add_draft", None) or {})
+                self._add_draft["logo"] = dict(self._add_logo)
+        except Exception:
+            pass
+        try:
+            self.open()
+        except Exception:
+            pass
 
     def _back(self):
         self.close()

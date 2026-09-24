@@ -10,7 +10,7 @@ from tkinter import filedialog
 
 from .apps import open_app_for_service, open_store_search, try_install_service
 from .browser import open_in_nexus_browser
-from .config import Config
+from .config import Config, save_settings
 from .dialogs import CARD_COLOR_PRESETS, _modal_alive
 from .i18n import t
 from .pad import BROWSER_WATCH

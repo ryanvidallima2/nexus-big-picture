@@ -195,16 +195,21 @@ class AppCardsMixin:
 
         name_lbl = tk.Label(info_area, text=name, font=("Segoe UI", 14, "bold"),
                  fg=Config.TEXT_PRIMARY, bg=Config.BG_CARD, cursor="hand2",
-                 wraplength=Config.CARD_WIDTH - 24)
-        name_lbl.pack(anchor="w")
+                 wraplength=Config.CARD_WIDTH - 24, justify="center")
+        name_lbl.pack(fill="x")
 
         cat_lbl = tk.Label(info_area, text=cat_label(category, self.lang).upper(), font=("Segoe UI", 9),
                  fg=Config.ACCENT, bg=Config.BG_CARD, cursor="hand2")
         cat_lbl.pack(anchor="w", pady=(2, 0))
 
         top_content = info.get("top_content", [])
+        try:
+            from .topcontent import get_top
+            top_content = get_top(name, top_content)
+        except Exception:
+            pass
         if top_content:
-            for tc in top_content[:2]:
+            for tc in top_content[:3]:
                 tk.Label(info_area, text=f"\u25B8 {tc['title']}", font=("Segoe UI", 9),
                          fg=Config.TEXT_SECONDARY, bg=Config.BG_CARD, cursor="hand2",
                          anchor="w").pack(anchor="w", pady=(4, 0))
